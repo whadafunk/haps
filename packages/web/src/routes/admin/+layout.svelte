@@ -10,6 +10,7 @@
       <a href="/admin">Dashboard</a>
       <a href="/admin/events">Events</a>
       <a href="/admin/users">Users</a>
+      <a href="/admin/config">Config</a>
       <a href="/dashboard">→ Organizer view</a>
       <a href="/logout" class="logout-link">Sign out</a>
     </nav>

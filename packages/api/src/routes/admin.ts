@@ -1,10 +1,12 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { users, events } from '../db/schema.js'
+import { users, events, instanceConfig } from '../db/schema.js'
 import { eq, count } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { CreateUserSchema } from '@haps/shared'
 import { hashPassword } from '../lib/crypto.js'
+import { config } from '../lib/config.js'
+import { z } from 'zod'
 
 const adminRoutes: FastifyPluginAsync = async (fastify) => {
   // All admin routes require admin role
@@ -73,13 +75,60 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.code(204).send()
   })
 
+  const UpdateConfigSchema = z.object({
+    instanceName: z.string().min(1).max(100).optional(),
+    smtpHost:     z.string().max(200).nullable().optional(),
+    smtpPort:     z.coerce.number().int().min(1).max(65535).optional(),
+    smtpUser:     z.string().max(200).nullable().optional(),
+    smtpPass:     z.string().max(200).nullable().optional(),
+    smtpFrom:     z.string().max(200).nullable().optional(),
+    defaultTheme: z.string().max(50).nullable().optional(),
+  }).strict()
+
   fastify.get('/api/admin/config', { preHandler: adminPreHandler }, async () => {
-    // Config stored in env for Phase 1
+    const [row] = await db.select().from(instanceConfig).limit(1)
+
     return {
       config: {
-        instanceName: process.env.INSTANCE_NAME ?? 'Haps',
-        smtpConfigured: !!(process.env.SMTP_HOST),
-        storageType: process.env.STORAGE_TYPE ?? 'local',
+        instanceName: row?.instanceName ?? config.INSTANCE_NAME,
+        smtpHost:     row?.smtpHost ?? config.SMTP_HOST ?? null,
+        smtpPort:     row?.smtpPort ?? config.SMTP_PORT,
+        smtpUser:     row?.smtpUser ?? config.SMTP_USER ?? null,
+        smtpFrom:     row?.smtpFrom ?? config.SMTP_FROM ?? null,
+        smtpConfigured: !!(row?.smtpHost ?? config.SMTP_HOST),
+        storageType:  config.STORAGE_TYPE,
+        defaultTheme: row?.defaultTheme ?? null,
+      },
+    }
+  })
+
+  fastify.patch('/api/admin/config', { preHandler: adminPreHandler }, async (request) => {
+    const body = UpdateConfigSchema.parse(request.body)
+
+    const updates: Record<string, unknown> = { updatedAt: new Date() }
+    if (body.instanceName !== undefined) updates['instanceName'] = body.instanceName
+    if (body.smtpHost !== undefined) updates['smtpHost'] = body.smtpHost
+    if (body.smtpPort !== undefined) updates['smtpPort'] = body.smtpPort
+    if (body.smtpUser !== undefined) updates['smtpUser'] = body.smtpUser
+    if (body.smtpPass !== undefined) updates['smtpPass'] = body.smtpPass
+    if (body.smtpFrom !== undefined) updates['smtpFrom'] = body.smtpFrom
+    if (body.defaultTheme !== undefined) updates['defaultTheme'] = body.defaultTheme
+
+    await db.insert(instanceConfig)
+      .values({ id: 'singleton', ...updates })
+      .onConflictDoUpdate({ target: instanceConfig.id, set: updates as Parameters<ReturnType<typeof db.update>['set']>[0] })
+
+    const [row] = await db.select().from(instanceConfig).limit(1)
+    return {
+      config: {
+        instanceName: row?.instanceName ?? config.INSTANCE_NAME,
+        smtpHost:     row?.smtpHost ?? null,
+        smtpPort:     row?.smtpPort ?? config.SMTP_PORT,
+        smtpUser:     row?.smtpUser ?? null,
+        smtpFrom:     row?.smtpFrom ?? null,
+        smtpConfigured: !!(row?.smtpHost),
+        storageType:  config.STORAGE_TYPE,
+        defaultTheme: row?.defaultTheme ?? null,
       },
     }
   })

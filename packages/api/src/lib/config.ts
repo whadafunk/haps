@@ -6,6 +6,7 @@ const schema = z.object({
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   APP_URL: z.string().url(),
+  INSTANCE_NAME: z.string().default('Haps'),
   PORT: z.coerce.number().default(3000),
   DISABLE_RATE_LIMIT: z
     .string()

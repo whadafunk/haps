@@ -34,6 +34,6 @@ export const actions: Actions = {
       return fail(res.status, { error: body?.error?.message ?? 'Setup failed.' })
     }
 
-    redirect(302, '/login')
+    redirect(302, '/backend')
   },
 }

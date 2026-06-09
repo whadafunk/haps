@@ -18,6 +18,28 @@
 
   let editLink = $state('')
 
+  let coverUploading = $state(false)
+  let coverError = $state('')
+  let coverPreview = $state<string | null>(event.coverImageUrl ?? null)
+
+  async function uploadCover(e: Event) {
+    const input = e.target as HTMLInputElement
+    const file = input.files?.[0]
+    if (!file) return
+    coverError = ''
+    coverUploading = true
+    try {
+      const res = await api.uploadCover(event.slug, file)
+      event.coverImageUrl = res.coverImageUrl
+      coverPreview = res.coverImageUrl
+    } catch (err: unknown) {
+      coverError = err instanceof ApiError ? err.message : 'Upload failed.'
+    } finally {
+      coverUploading = false
+      input.value = ''
+    }
+  }
+
   onMount(() => {
     try {
       const stored = localStorage.getItem(`haps:editLink:${event.slug}`)
@@ -94,6 +116,22 @@
       Edit link: <code>{editLink}</code>
     </div>
   {/if}
+
+  <div class="cover-card">
+    <h2>Cover image</h2>
+    {#if coverPreview}
+      <img src={coverPreview} alt="Event cover" class="cover-preview" />
+    {:else}
+      <div class="cover-placeholder">No cover image</div>
+    {/if}
+    {#if coverError}
+      <div class="error-banner">{coverError}</div>
+    {/if}
+    <label class="cover-upload-btn">
+      {coverUploading ? 'Uploading…' : coverPreview ? 'Change image' : 'Upload image'}
+      <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onchange={uploadCover} disabled={coverUploading} hidden />
+    </label>
+  </div>
 
   <div class="grid">
     <section class="card">
@@ -197,6 +235,12 @@
   h1 { margin: 0.5rem 0 0; font-size: 1.5rem; color: #1a1510; }
   .edit-link-hint { font-size: 0.8rem; color: #6b6058; margin-bottom: 1.25rem; background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 8px; padding: 0.625rem 0.875rem; word-break: break-all; }
   .edit-link-hint code { color: #3d352e; }
+  .cover-card { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+  .cover-card h2 { margin: 0 0 0.75rem; font-size: 1.1rem; color: #1a1510; }
+  .cover-preview { width: 100%; max-height: 240px; object-fit: cover; border-radius: 8px; display: block; margin-bottom: 0.75rem; }
+  .cover-placeholder { background: #e8ddd0; border: 1px dashed #c8bdb0; border-radius: 8px; height: 120px; display: flex; align-items: center; justify-content: center; color: #9a8f86; font-size: 0.875rem; margin-bottom: 0.75rem; }
+  .cover-upload-btn { display: inline-block; background: #b05525; color: #fff; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
+  .cover-upload-btn:hover { background: #924418; }
   .grid { display: grid; grid-template-columns: 1fr; gap: 1rem; }
   @media (min-width: 768px) { .grid { grid-template-columns: 1fr 1fr; } }
   .card { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1.25rem; }

@@ -15,6 +15,7 @@ import commentsRoutes from './routes/comments.js'
 import sessionRoutes from './routes/session.js'
 import adminRoutes from './routes/admin.js'
 import setupRoutes from './routes/setup.js'
+import uploadsRoutes from './routes/uploads.js'
 import { migrate } from './db/migrate.js'
 import { db } from './db/index.js'
 import { events as eventsTable } from './db/schema.js'
@@ -54,6 +55,7 @@ export async function buildApp() {
   await app.register(commentsRoutes)
   await app.register(sessionRoutes)
   await app.register(adminRoutes)
+  await app.register(uploadsRoutes)
 
   app.get('/api/health', async () => ({ status: 'ok' }))
 

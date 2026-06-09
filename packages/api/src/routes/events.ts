@@ -8,6 +8,8 @@ import { createError } from '../lib/errors.js'
 import { CreateEventSchema, UpdateEventSchema, CreateTokenSchema } from '@haps/shared'
 import { ensureSession } from '../middleware/session.js'
 import { config } from '../lib/config.js'
+import { nanoid } from 'nanoid'
+import { detectMimeType, getAllowedExtension, saveLocalFile } from '../services/storage.js'
 
 const eventsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/api/events', {
@@ -246,6 +248,45 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!token) throw createError(500, 'INTERNAL_ERROR', 'Failed to create token.')
 
     return reply.code(201).send({ token, rawToken })
+  })
+
+  fastify.post('/api/events/:slug/cover', {
+    preHandler: [fastify.requireEditToken],
+  }, async (request, reply) => {
+    const { slug } = request.params as { slug: string }
+
+    const data = await request.file()
+    if (!data) throw createError(400, 'NO_FILE', 'No file uploaded.')
+
+    // Read into buffer to check magic bytes
+    const chunks: Buffer[] = []
+    for await (const chunk of data.file) {
+      chunks.push(chunk)
+      if (Buffer.concat(chunks).length > 10 * 1024 * 1024) {
+        throw createError(413, 'FILE_TOO_LARGE', 'File exceeds 10 MB limit.')
+      }
+    }
+    const buffer = Buffer.concat(chunks)
+
+    const mimeType = detectMimeType(buffer)
+    if (!mimeType) throw createError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Only JPEG, PNG, WebP, and GIF images are allowed.')
+
+    const ext = getAllowedExtension(mimeType)!
+    const filename = `${nanoid()}.${ext}`
+
+    const { Readable } = await import('stream')
+    await saveLocalFile(Readable.from(buffer), filename)
+
+    const coverImageUrl = `${config.APP_URL}/api/uploads/${filename}`
+    const updated = await db
+      .update(events)
+      .set({ coverImageUrl, updatedAt: new Date() })
+      .where(eq(events.slug, slug))
+      .returning({ slug: events.slug, coverImageUrl: events.coverImageUrl })
+
+    if (!updated[0]) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
+
+    return reply.code(200).send({ coverImageUrl })
   })
 
   fastify.delete('/api/events/:slug/tokens/:tokenId', {

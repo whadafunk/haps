@@ -18,11 +18,7 @@
 <nav class="nav">
   <a href="/" class="nav-brand">Haps</a>
   <div class="nav-links">
-    {#if data.session}
-      <a href="/my-events">My Events</a>
-    {:else}
-      <a href="/login">Sign In</a>
-    {/if}
+    <a href="/my-events">My Events</a>
   </div>
 </nav>
 

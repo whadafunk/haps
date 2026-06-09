@@ -28,6 +28,7 @@ COPY packages/shared/package.json ./packages/shared/
 RUN pnpm install --frozen-lockfile --prod
 
 COPY --from=build /app/packages/api/dist ./packages/api/dist
+COPY --from=build /app/packages/api/src/db/migrations ./packages/api/dist/db/migrations
 COPY --from=build /app/packages/shared/dist ./packages/shared/dist
 
 EXPOSE 3000

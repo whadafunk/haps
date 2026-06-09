@@ -25,10 +25,11 @@ async function apiFetch<T>(
 ): Promise<T> {
   const { serverSide = false, ...rest } = options
   const base = getBase(serverSide)
+  const isFormData = rest.body instanceof FormData
   const res = await fetchFn(`${base}/api${path}`, {
     ...rest,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(rest.headers ?? {}),
     },
     credentials: 'include',
@@ -97,6 +98,16 @@ export const api = {
       method: 'DELETE',
       headers: editToken ? { 'x-edit-token': editToken } : {},
     }),
+
+  uploadCover: (slug: string, file: File, editToken?: string) => {
+    const form = new FormData()
+    form.append('file', file)
+    return apiFetch<{ coverImageUrl: string }>(`/events/${slug}/cover`, {
+      method: 'POST',
+      body: form,
+      headers: editToken ? { 'x-edit-token': editToken } : {},
+    })
+  },
 
   // RSVPs
   submitRsvp: (slug: string, body: Record<string, unknown>) =>

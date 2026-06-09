@@ -8,8 +8,7 @@
     <h1>Welcome to Haps</h1>
     <p>The simple way to plan events and collect RSVPs.</p>
     <div class="actions">
-      <a href="/login" class="btn-primary">Organizer Login</a>
-      <a href="/my-events" class="btn-secondary">My Events</a>
+      <a href="/my-events" class="btn-primary">My Events</a>
     </div>
   </div>
 </main>
@@ -52,15 +51,4 @@
     font-size: 0.9rem;
   }
   .btn-primary:hover { background: #924418; }
-  .btn-secondary {
-    background: #f0e8da;
-    color: #1a1510;
-    border: 1px solid #cfc3b0;
-    text-decoration: none;
-    padding: 0.625rem 1.25rem;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 0.9rem;
-  }
-  .btn-secondary:hover { border-color: #b05525; color: #b05525; }
 </style>

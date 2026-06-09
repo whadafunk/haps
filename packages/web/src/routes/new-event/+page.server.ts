@@ -3,7 +3,7 @@ import { redirect, fail } from '@sveltejs/kit'
 import { serverPost, ServerApiError } from '$lib/serverFetch'
 
 export const load: PageServerLoad = async ({ cookies }) => {
-  if (!cookies.get('auth_token')) redirect(302, '/login')
+  if (!cookies.get('auth_token')) redirect(302, '/backend')
   return {}
 }
 

@@ -88,6 +88,18 @@ export const rsvps = pgTable('rsvps', {
   userIdx:            index('rsvps_user_idx').on(t.userId),
 }))
 
+export const instanceConfig = pgTable('instance_config', {
+  id:           text('id').primaryKey(), // always 'singleton'
+  instanceName: text('instance_name').notNull().default('Haps'),
+  smtpHost:     text('smtp_host'),
+  smtpPort:     integer('smtp_port').notNull().default(587),
+  smtpUser:     text('smtp_user'),
+  smtpPass:     text('smtp_pass'),
+  smtpFrom:     text('smtp_from'),
+  defaultTheme: text('default_theme'),
+  updatedAt:    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const comments = pgTable('comments', {
   id:          uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   eventId:     uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
