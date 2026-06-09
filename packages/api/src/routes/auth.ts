@@ -9,11 +9,18 @@ import { LoginSchema, CreateUserSchema } from '@haps/shared'
 import { config } from '../lib/config.js'
 
 const authRoutes: FastifyPluginAsync = async (fastify) => {
-  fastify.post('/api/auth/login', async (request, reply) => {
+  fastify.post('/api/auth/login', {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: '15 minutes',
+      },
+    },
+  }, async (request, reply) => {
     const body = LoginSchema.parse(request.body)
 
     const [user] = await db
-      .select({ id: users.id, email: users.email, displayName: users.displayName, role: users.role, passwordHash: users.passwordHash })
+      .select({ id: users.id, email: users.email, displayName: users.displayName, role: users.role, passwordHash: users.passwordHash, active: users.active })
       .from(users)
       .where(eq(users.email, body.email))
       .limit(1)
@@ -22,6 +29,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
 
     const valid = await verifyPassword(user.passwordHash, body.password)
     if (!valid) throw createError(401, 'INVALID_CREDENTIALS', 'Invalid email or password.')
+
+    if (!user.active) throw createError(403, 'ACCOUNT_DEACTIVATED', 'This account has been deactivated.')
 
     const payload = { sub: user.id, email: user.email, role: user.role as 'admin' | 'organizer' | 'member' }
     const accessToken = signJwt(payload)

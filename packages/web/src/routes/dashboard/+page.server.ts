@@ -5,10 +5,9 @@ import { serverGet, ServerApiError } from '$lib/serverFetch'
 export const load: PageServerLoad = async ({ cookies }) => {
   if (!cookies.get('auth_token')) redirect(302, '/login')
   try {
-    const [meRes, eventsRes] = await Promise.all([
-      serverGet<{ id: string; email: string; displayName: string; role: string }>('/auth/me', cookies),
-      serverGet<{ events: Array<{ slug: string; title: string; status: string; startsAt: string }> }>('/admin/events', cookies),
-    ])
+    const meRes = await serverGet<{ id: string; email: string; displayName: string; role: string }>('/auth/me', cookies)
+    if (meRes.role !== 'admin' && meRes.role !== 'organizer') redirect(302, '/')
+    const eventsRes = await serverGet<{ events: Array<{ slug: string; title: string; status: string; startsAt: string }> }>('/admin/events', cookies)
     return { user: meRes, events: eventsRes.events }
   } catch (e: unknown) {
     if (e instanceof ServerApiError && e.statusCode === 401) redirect(302, '/login')

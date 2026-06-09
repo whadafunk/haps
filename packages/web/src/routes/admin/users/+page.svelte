@@ -51,16 +51,24 @@
 
   <table class="table">
     <thead>
-      <tr><th>Email</th><th>Name</th><th>Role</th><th>Joined</th><th></th></tr>
+      <tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th><th>Joined</th><th></th></tr>
     </thead>
     <tbody>
       {#each data.users as user (user.id)}
-        <tr>
+        <tr class:inactive={!user.active}>
           <td>{user.email}</td>
           <td>{user.displayName}</td>
           <td><span class="badge role-{user.role}">{user.role}</span></td>
+          <td><span class="badge status-{user.active ? 'active' : 'inactive'}">{user.active ? 'Active' : 'Inactive'}</span></td>
           <td>{new Date(user.createdAt).toLocaleDateString()}</td>
-          <td>
+          <td class="actions">
+            {#if user.role !== 'admin'}
+              <form method="POST" action="?/toggleActive" use:enhance>
+                <input type="hidden" name="userId" value={user.id} />
+                <input type="hidden" name="active" value={String(!user.active)} />
+                <button type="submit" class="secondary-btn">{user.active ? 'Deactivate' : 'Reactivate'}</button>
+              </form>
+            {/if}
             <form method="POST" action="?/deleteUser" use:enhance>
               <input type="hidden" name="userId" value={user.id} />
               <button type="submit" class="danger-btn">Delete</button>
@@ -91,6 +99,13 @@
   .badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; background: #ede8e0; color: #4e453e; }
   .badge.role-admin { background: #fef4e0; color: #7a5a1a; }
   .badge.role-organizer { background: #f0ddd0; color: #9a3f1a; }
+  .badge.status-active { background: #e4f0e0; color: #2e6e28; }
+  .badge.status-inactive { background: #f0e0e0; color: #8b2020; }
+  .actions { display: flex; gap: 0.5rem; align-items: center; }
+  .actions form { margin: 0; }
+  tr.inactive td { opacity: 0.55; }
+  .secondary-btn { background: none; border: 1px solid #cfc3b0; color: #3d352e; padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.75rem; cursor: pointer; }
+  .secondary-btn:hover { background: #ede8e0; }
   .danger-btn { background: none; border: 1px solid #f0c8b8; color: #8b3016; padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.75rem; cursor: pointer; }
   .danger-btn:hover { background: #fdf2ee; }
   .error-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; }

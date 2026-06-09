@@ -26,7 +26,7 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get('/api/admin/users', { preHandler: adminPreHandler }, async () => {
     const rows = await db
-      .select({ id: users.id, email: users.email, displayName: users.displayName, role: users.role, createdAt: users.createdAt })
+      .select({ id: users.id, email: users.email, displayName: users.displayName, role: users.role, active: users.active, createdAt: users.createdAt })
       .from(users)
     return { users: rows.map((u) => ({ ...u, createdAt: u.createdAt.toISOString() })) }
   })
@@ -44,6 +44,24 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
       })
 
     return reply.code(201).send({ user })
+  })
+
+  fastify.patch('/api/admin/users/:userId', { preHandler: adminPreHandler }, async (request, reply) => {
+    const { userId } = request.params as { userId: string }
+    const body = request.body as { active?: boolean }
+    if (typeof body.active !== 'boolean') throw createError(400, 'BAD_REQUEST', 'active must be a boolean.')
+
+    const [existing] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, userId)).limit(1)
+    if (!existing) throw createError(404, 'USER_NOT_FOUND', 'User not found.')
+    if (existing.role === 'admin') throw createError(403, 'FORBIDDEN', 'Cannot deactivate admin users.')
+
+    const [updated] = await db
+      .update(users)
+      .set({ active: body.active, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning({ id: users.id, email: users.email, displayName: users.displayName, role: users.role, active: users.active })
+
+    return reply.send({ user: updated })
   })
 
   fastify.delete('/api/admin/users/:userId', { preHandler: adminPreHandler }, async (request, reply) => {

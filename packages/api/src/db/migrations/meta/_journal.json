@@ -15,6 +15,13 @@
       "when": 1780948775965,
       "tag": "0001_chubby_squirrel_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781026849472,
+      "tag": "0002_loving_shriek",
+      "breakpoints": true
     }
   ]
 }

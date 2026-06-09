@@ -1,6 +1,9 @@
 import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify'
 import jwt from 'jsonwebtoken'
 import fp from 'fastify-plugin'
+import { db } from '../db/index.js'
+import { users } from '../db/schema.js'
+import { eq } from 'drizzle-orm'
 import { config } from '../lib/config.js'
 import { createError } from '../lib/errors.js'
 
@@ -40,12 +43,22 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
     const token = request.cookies.auth_token
     if (!token) throw createError(401, 'UNAUTHORIZED', 'Authentication required.')
 
+    let payload: JwtPayload
     try {
-      const payload = jwt.verify(token, config.JWT_SECRET) as JwtPayload
-      request.user = payload
+      payload = jwt.verify(token, config.JWT_SECRET) as JwtPayload
     } catch {
       throw createError(401, 'TOKEN_EXPIRED', 'Session expired. Please log in again.')
     }
+
+    const [row] = await db
+      .select({ active: users.active })
+      .from(users)
+      .where(eq(users.id, payload.sub))
+      .limit(1)
+
+    if (!row || !row.active) throw createError(403, 'ACCOUNT_DEACTIVATED', 'This account has been deactivated.')
+
+    request.user = payload
   })
 
   fastify.decorate('requireRole', (role: 'admin' | 'organizer') => {

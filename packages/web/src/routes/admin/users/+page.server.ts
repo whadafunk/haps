@@ -5,7 +5,7 @@ import { fail } from '@sveltejs/kit'
 
 export const load: PageServerLoad = async ({ cookies, parent }) => {
   await parent()
-  const res = await serverGet<{ users: Array<{ id: string; email: string; displayName: string; role: string; createdAt: string }> }>('/admin/users', cookies)
+  const res = await serverGet<{ users: Array<{ id: string; email: string; displayName: string; role: string; active: boolean; createdAt: string }> }>('/admin/users', cookies)
   return { users: res.users }
 }
 
@@ -35,6 +35,20 @@ export const actions: Actions = {
       headers: { Cookie: buildCookieHeader(cookies) },
     })
     if (!res.ok) return fail(400, { error: 'Failed to delete user.' })
+    return { success: true }
+  },
+
+  toggleActive: async ({ request, cookies }) => {
+    const form = await request.formData()
+    const userId = form.get('userId') as string
+    const active = form.get('active') === 'true'
+
+    const res = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Cookie: buildCookieHeader(cookies) },
+      body: JSON.stringify({ active }),
+    })
+    if (!res.ok) return fail(400, { error: 'Failed to update user.' })
     return { success: true }
   },
 }
