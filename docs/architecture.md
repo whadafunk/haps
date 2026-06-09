@@ -2,15 +2,88 @@
 
 ## Product Philosophy
 
-**The app IS the organizer.** One instance, one brand, one organizer identity.
-No discovery layer, no public event listing by default, no cross-organizer
-network. When sold to a customer, they get their own instance, their own domain,
-their own branding. Their users never know another organization runs the same
-software. This is a white-label model, not a multi-tenant platform.
+**White-label, single-tenant by design.** One deployment serves one brand.
+When sold to a customer they get their own instance, their own domain, their own
+branding. Their guests never know another organisation runs the same software.
 
-Future multi-tenancy (Phase 4+) means separate deployments managed by a control
-plane — each tenant's data is physically isolated. Not shared-DB with a
-tenant_id on every row.
+This is a deliberate choice. Per-organizer branding within a shared deployment
+(light multi-tenancy) was considered and rejected: the branding guests actually
+care about is the event page itself, not the organiser account behind it.
+Per-event themes (a `theme` field on every event) deliver that customisation
+without the operational complexity of per-organiser config. If a client needs
+a truly isolated brand, they get a separate deployment.
+
+Future multi-tenancy (Phase 5+), if ever needed, means separate deployments
+managed by a control plane — each tenant's data is physically isolated.
+Never a shared DB with a `tenant_id` on every row.
+
+---
+
+## Three Interfaces
+
+The product has three distinct surfaces, each serving a different audience.
+
+### 1 — Admin interface (`/admin`)
+
+Accessed by users with `role = admin`. Manages the instance itself:
+
+- User management (create/deactivate organizer and member accounts)
+- Instance config: name, logo, primary colour, default event theme
+- SMTP settings (outbound email for edit links, blasts, reminders)
+- Storage settings (local volume vs S3-compatible)
+- Feature flags and rate-limit overrides
+
+There is typically one admin per deployment (the operator). The admin can also
+do everything an organiser can.
+
+### 2 — Organiser interface (`/dashboard`, `/new-event`, `/event/:slug/edit`)
+
+Accessed by users with `role = organizer` (or `admin`). Creates and manages
+events on this instance:
+
+- Create events: title, description, dates, location, cover image, theme
+- Receive the secret edit link at creation (shown on screen, emailed if SMTP
+  is configured, saved to `localStorage` as a fallback)
+- Edit all event fields, change status (draft → published → cancelled/archived)
+- View guest list with emails, remove RSVPs, delete comments
+- Send update blasts to confirmed attendees
+
+Multiple organisers can coexist on one instance (e.g. a team). They share the
+instance branding but each owns their own events and templates.
+The organiser dashboard filters to their events only.
+
+### 3 — Guest interface (`/event/:slug`, `/my-events`, `/login`, `/register`)
+
+No account required. Identity comes from a signed cookie (`vsid`) that
+persists across visits on the same device.
+
+**Invite link flow** (`/event/:slug?t={token}`):
+The attendee token in the URL is validated on first visit and written into the
+session. Subsequent visits to the same event on the same device don't need the
+token in the URL — the session carries it.
+
+**My Events** (`/my-events`):
+Lists all events the session has touched (RSVPed, commented, holds an edit
+token). Works without an account. The display name learned from the first RSVP
+pre-fills future forms.
+
+**Registration / login (Phase 2)**:
+Voluntary upgrade. When a guest registers or logs in, the current session's
+history (RSVPs, comments, event access) is merged into the account via an
+atomic identity-merge transaction. From that point the account works across
+devices — a new device just needs to log in.
+
+### Interface boundaries
+
+```
+Admin ──────────── instance config, user management
+Organiser ─────── event lifecycle, guest list, blasts
+Guest ──────────── view event, RSVP, comment, my-events
+                   (optionally upgrade to registered account)
+```
+
+All three surfaces use the same REST API (`/api/*`). SvelteKit SSR renders
+the guest-facing event pages for correct Open Graph previews.
 
 ---
 
