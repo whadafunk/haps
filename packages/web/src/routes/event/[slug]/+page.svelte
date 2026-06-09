@@ -21,8 +21,33 @@
   let comments = $state<Array<{ id: string; displayName: string; body: string; createdAt: string }>>([])
   let commentsLoaded = $state(false)
 
-  // Use $derived so event updates reactively when data changes after invalidateAll()
+  let guestList = $state<Array<{ id: string; displayName: string; status: string; headCount: number }>>([])
+  let guestListLoaded = $state(false)
+
   const event = $derived(data.event)
+
+  const THEMES: Record<string, Record<string, string>> = {
+    forest: {
+      '--accent': '#2d6e30', '--accent-hover': '#1f5022',
+      '--card-bg': '#e4efe0', '--border': '#9cbb9c', '--card-inner': '#d4e8d4',
+      '--page-bg': '#f2f7f0',
+    },
+    ocean: {
+      '--accent': '#1a5fa8', '--accent-hover': '#124480',
+      '--card-bg': '#dce8f6', '--border': '#9cb8d8', '--card-inner': '#ccdaf0',
+      '--page-bg': '#f0f4fa',
+    },
+    sunset: {
+      '--accent': '#c03828', '--accent-hover': '#9e2820',
+      '--card-bg': '#f4ddd8', '--border': '#d8a898', '--card-inner': '#ecd0c8',
+      '--page-bg': '#faf0ed',
+    },
+  }
+
+  function themeStyle(theme: string | null | undefined): string {
+    const vars = THEMES[theme ?? ''] ?? {}
+    return Object.entries(vars).map(([k, v]) => `${k}: ${v}`).join('; ')
+  }
 
   function formatDate(iso: string) {
     return new Date(iso).toLocaleDateString('en-US', {
@@ -47,6 +72,11 @@
         email: rsvpEmail || undefined,
       })
       await invalidateAll()
+      // Reload guest list after RSVP
+      if (event.showGuests) {
+        const res = await api.listRsvps(event.slug)
+        guestList = res.rsvps
+      }
     } catch (e: unknown) {
       rsvpError = e instanceof ApiError ? e.message : 'Failed to submit RSVP.'
     } finally {
@@ -78,11 +108,18 @@
     }
   }
 
-  // Load comments on mount
-  $effect(() => { loadComments() })
+  $effect(() => {
+    loadComments()
+    if (event.showGuests && !guestListLoaded) {
+      api.listRsvps(event.slug).then(res => {
+        guestList = res.rsvps
+        guestListLoaded = true
+      }).catch(() => { guestListLoaded = true })
+    }
+  })
 </script>
 
-<main class="event-page" data-theme={event.theme ?? 'default'}>
+<main class="event-page" data-theme={event.theme ?? 'default'} style={themeStyle(event.theme)}>
   {#if event.coverImageUrl}
     <div class="cover" style="background-image: url({event.coverImageUrl})"></div>
   {/if}
@@ -177,10 +214,28 @@
     {/if}
 
     <!-- Guest list -->
-    {#if event.showGuests && event.guestCount > 0}
+    {#if event.showGuests}
       <section class="section">
         <h2>Guests ({event.yesCount} going)</h2>
-        <p class="muted">View the full guest list after RSVPing.</p>
+        {#if guestListLoaded && guestList.filter(r => r.status === 'yes').length > 0}
+          <div class="guest-list">
+            {#each guestList.filter(r => r.status === 'yes') as guest (guest.id)}
+              <div class="guest-row">
+                <span class="guest-name">{guest.displayName}</span>
+                {#if guest.headCount > 1}
+                  <span class="guest-count">+{guest.headCount - 1}</span>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {:else if guestListLoaded}
+          <p class="muted">No confirmed guests yet.</p>
+        {:else}
+          <p class="muted">Loading…</p>
+        {/if}
+        {#if event.yesCount === 0 && event.maybeCount > 0}
+          <p class="muted">{event.maybeCount} tentative.</p>
+        {/if}
       </section>
     {/if}
 
@@ -230,9 +285,14 @@
 </main>
 
 <style>
-  .event-page { max-width: 680px; margin: 0 auto; padding: 0 1rem 4rem; }
+  .event-page {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 0 1rem 4rem;
+    background-color: var(--page-bg, transparent);
+    min-height: 100vh;
+  }
   .cover { height: 240px; background-size: cover; background-position: center; border-radius: 0 0 12px 12px; margin-bottom: 1.5rem; }
-  .content { }
   .event-header { margin-bottom: 1.5rem; }
   .status-badge { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 0.2rem 0.5rem; border-radius: 4px; background: #ede8e0; color: #4e453e; }
   .status-badge.status-published { background: #e8f4e4; color: #2a5e28; }
@@ -241,36 +301,40 @@
   .event-meta { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
   .meta-item { font-size: 0.9rem; color: #3d352e; }
   .cal-links { display: flex; gap: 1rem; flex-wrap: wrap; }
-  .cal-link { font-size: 0.8rem; color: #b05525; text-decoration: none; }
-  .cal-link:hover { color: #924418; }
+  .cal-link { font-size: 0.8rem; color: var(--accent, #b05525); text-decoration: none; }
+  .cal-link:hover { color: var(--accent-hover, #924418); }
   .description { margin-bottom: 1.5rem; white-space: pre-wrap; color: #3d352e; line-height: 1.6; }
-  .editor-banner { background: #f0ddd0; color: #7a3010; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; font-size: 0.875rem; }
-  .section { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+  .editor-banner { background: var(--card-bg, #f0e8da); color: #7a3010; border: 1px solid var(--border, #cfc3b0); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; font-size: 0.875rem; }
+  .editor-banner a { color: var(--accent, #b05525); text-decoration: none; font-weight: 600; }
+  .section { background: var(--card-bg, #f0e8da); border: 1px solid var(--border, #cfc3b0); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
   .section h2 { margin: 0 0 1rem; font-size: 1.1rem; color: #1a1510; }
   .my-rsvp { font-size: 0.9rem; color: #3d352e; margin-bottom: 1rem; }
   .rsvp-form { display: flex; flex-direction: column; gap: 0.75rem; }
   .rsvp-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-  .rsvp-btn { padding: 0.5rem 1rem; border-radius: 8px; border: 2px solid #cfc3b0; background: #f0e8da; font-size: 0.875rem; font-weight: 500; color: #3d352e; }
-  .rsvp-btn:hover { border-color: #c8bdb0; }
+  .rsvp-btn { padding: 0.5rem 1rem; border-radius: 8px; border: 2px solid var(--border, #cfc3b0); background: var(--card-bg, #f0e8da); font-size: 0.875rem; font-weight: 500; color: #3d352e; cursor: pointer; }
   .rsvp-btn.active.rsvp-yes { border-color: #5a8c55; background: #e8f4e4; color: #2a5e28; }
   .rsvp-btn.active.rsvp-maybe { border-color: #c4962d; background: #fef4e0; color: #7a5a1a; }
   .rsvp-btn.active.rsvp-no { border-color: #c46450; background: #f8e8e2; color: #7a2a1a; }
   label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; font-weight: 500; color: #3d352e; }
-  input, textarea { padding: 0.5rem 0.75rem; border: 1px solid #c8bdb0; border-radius: 8px; font-size: 1rem; font-family: inherit; background: #fff; color: #1a1510; }
+  input, textarea { padding: 0.5rem 0.75rem; border: 1px solid var(--border, #c8bdb0); border-radius: 8px; font-size: 1rem; font-family: inherit; background: #fff; color: #1a1510; }
   textarea { resize: vertical; }
-  input:focus, textarea:focus { outline: 2px solid #b05525; outline-offset: -1px; }
-  .submit-btn { background: #b05525; color: #fff; border: none; padding: 0.625rem; border-radius: 8px; font-size: 1rem; font-weight: 600; }
-  .submit-btn:hover:not(:disabled) { background: #924418; }
+  input:focus, textarea:focus { outline: 2px solid var(--accent, #b05525); outline-offset: -1px; }
+  .submit-btn { background: var(--accent, #b05525); color: #fff; border: none; padding: 0.625rem; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+  .submit-btn:hover:not(:disabled) { background: var(--accent-hover, #924418); }
   .submit-btn:disabled { opacity: 0.6; }
   .error-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
+  .guest-list { display: flex; flex-direction: column; gap: 0.375rem; }
+  .guest-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: var(--card-inner, #e8ddd0); border-radius: 8px; }
+  .guest-name { font-size: 0.9rem; color: #1a1510; font-weight: 500; }
+  .guest-count { font-size: 0.8rem; color: #6b6058; }
   .comments { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
-  .comment { background: #e8ddd0; border-radius: 8px; padding: 0.75rem; border: 1px solid #cfc3b0; }
+  .comment { background: var(--card-inner, #e8ddd0); border-radius: 8px; padding: 0.75rem; border: 1px solid var(--border, #cfc3b0); }
   .comment strong { font-size: 0.875rem; color: #1a1510; }
   .comment-time { font-size: 0.75rem; color: #9a8f86; margin-left: 0.5rem; }
   .comment p { margin: 0.25rem 0 0; font-size: 0.9rem; color: #3d352e; }
   .comment-form { display: flex; flex-direction: column; gap: 0.75rem; }
-  .comment-form button { background: #b05525; color: #fff; border: none; padding: 0.625rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; }
-  .comment-form button:hover:not(:disabled) { background: #924418; }
+  .comment-form button { background: var(--accent, #b05525); color: #fff; border: none; padding: 0.625rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+  .comment-form button:hover:not(:disabled) { background: var(--accent-hover, #924418); }
   .comment-form button:disabled { opacity: 0.6; }
   .muted { color: #6b6058; font-size: 0.875rem; }
   button { cursor: pointer; }

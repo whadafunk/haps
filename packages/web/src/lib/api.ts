@@ -105,8 +105,11 @@ export const api = {
   updateRsvp: (slug: string, rsvpId: string, body: Record<string, unknown>) =>
     apiFetch<{ rsvp: Rsvp }>(`/events/${slug}/rsvps/${rsvpId}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  deleteRsvp: (slug: string, rsvpId: string) =>
-    apiFetch<void>(`/events/${slug}/rsvps/${rsvpId}`, { method: 'DELETE' }),
+  deleteRsvp: (slug: string, rsvpId: string, editToken?: string) =>
+    apiFetch<void>(`/events/${slug}/rsvps/${rsvpId}`, {
+      method: 'DELETE',
+      headers: editToken ? { 'x-edit-token': editToken } : {},
+    }),
 
   listRsvps: (slug: string) =>
     apiFetch<{ rsvps: Array<Rsvp & { email?: string }> }>(`/events/${slug}/rsvps`),
@@ -118,8 +121,11 @@ export const api = {
   postComment: (slug: string, body: { displayName: string; body: string }) =>
     apiFetch<{ comment: Comment }>(`/events/${slug}/comments`, { method: 'POST', body: JSON.stringify(body) }),
 
-  deleteComment: (slug: string, commentId: string) =>
-    apiFetch<void>(`/events/${slug}/comments/${commentId}`, { method: 'DELETE' }),
+  deleteComment: (slug: string, commentId: string, editToken?: string) =>
+    apiFetch<void>(`/events/${slug}/comments/${commentId}`, {
+      method: 'DELETE',
+      headers: editToken ? { 'x-edit-token': editToken } : {},
+    }),
 
   // Session
   getSession: () =>

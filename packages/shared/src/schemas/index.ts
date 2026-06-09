@@ -22,8 +22,20 @@ export const CreateEventSchema = z.object({
   expiresAt: z.string().datetime().optional(),
 }).strict()
 
-export const UpdateEventSchema = CreateEventSchema.partial().extend({
+export const UpdateEventSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  description: z.string().max(10000).nullish(),
+  location: z.string().max(500).nullish(),
+  startsAt: z.string().datetime().optional(),
+  endsAt: z.string().datetime().nullish(),
+  timezone: z.string().min(1).max(100).optional(),
+  theme: z.string().max(50).nullish(),
   status: z.enum(['draft', 'published', 'cancelled', 'archived']).optional(),
+  showGuests: z.boolean().optional(),
+  allowComments: z.boolean().optional(),
+  maxCapacity: z.number().int().positive().nullish(),
+  rsvpDeadline: z.string().datetime().nullish(),
+  expiresAt: z.string().datetime().nullish(),
 }).strict()
 
 // RSVPs

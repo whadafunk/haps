@@ -3,6 +3,7 @@
   import { api, ApiError } from '$lib/api'
   import { invalidateAll } from '$app/navigation'
   import { goto } from '$app/navigation'
+  import { onMount } from 'svelte'
 
   let { data } = $props<{ data: PageData }>()
 
@@ -11,6 +12,23 @@
   let saveError = $state('')
   let saveSuccess = $state(false)
   let deleting = $state(false)
+
+  let comments = $state<Array<{ id: string; displayName: string; body: string; createdAt: string }>>([])
+  let commentsLoaded = $state(false)
+
+  let editLink = $state('')
+
+  onMount(() => {
+    try {
+      const stored = localStorage.getItem(`haps:editLink:${event.slug}`)
+      if (stored) editLink = stored
+    } catch { /* storage disabled */ }
+
+    api.listComments(event.slug).then(res => {
+      comments = res.comments
+      commentsLoaded = true
+    }).catch(() => { commentsLoaded = true })
+  })
 
   async function saveEvent() {
     saving = true
@@ -24,9 +42,10 @@
         startsAt: event.startsAt,
         endsAt: event.endsAt ?? undefined,
         status: event.status,
+        theme: event.theme ?? undefined,
         showGuests: event.showGuests,
         allowComments: event.allowComments,
-      }, data.editToken)
+      })
       saveSuccess = true
     } catch (e: unknown) {
       saveError = e instanceof ApiError ? e.message : 'Failed to save.'
@@ -39,7 +58,7 @@
     if (!confirm('Delete this event? This cannot be undone.')) return
     deleting = true
     try {
-      await api.deleteEvent(event.slug, data.editToken)
+      await api.deleteEvent(event.slug)
       goto('/')
     } catch (e: unknown) {
       saveError = e instanceof ApiError ? e.message : 'Failed to delete.'
@@ -54,6 +73,14 @@
       await invalidateAll()
     } catch { /**/ }
   }
+
+  async function deleteComment(commentId: string) {
+    if (!confirm('Delete this comment?')) return
+    try {
+      await api.deleteComment(event.slug, commentId)
+      comments = comments.filter(c => c.id !== commentId)
+    } catch { /**/ }
+  }
 </script>
 
 <main class="edit-page">
@@ -61,6 +88,12 @@
     <a href="/event/{event.slug}">← Back to event</a>
     <h1>Edit: {event.title}</h1>
   </div>
+
+  {#if editLink}
+    <div class="edit-link-hint">
+      Edit link: <code>{editLink}</code>
+    </div>
+  {/if}
 
   <div class="grid">
     <section class="card">
@@ -78,6 +111,15 @@
         <label>Description <textarea bind:value={event.description} rows="4"></textarea></label>
         <label>Location <input type="text" bind:value={event.location} /></label>
         <label>Starts at <input type="datetime-local" value={event.startsAt?.slice(0, 16)} oninput={(e) => { event.startsAt = (e.target as HTMLInputElement).value + ':00Z' }} /></label>
+        <label>
+          Theme
+          <select bind:value={event.theme}>
+            <option value="">Default (warm)</option>
+            <option value="forest">Forest (green)</option>
+            <option value="ocean">Ocean (blue)</option>
+            <option value="sunset">Sunset (red)</option>
+          </select>
+        </label>
         <label>
           Status
           <select bind:value={event.status}>
@@ -122,18 +164,43 @@
         </div>
       {/if}
     </section>
+
+    <section class="card wide">
+      <h2>Comments ({comments.length})</h2>
+      {#if !commentsLoaded}
+        <p class="muted">Loading…</p>
+      {:else if comments.length === 0}
+        <p class="muted">No comments yet.</p>
+      {:else}
+        <div class="comment-list">
+          {#each comments as comment (comment.id)}
+            <div class="comment-row">
+              <div class="comment-meta">
+                <strong>{comment.displayName}</strong>
+                <span class="comment-time">{new Date(comment.createdAt).toLocaleDateString()}</span>
+              </div>
+              <p class="comment-body">{comment.body}</p>
+              <button class="btn-remove" onclick={() => deleteComment(comment.id)}>Delete</button>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </section>
   </div>
 </main>
 
 <style>
   .edit-page { max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
-  .header { margin-bottom: 1.5rem; }
+  .header { margin-bottom: 1rem; }
   .header a { font-size: 0.875rem; color: #6b6058; text-decoration: none; }
   .header a:hover { color: #b05525; }
   h1 { margin: 0.5rem 0 0; font-size: 1.5rem; color: #1a1510; }
+  .edit-link-hint { font-size: 0.8rem; color: #6b6058; margin-bottom: 1.25rem; background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 8px; padding: 0.625rem 0.875rem; word-break: break-all; }
+  .edit-link-hint code { color: #3d352e; }
   .grid { display: grid; grid-template-columns: 1fr; gap: 1rem; }
   @media (min-width: 768px) { .grid { grid-template-columns: 1fr 1fr; } }
   .card { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1.25rem; }
+  .card.wide { grid-column: 1 / -1; }
   h2 { margin: 0 0 1rem; font-size: 1.1rem; color: #1a1510; }
   .form { display: flex; flex-direction: column; gap: 0.75rem; }
   label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; font-weight: 500; color: #3d352e; }
@@ -152,13 +219,19 @@
   .error-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
   .success-banner { background: #edf4ec; color: #2d5a2a; border: 1px solid #b8d9b4; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
   .rsvp-list { display: flex; flex-direction: column; gap: 0.5rem; }
-  .rsvp-row { display: flex; align-items: flex-start; justify-content: space-between; padding: 0.75rem; background: #e8ddd0; border-radius: 8px; border: 1px solid #cfc3b0; }
+  .rsvp-row { display: flex; align-items: flex-start; justify-content: space-between; padding: 0.75rem; background: #e8ddd0; border-radius: 8px; border: 1px solid #cfc3b0; gap: 0.5rem; }
   .badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.15rem 0.4rem; border-radius: 4px; margin-left: 0.375rem; background: #ede8e0; color: #4e453e; }
   .badge-yes { background: #e8f4e4; color: #2a5e28; }
   .badge-maybe { background: #fef4e0; color: #7a5a1a; }
   .badge-no { background: #ede8e0; color: #4e453e; }
   .note { margin: 0.25rem 0 0; font-size: 0.8rem; color: #6b6058; }
-  .btn-remove { background: none; border: none; color: #9a8f86; font-size: 0.75rem; cursor: pointer; padding: 0; }
+  .comment-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .comment-row { display: flex; flex-direction: column; padding: 0.75rem; background: #e8ddd0; border-radius: 8px; border: 1px solid #cfc3b0; gap: 0.25rem; }
+  .comment-meta { display: flex; align-items: baseline; gap: 0.5rem; }
+  .comment-meta strong { font-size: 0.875rem; color: #1a1510; }
+  .comment-time { font-size: 0.75rem; color: #9a8f86; }
+  .comment-body { margin: 0; font-size: 0.875rem; color: #3d352e; }
+  .btn-remove { background: none; border: none; color: #9a8f86; font-size: 0.75rem; cursor: pointer; padding: 0; align-self: flex-end; margin-top: 0.25rem; }
   .btn-remove:hover { color: #8b3016; }
   .muted { color: #6b6058; font-size: 0.875rem; }
 </style>

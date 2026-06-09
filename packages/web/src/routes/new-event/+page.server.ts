@@ -16,6 +16,7 @@ export const actions: Actions = {
     const startsAt = data.get('startsAt')?.toString() ?? ''
     const endsAt = data.get('endsAt')?.toString() || undefined
     const timezone = data.get('timezone')?.toString() ?? 'UTC'
+    const theme = data.get('theme')?.toString() || undefined
 
     if (!title || !startsAt) return fail(400, { error: 'Title and start date are required.' })
 
@@ -27,10 +28,11 @@ export const actions: Actions = {
           startsAt: new Date(startsAt).toISOString(),
           endsAt: endsAt ? new Date(endsAt).toISOString() : undefined,
           timezone,
+          theme,
         },
         cookies,
       )
-      redirect(302, `/event/${res.event.slug}/edit/${res.editToken}`)
+      redirect(302, `/event/${res.event.slug}/edit/${res.editToken}?created=1`)
     } catch (e: unknown) {
       if (e instanceof ServerApiError) return fail(e.statusCode, { error: e.message })
       throw e

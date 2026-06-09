@@ -53,6 +53,15 @@
           <option value="Australia/Sydney">Sydney (AEST)</option>
         </select>
       </label>
+      <label>
+        Theme
+        <select name="theme">
+          <option value="">Default (warm)</option>
+          <option value="forest">Forest (green)</option>
+          <option value="ocean">Ocean (blue)</option>
+          <option value="sunset">Sunset (red)</option>
+        </select>
+      </label>
       <button type="submit" class="btn-primary" disabled={loading}>
         {loading ? 'Creating…' : 'Create event'}
       </button>

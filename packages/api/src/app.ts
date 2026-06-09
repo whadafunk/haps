@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import cookie from '@fastify/cookie'
 import rateLimit from '@fastify/rate-limit'
 import multipart from '@fastify/multipart'
+import cron from 'node-cron'
 import { config } from './lib/config.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import sessionPlugin from './middleware/session.js'
@@ -15,6 +16,9 @@ import sessionRoutes from './routes/session.js'
 import adminRoutes from './routes/admin.js'
 import setupRoutes from './routes/setup.js'
 import { migrate } from './db/migrate.js'
+import { db } from './db/index.js'
+import { events as eventsTable } from './db/schema.js'
+import { and, isNotNull, lt } from 'drizzle-orm'
 
 export async function buildApp() {
   const app = Fastify({
@@ -52,6 +56,16 @@ export async function buildApp() {
   await app.register(adminRoutes)
 
   app.get('/api/health', async () => ({ status: 'ok' }))
+
+  // Expiry job: every hour delete events past their expiry date
+  cron.schedule('0 * * * *', async () => {
+    try {
+      await db.delete(eventsTable).where(and(isNotNull(eventsTable.expiresAt), lt(eventsTable.expiresAt, new Date())))
+      app.log.info('Expiry job: expired events cleaned up')
+    } catch (err) {
+      app.log.error(err, 'Expiry job failed')
+    }
+  })
 
   return app
 }
