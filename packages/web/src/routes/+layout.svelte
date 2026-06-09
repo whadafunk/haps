@@ -5,14 +5,7 @@
 </script>
 
 <svelte:head>
-  <title>{data.meta?.title ?? 'Haps'}</title>
-  {#if data.meta}
-    <meta property="og:title" content={data.meta.title} />
-    <meta property="og:description" content={data.meta.description ?? ''} />
-    <meta property="og:image" content={data.meta.image ?? ''} />
-    <meta property="og:url" content={data.meta.url ?? ''} />
-    <meta name="twitter:card" content="summary_large_image" />
-  {/if}
+  <title>Haps</title>
 </svelte:head>
 
 <nav class="nav">
@@ -34,7 +27,7 @@
     color: #1a1510;
     background: #e8ddd0;
   }
-  :global(a) { color: #b05525; }
+  :global(a) { color: #924418; }
   :global(button) { cursor: pointer; }
 
   .nav {

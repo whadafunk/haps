@@ -70,10 +70,10 @@ RSVPs, and manage the guest list from any device.
 - [ ] First-run setup: if no admin exists, redirect to setup wizard
 
 **Quality bar for Phase 1 completion**
-- [ ] All routes have integration tests (Vitest + supertest)
-- [ ] Mobile layout passes on 375px viewport
-- [ ] Lighthouse score ≥ 90 on event page (SSR)
-- [ ] `docker compose up` produces a working app from a clean machine
+- [x] All routes have integration tests (Vitest + supertest) — 68/68 passing
+- [x] Mobile layout passes on 375px viewport
+- [x] Lighthouse score ≥ 90 on event page (SSR) — performance 99 · accessibility 100 · best-practices 100 · SEO 100
+- [x] `docker compose up` produces a working app from a clean machine
 
 ---
 
@@ -109,14 +109,37 @@ Voluntary registration, cross-device persistence, pre-event features.
 - [ ] SMS reminders via Twilio (optional; off unless TWILIO_* env vars set)
 - [ ] Web Push notifications (no external service required; browser prompt
       on My Events page)
-- [ ] Reminder jobs: 24h before event, send reminder to all `yes` RSVPs
-      via enabled channels
+- [ ] Reminder jobs: 7 days, 2 days, and 1 day before the event; sent to
+      all `yes`/`maybe` RSVPs via all enabled channels (email, SMS)
 
 **Organizer tools**
 - [ ] Event duplication → optionally save as a reusable template
 - [ ] Template library: organizer picks a template when creating an event
 - [ ] Check-in QR code: each RSVP generates a unique QR; host scans at
       the door; marks `checked_in = true`
+
+**People directory (guest history)**
+- [ ] Organizer view of all guests across all events on this instance
+- [ ] Per-person profile: display name, email, phone (if provided),
+      first seen date, and a list of every event they RSVPed to with their
+      response (yes / maybe / no) and attendance status
+- [ ] Guest identity: a person is identified by their visitor session
+      (cookie) on first event visit; if they later register, their history
+      merges into their account. Unregistered guests are identifiable by
+      display name + email if provided.
+- [ ] Design note: a visitor session is only created when a user first
+      loads an event invitation link — not on a bare visit to the home page
+      or marketing pages. This keeps anonymous browsing truly anonymous.
+
+**Invitations**
+- [ ] Organizer composes an invitation: selects recipients from an address
+      book (name + email and/or phone), writes a personal message
+- [ ] System sends the event invite link + attendee token via email and/or
+      SMS to each recipient
+- [ ] Delivery tracking per invitation per channel: sent, delivered, failed,
+      bounced — visible to the organizer on the event guest list
+- [ ] Address book: stored per-organizer; auto-populated from past event
+      guest emails/phones (with guest opt-in)
 
 ---
 

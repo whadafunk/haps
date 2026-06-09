@@ -12,6 +12,7 @@ import authRoutes from './routes/auth.js'
 import eventsRoutes from './routes/events.js'
 import rsvpsRoutes from './routes/rsvps.js'
 import commentsRoutes from './routes/comments.js'
+import messagesRoutes from './routes/messages.js'
 import sessionRoutes from './routes/session.js'
 import adminRoutes from './routes/admin.js'
 import setupRoutes from './routes/setup.js'
@@ -20,6 +21,7 @@ import { migrate } from './db/migrate.js'
 import { db } from './db/index.js'
 import { events as eventsTable } from './db/schema.js'
 import { and, isNotNull, lt } from 'drizzle-orm'
+import { runDeliveryWorker } from './jobs/deliveryWorker.js'
 
 export async function buildApp() {
   const app = Fastify({
@@ -53,6 +55,7 @@ export async function buildApp() {
   await app.register(eventsRoutes)
   await app.register(rsvpsRoutes)
   await app.register(commentsRoutes)
+  await app.register(messagesRoutes)
   await app.register(sessionRoutes)
   await app.register(adminRoutes)
   await app.register(uploadsRoutes)
@@ -66,6 +69,15 @@ export async function buildApp() {
       app.log.info('Expiry job: expired events cleaned up')
     } catch (err) {
       app.log.error(err, 'Expiry job failed')
+    }
+  })
+
+  // Delivery worker: every 2 minutes process pending email/SMS delivery jobs
+  cron.schedule('*/2 * * * *', async () => {
+    try {
+      await runDeliveryWorker(app.log)
+    } catch (err) {
+      app.log.error(err, 'Delivery worker failed')
     }
   })
 

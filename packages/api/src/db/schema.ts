@@ -100,6 +100,36 @@ export const instanceConfig = pgTable('instance_config', {
   updatedAt:    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+export const eventMessages = pgTable('event_messages', {
+  id:          uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  eventId:     uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  sessionId:   uuid('session_id').references(() => visitorSessions.id, { onDelete: 'set null' }),
+  userId:      uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  displayName: text('display_name').notNull(),
+  subject:     text('subject'), // only set for type='blast'
+  body:        text('body').notNull(),
+  type:        text('type').notNull().default('message'), // 'message' | 'blast' | 'system'
+  deletedAt:   timestamp('deleted_at', { withTimezone: true }),
+  createdAt:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  eventCreatedIdx: index('event_messages_event_created_idx').on(t.eventId, t.createdAt).where(sql`${t.deletedAt} is null`),
+}))
+
+export const deliveryJobs = pgTable('delivery_jobs', {
+  id:             uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  eventMessageId: uuid('event_message_id').notNull().references(() => eventMessages.id, { onDelete: 'cascade' }),
+  channel:        text('channel').notNull(), // 'email' | 'sms'
+  recipientEmail: text('recipient_email'),
+  recipientPhone: text('recipient_phone'),
+  recipientName:  text('recipient_name'),
+  status:         text('status').notNull().default('pending'), // 'pending' | 'sent' | 'failed'
+  attempts:       integer('attempts').notNull().default(0),
+  lastAttemptAt:  timestamp('last_attempt_at', { withTimezone: true }),
+  createdAt:      timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  pendingIdx: index('delivery_jobs_pending_idx').on(t.status, t.createdAt).where(sql`${t.status} = 'pending'`),
+}))
+
 export const comments = pgTable('comments', {
   id:          uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   eventId:     uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),

@@ -92,9 +92,15 @@ export const CreateUserSchema = z.object({
   role: z.enum(['organizer', 'member']),
 }).strict()
 
-// Blast
+// Event messages (in-app feed, posted by any yes/maybe RSVP or organizer)
+export const CreateEventMessageSchema = z.object({
+  displayName: z.string().min(1).max(200),
+  body: z.string().min(1).max(5000),
+}).strict()
+
+// Blast (organizer only; always in-app + optionally email/sms)
 export const BlastSchema = z.object({
   subject: z.string().min(1).max(200),
   body: z.string().min(1).max(10000),
-  channels: z.array(z.enum(['email', 'sms', 'push'])).min(1),
+  channels: z.array(z.enum(['email', 'sms'])).default([]),
 }).strict()

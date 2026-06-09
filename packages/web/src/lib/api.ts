@@ -138,6 +138,26 @@ export const api = {
       headers: editToken ? { 'x-edit-token': editToken } : {},
     }),
 
+  // Messages
+  listMessages: (slug: string) =>
+    apiFetch<{ messages: Array<{ id: string; displayName: string; subject: string | null; body: string; type: string; createdAt: string }> }>(`/events/${slug}/messages`),
+
+  postMessage: (slug: string, body: { displayName: string; body: string }) =>
+    apiFetch<{ message: { id: string; displayName: string; subject: string | null; body: string; type: string; createdAt: string } }>(`/events/${slug}/messages`, { method: 'POST', body: JSON.stringify(body) }),
+
+  deleteMessage: (slug: string, messageId: string, editToken?: string) =>
+    apiFetch<void>(`/events/${slug}/messages/${messageId}`, {
+      method: 'DELETE',
+      headers: editToken ? { 'x-edit-token': editToken } : {},
+    }),
+
+  sendBlast: (slug: string, body: { subject: string; body: string; channels: string[] }, editToken?: string) =>
+    apiFetch<{ queued: number }>(`/events/${slug}/blast`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: editToken ? { 'x-edit-token': editToken } : {},
+    }),
+
   // Session
   getSession: () =>
     apiFetch<{ session: { displayName: string | null; email: string | null }; events: Array<{ slug: string; title: string; startsAt: string; myStatus: string | null; isEditor: boolean }> }>('/session/me'),

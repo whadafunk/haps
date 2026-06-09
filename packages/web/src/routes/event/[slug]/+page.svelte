@@ -18,6 +18,14 @@
   let commentLoading = $state(false)
   let commentError = $state('')
 
+  type EventMessage = { id: string; displayName: string; subject: string | null; body: string; type: string; createdAt: string }
+  let messages = $state<EventMessage[]>([])
+  let messagesLoaded = $state(false)
+  let messageBody = $state('')
+  let messageName = $state('')
+  let messageLoading = $state(false)
+  let messageError = $state('')
+
   let comments = $state<Array<{ id: string; displayName: string; body: string; createdAt: string }>>([])
   let commentsLoaded = $state(false)
 
@@ -108,8 +116,33 @@
     }
   }
 
+  async function loadMessages() {
+    if (messagesLoaded) return
+    try {
+      const res = await api.listMessages(event.slug)
+      messages = res.messages
+      messagesLoaded = true
+    } catch { /**/ }
+  }
+
+  async function postMessage() {
+    if (!messageBody || !messageName) { messageError = 'Name and message are required.'; return }
+    messageLoading = true
+    messageError = ''
+    try {
+      const res = await api.postMessage(event.slug, { displayName: messageName, body: messageBody })
+      messages = [...messages, res.message]
+      messageBody = ''
+    } catch (e: unknown) {
+      messageError = e instanceof ApiError ? e.message : 'Failed to post message.'
+    } finally {
+      messageLoading = false
+    }
+  }
+
   $effect(() => {
     loadComments()
+    loadMessages()
     if (event.showGuests && !guestListLoaded) {
       api.listRsvps(event.slug).then(res => {
         guestList = res.rsvps
@@ -118,6 +151,16 @@
     }
   })
 </script>
+
+<svelte:head>
+  <title>{data.meta.title} — Haps</title>
+  <meta name="description" content={data.meta.description} />
+  <meta property="og:title" content={data.meta.title} />
+  <meta property="og:description" content={data.meta.description} />
+  <meta property="og:image" content={data.meta.image} />
+  <meta property="og:url" content={data.meta.url} />
+  <meta name="twitter:card" content="summary_large_image" />
+</svelte:head>
 
 <main class="event-page" data-theme={event.theme ?? 'default'} style={themeStyle(event.theme)}>
   {#if event.coverImageUrl}
@@ -239,6 +282,51 @@
       </section>
     {/if}
 
+    <!-- Event channel (messages + blasts) -->
+    <section class="section">
+      <h2>Updates</h2>
+
+      {#if messagesLoaded && messages.length > 0}
+        <div class="messages">
+          {#each messages as msg (msg.id)}
+            <div class="message message-{msg.type}">
+              {#if msg.type === 'blast' && msg.subject}
+                <div class="message-subject">{msg.subject}</div>
+              {/if}
+              <p class="message-body">{msg.body}</p>
+              <div class="message-meta">
+                <span class="message-author">{msg.displayName}</span>
+                <span class="message-time">{new Date(msg.createdAt).toLocaleDateString()}</span>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {:else if messagesLoaded}
+        <p class="muted">No updates yet.</p>
+      {:else}
+        <p class="muted">Loading…</p>
+      {/if}
+
+      {#if event.status === 'published' && (data.myRsvp?.status === 'yes' || data.myRsvp?.status === 'maybe' || data.isEditor)}
+        {#if messageError}
+          <div class="error-banner">{messageError}</div>
+        {/if}
+        <div class="message-form">
+          <label>
+            Your name
+            <input type="text" bind:value={messageName} placeholder="Name" />
+          </label>
+          <label>
+            Message
+            <textarea bind:value={messageBody} rows="2" placeholder="Write a message…"></textarea>
+          </label>
+          <button onclick={postMessage} disabled={messageLoading}>
+            {messageLoading ? 'Posting…' : 'Post message'}
+          </button>
+        </div>
+      {/if}
+    </section>
+
     <!-- Comments -->
     {#if event.allowComments}
       <section class="section">
@@ -301,8 +389,8 @@
   .event-meta { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
   .meta-item { font-size: 0.9rem; color: #3d352e; }
   .cal-links { display: flex; gap: 1rem; flex-wrap: wrap; }
-  .cal-link { font-size: 0.8rem; color: var(--accent, #b05525); text-decoration: none; }
-  .cal-link:hover { color: var(--accent-hover, #924418); }
+  .cal-link { font-size: 0.8rem; color: #924418; text-decoration: none; }
+  .cal-link:hover { color: #6d3210; }
   .description { margin-bottom: 1.5rem; white-space: pre-wrap; color: #3d352e; line-height: 1.6; }
   .editor-banner { background: var(--card-bg, #f0e8da); color: #7a3010; border: 1px solid var(--border, #cfc3b0); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; font-size: 0.875rem; }
   .editor-banner a { color: var(--accent, #b05525); text-decoration: none; font-weight: 600; }
@@ -330,12 +418,24 @@
   .comments { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
   .comment { background: var(--card-inner, #e8ddd0); border-radius: 8px; padding: 0.75rem; border: 1px solid var(--border, #cfc3b0); }
   .comment strong { font-size: 0.875rem; color: #1a1510; }
-  .comment-time { font-size: 0.75rem; color: #9a8f86; margin-left: 0.5rem; }
+  .comment-time { font-size: 0.75rem; color: #6b6058; margin-left: 0.5rem; }
   .comment p { margin: 0.25rem 0 0; font-size: 0.9rem; color: #3d352e; }
   .comment-form { display: flex; flex-direction: column; gap: 0.75rem; }
   .comment-form button { background: var(--accent, #b05525); color: #fff; border: none; padding: 0.625rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
   .comment-form button:hover:not(:disabled) { background: var(--accent-hover, #924418); }
   .comment-form button:disabled { opacity: 0.6; }
+  .messages { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+  .message { border-radius: 8px; padding: 0.75rem; border: 1px solid var(--border, #cfc3b0); background: var(--card-inner, #e8ddd0); }
+  .message-blast { border-color: var(--accent, #b05525); background: var(--card-bg, #f0e8da); }
+  .message-subject { font-weight: 700; font-size: 0.9rem; color: #1a1510; margin-bottom: 0.25rem; }
+  .message-body { margin: 0 0 0.375rem; font-size: 0.9rem; color: #3d352e; white-space: pre-wrap; }
+  .message-meta { display: flex; gap: 0.5rem; align-items: baseline; }
+  .message-author { font-size: 0.8rem; font-weight: 500; color: #1a1510; }
+  .message-time { font-size: 0.75rem; color: #9a8f86; }
+  .message-form { display: flex; flex-direction: column; gap: 0.75rem; }
+  .message-form button { background: var(--accent, #b05525); color: #fff; border: none; padding: 0.625rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+  .message-form button:hover:not(:disabled) { background: var(--accent-hover, #924418); }
+  .message-form button:disabled { opacity: 0.6; }
   .muted { color: #6b6058; font-size: 0.875rem; }
   button { cursor: pointer; }
 </style>

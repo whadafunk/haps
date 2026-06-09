@@ -20,6 +20,14 @@
   let comments = $state<Array<{ id: string; displayName: string; body: string; createdAt: string }>>([])
   let commentsLoaded = $state(false)
 
+  let blastSubject = $state('')
+  let blastBody = $state('')
+  let blastEmail = $state(true)
+  let blastSms = $state(false)
+  let blastLoading = $state(false)
+  let blastError = $state('')
+  let blastSuccess = $state('')
+
   let coverUploading = $state(false)
   let coverError = $state('')
   let coverPreview = $state<string | null>(event.coverImageUrl ?? null)
@@ -114,6 +122,28 @@
       await api.deleteComment(event.slug, commentId, data.editToken)
       comments = comments.filter(c => c.id !== commentId)
     } catch { /**/ }
+  }
+
+  async function sendBlast() {
+    if (!blastSubject || !blastBody) { blastError = 'Subject and message are required.'; return }
+    const channels: string[] = []
+    if (blastEmail) channels.push('email')
+    if (blastSms) channels.push('sms')
+    blastLoading = true
+    blastError = ''
+    blastSuccess = ''
+    try {
+      const res = await api.sendBlast(event.slug, { subject: blastSubject, body: blastBody, channels }, data.editToken)
+      blastSuccess = channels.length > 0
+        ? `Blast posted. ${res.queued} delivery job${res.queued !== 1 ? 's' : ''} queued.`
+        : 'Blast posted to event channel.'
+      blastSubject = ''
+      blastBody = ''
+    } catch (e: unknown) {
+      blastError = e instanceof ApiError ? e.message : 'Failed to send blast.'
+    } finally {
+      blastLoading = false
+    }
   }
 </script>
 
@@ -246,6 +276,32 @@
           {/each}
         </div>
       {/if}
+    </section>
+
+    <section class="card wide">
+      <h2>Send blast</h2>
+      <p class="muted">Post a message to the event channel. Optionally deliver it to guests via email or SMS.</p>
+
+      {#if blastError}
+        <div class="error-banner">{blastError}</div>
+      {/if}
+      {#if blastSuccess}
+        <div class="success-banner">{blastSuccess}</div>
+      {/if}
+
+      <div class="form">
+        <label>Subject <input type="text" bind:value={blastSubject} placeholder="Event update" /></label>
+        <label>Message <textarea bind:value={blastBody} rows="4" placeholder="Write your update…"></textarea></label>
+        <div class="checkboxes">
+          <label class="checkbox"><input type="checkbox" bind:checked={blastEmail} /> Send via email (to yes RSVPs with email)</label>
+          <label class="checkbox"><input type="checkbox" bind:checked={blastSms} /> Send via SMS (Phase 2 — requires Twilio)</label>
+        </div>
+        <div class="form-actions">
+          <button onclick={sendBlast} disabled={blastLoading} class="btn-primary">
+            {blastLoading ? 'Sending…' : 'Send blast'}
+          </button>
+        </div>
+      </div>
     </section>
   </div>
 </main>
