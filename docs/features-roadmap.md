@@ -1,0 +1,161 @@
+# Features & Roadmap
+
+## Phase 0 — Skeleton (½ day)
+
+Project scaffolding, nothing user-facing.
+
+- [ ] pnpm monorepo with `packages/api`, `packages/web`, `packages/shared`
+- [ ] TypeScript configured in all three packages with shared `tsconfig.base.json`
+- [ ] Fastify skeleton with `/health` endpoint
+- [ ] SvelteKit skeleton with a single placeholder route
+- [ ] Drizzle config pointing to Postgres
+- [ ] `docker-compose.yml` with Postgres, API, Web, Caddy
+- [ ] `.env.example` with all required vars documented
+- [ ] ESLint + Prettier configured across workspaces
+- [ ] GitHub Actions (or equivalent): lint, typecheck, test on push
+
+---
+
+## Phase 1 — Core MVP
+
+The first shippable product. A host can create an event, share a link, collect
+RSVPs, and manage the guest list from any device.
+
+**Event management**
+- [ ] Organizer creates event: title, description (markdown), start/end datetime
+      + timezone, location (free text), cover image upload, theme selector
+- [ ] Event has a public `slug` and a secret `editToken`
+- [ ] Host receives edit link at creation (shown on screen + emailed if SMTP
+      configured); edit link persists in a `localStorage` fallback + cookie
+- [ ] Host can edit any event field via the edit link
+- [ ] Host can delete or archive an event via the edit link
+- [ ] Event status: `draft` (not yet shared) → `published` → `cancelled` / `archived`
+- [ ] Configurable auto-expiry: delete event N days after end date
+
+**Public event page (SSR required)**
+- [ ] Renders event details, cover image, themed background
+- [ ] Open Graph tags: og:title, og:description, og:image (rendered server-side)
+- [ ] `.ics` download link
+- [ ] "Add to Google Calendar" link
+
+**RSVP**
+- [ ] Guest submits RSVP: display name, status (yes / maybe / no), optional
+      email, head count, optional note
+- [ ] One RSVP per visitor session per event (update in place on resubmit)
+- [ ] Guest list visible on event page (host can toggle visibility per event)
+- [ ] Host can remove any RSVP via edit link
+
+**Comments**
+- [ ] Guest posts a comment with display name + text
+- [ ] Host can delete any comment via edit link
+- [ ] Comments can be disabled per event
+
+**Cookie-based visitor identity**
+- [ ] On first visit, create a `visitor_session` and set a signed httpOnly cookie
+- [ ] "My events" page at `/my-events`: shows all events linked to the session
+      (events where the session has RSVPed, commented, or holds an edit token)
+- [ ] Session carries a `display_name` learned from the guest's first RSVP
+      (pre-fills name on subsequent RSVPs)
+
+**Organizer tools**
+- [ ] Organizer login (email + password → JWT stored in httpOnly cookie)
+- [ ] Organizer dashboard: list all events, status, RSVP count
+- [ ] Update blast: organizer sends a message to all `yes` RSVPs via email
+      (requires SMTP; degrades gracefully if SMTP not configured)
+
+**Admin config**
+- [ ] Admin login (same flow as organizer; role = `admin`)
+- [ ] Config page: instance name, logo, default theme, SMTP settings,
+      SMS settings, storage settings, feature flags
+- [ ] First-run setup: if no admin exists, redirect to setup wizard
+
+**Quality bar for Phase 1 completion**
+- [ ] All routes have integration tests (Vitest + supertest)
+- [ ] Mobile layout passes on 375px viewport
+- [ ] Lighthouse score ≥ 90 on event page (SSR)
+- [ ] `docker compose up` produces a working app from a clean machine
+
+---
+
+## Phase 2 — Auth & Engagement
+
+Voluntary registration, cross-device persistence, pre-event features.
+
+**Registration & identity**
+- [ ] User registration: email + password → creates `users` record with
+      `role = member`
+- [ ] Identity merge: on registration, all prior session history (RSVPs,
+      comments, event access) is claimed under the new account
+- [ ] Login links the new device's session cookie to the existing account
+- [ ] Email-based cross-device recovery: guest enters email → gets a magic
+      link → new device session is linked to their account
+
+**Stay-in-touch**
+- [ ] Registered users can subscribe to organizer updates (opt-in toggle
+      in account settings)
+- [ ] Organizer can broadcast an announcement to all subscribers via
+      email and/or push notification
+
+**Pre-event planning**
+- [ ] Date polling: host creates a set of proposed dates; guests vote;
+      host picks a winner and it becomes the event date
+- [ ] RSVP deadline: host sets a cutoff; RSVP form closes automatically
+- [ ] Capacity + waitlist: cap at N; overflow guests are waitlisted;
+      auto-promote when a yes RSVP is removed
+- [ ] Custom RSVP questions: host adds questions (text / single-select /
+      multi-select); answers stored per RSVP
+
+**Communication**
+- [ ] SMS reminders via Twilio (optional; off unless TWILIO_* env vars set)
+- [ ] Web Push notifications (no external service required; browser prompt
+      on My Events page)
+- [ ] Reminder jobs: 24h before event, send reminder to all `yes` RSVPs
+      via enabled channels
+
+**Organizer tools**
+- [ ] Event duplication → optionally save as a reusable template
+- [ ] Template library: organizer picks a template when creating an event
+- [ ] Check-in QR code: each RSVP generates a unique QR; host scans at
+      the door; marks `checked_in = true`
+
+---
+
+## Phase 3 — Memories
+
+Post-event experience; turns the app into a place people return to.
+
+- [ ] Event memories wall: a chronological stream of photos and short
+      messages (thoughts), visible after the event starts
+- [ ] Wall is attendee-only by default (configurable per event)
+- [ ] Media uploads: photos (and optionally short videos); stored on
+      configured storage backend (local volume or S3-compatible)
+- [ ] Host moderation: delete any post from the wall
+- [ ] Host digest: after event ends, auto-generate a downloadable archive
+      (PDF summary + zip of all uploaded photos + captions)
+- [ ] Wall visibility on "My events" page: past events link directly to
+      their wall
+
+---
+
+## Phase 4 — Mobile & White-label
+
+- [ ] React Native / Expo mobile app using the same REST API
+- [ ] Deep linking: invite links open in the app if installed
+- [ ] Push via APNs / FCM (replaces Web Push for mobile)
+- [ ] White-label config: logo, primary color, app name configurable at
+      deploy time via environment variables
+- [ ] White-label mobile build: single codebase, per-customer config at
+      build time
+
+---
+
+## Phase 5 — Optional / Future
+
+Evaluated based on real usage after Phase 3.
+
+- [ ] Webhooks: POST to a configured URL on event lifecycle events
+      (event.created, rsvp.added, event.started, etc.)
+- [ ] Calendar sync: two-way Google Calendar / Outlook integration
+- [ ] Organizer analytics dashboard: RSVP conversion, open rates, etc.
+- [ ] Paid events: Stripe integration for ticketing
+- [ ] Multi-tenant management layer (separate deployment; manages N instances)

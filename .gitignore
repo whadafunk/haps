@@ -1,0 +1,32 @@
+node_modules/
+dist/
+build/
+.svelte-kit/
+
+# Environment — never commit
+.env
+.env.local
+
+# Personal Claude Code notes — never commit
+CLAUDE.local.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Editor
+.vscode/settings.json
+.idea/
+
+# Test coverage
+coverage/
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Archive files
+*.zip

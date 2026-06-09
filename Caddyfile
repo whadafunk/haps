@@ -1,0 +1,26 @@
+# Replace {$APP_DOMAIN} with your domain, e.g. events.example.com
+# For local development: localhost or http://localhost
+
+{$APP_DOMAIN} {
+    # API — Fastify backend
+    handle /api/* {
+        reverse_proxy api:3000
+    }
+
+    # Everything else — SvelteKit SSR frontend
+    handle {
+        reverse_proxy web:3000
+    }
+
+    # Compress responses
+    encode gzip
+
+    # Security headers
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
+}
