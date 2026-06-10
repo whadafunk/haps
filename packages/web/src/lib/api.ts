@@ -82,6 +82,10 @@ export const api = {
   deleteAccount: () =>
     apiFetch<void>('/auth/me', { method: 'DELETE' }),
 
+  register: (body: { email: string; password: string; displayName: string }) =>
+    apiFetch<{ user: { id: string; email: string; displayName: string; role: string } }>(
+      '/auth/register', { method: 'POST', body: JSON.stringify(body) }),
+
   // Events
   getEvent: (slug: string, token?: string) => {
     const q = token ? `?t=${encodeURIComponent(token)}` : ''

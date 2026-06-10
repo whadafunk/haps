@@ -105,6 +105,13 @@ export const BlastSchema = z.object({
   channels: z.array(z.enum(['email', 'sms'])).default([]),
 }).strict()
 
+// Member registration (Phase 2)
+export const RegisterSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8).max(128),
+  displayName: z.string().min(1).max(200),
+}).strict()
+
 // Account management
 export const UpdateProfileSchema = z.object({
   displayName: z.string().min(1).max(200),

@@ -1,12 +1,49 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { users, visitorSessions } from '../db/schema.js'
-import { eq } from 'drizzle-orm'
+import { users, visitorSessions, rsvps, comments } from '../db/schema.js'
+import { eq, and } from 'drizzle-orm'
 import { verifyPassword, hashPassword } from '../lib/crypto.js'
 import { signJwt, signRefreshToken, verifyRefreshToken } from '../middleware/auth.js'
 import { createError } from '../lib/errors.js'
-import { LoginSchema, CreateUserSchema, UpdateProfileSchema, ChangePasswordSchema } from '@haps/shared'
+import { LoginSchema, CreateUserSchema, UpdateProfileSchema, ChangePasswordSchema, RegisterSchema } from '@haps/shared'
 import { config } from '../lib/config.js'
+
+/** Atomically claim a visitor session's RSVPs, comments, and event_access into a user account. */
+async function mergeSessionIntoUser(sessionId: string, userId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    // RSVPs: claim uncontested ones; discard session copy where user already has one
+    const sessionRsvps = await tx
+      .select({ id: rsvps.id, eventId: rsvps.eventId })
+      .from(rsvps)
+      .where(eq(rsvps.sessionId, sessionId))
+
+    for (const rsvp of sessionRsvps) {
+      const [conflict] = await tx
+        .select({ id: rsvps.id })
+        .from(rsvps)
+        .where(and(eq(rsvps.eventId, rsvp.eventId), eq(rsvps.userId, userId)))
+        .limit(1)
+
+      if (conflict) {
+        await tx.delete(rsvps).where(eq(rsvps.id, rsvp.id))
+      } else {
+        await tx.update(rsvps)
+          .set({ userId, sessionId: null })
+          .where(eq(rsvps.id, rsvp.id))
+      }
+    }
+
+    // Comments: claim all
+    await tx.update(comments)
+      .set({ userId, sessionId: null })
+      .where(eq(comments.sessionId, sessionId))
+
+    // Link session to user
+    await tx.update(visitorSessions)
+      .set({ userId })
+      .where(eq(visitorSessions.id, sessionId))
+  })
+}
 
 const authRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/api/auth/login', {
@@ -51,23 +88,71 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       maxAge: 60 * 60 * 24 * 7,
     })
 
-    // Link the visitor session to this user account if one exists
+    // Merge any visitor session activity into the account (synchronous — user sees merged state immediately)
     if (request.session) {
-      db.update(visitorSessions)
-        .set({ userId: user.id })
-        .where(eq(visitorSessions.id, request.session.id))
-        .execute()
-        .catch(() => {})
       request.session.userId = user.id
+      await mergeSessionIntoUser(request.session.id, user.id)
     }
 
     return { user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role } }
   })
 
+
   fastify.post('/api/auth/logout', async (request, reply) => {
     reply.clearCookie('auth_token', { path: '/' })
     reply.clearCookie('refresh_token', { path: '/api/auth' })
     return reply.code(204).send()
+  })
+
+  fastify.post('/api/auth/register', {
+    config: {
+      rateLimit: { max: 5, timeWindow: '15 minutes' },
+    },
+  }, async (request, reply) => {
+    const body = RegisterSchema.parse(request.body)
+
+    const [existing] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, body.email))
+      .limit(1)
+
+    if (existing) throw createError(409, 'EMAIL_ALREADY_EXISTS', 'An account with this email already exists.')
+
+    const passwordHash = await hashPassword(body.password)
+    const [newUser] = await db
+      .insert(users)
+      .values({ email: body.email, passwordHash, displayName: body.displayName, role: 'member' })
+      .returning({ id: users.id, email: users.email, displayName: users.displayName, role: users.role })
+
+    if (!newUser) throw createError(500, 'INTERNAL_ERROR', 'Failed to create account.')
+
+    // Merge current visitor session into the new account
+    if (request.session) {
+      request.session.userId = newUser.id
+      await mergeSessionIntoUser(request.session.id, newUser.id)
+    }
+
+    const payload = { sub: newUser.id, email: newUser.email, role: 'member' as const }
+    const accessToken = signJwt(payload)
+    const refreshToken = signRefreshToken(newUser.id)
+
+    reply.setCookie('auth_token', accessToken, {
+      httpOnly: true,
+      secure: config.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+      maxAge: 60 * 60,
+    })
+    reply.setCookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: config.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/api/auth',
+      maxAge: 60 * 60 * 24 * 7,
+    })
+
+    return reply.code(201).send({ user: { id: newUser.id, email: newUser.email, displayName: newUser.displayName, role: newUser.role } })
   })
 
   fastify.post('/api/auth/refresh', async (request, reply) => {

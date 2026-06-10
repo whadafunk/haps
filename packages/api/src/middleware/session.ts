@@ -60,9 +60,12 @@ const sessionPlugin: FastifyPluginAsync = async (fastify) => {
 export async function ensureSession(request: FastifyRequest, reply: FastifyReply) {
   if (request.session) return
 
+  // Link the new session to the authenticated user immediately if one is present
+  const userId = request.user?.sub ?? null
+
   const rows = await db
     .insert(visitorSessions)
-    .values({})
+    .values(userId ? { userId } : {})
     .returning({
       id: visitorSessions.id,
       displayName: visitorSessions.displayName,
@@ -88,7 +91,7 @@ export async function ensureSession(request: FastifyRequest, reply: FastifyReply
     displayName: session.displayName,
     email: session.email,
     eventAccess: (session.eventAccess as Record<string, 'attendee' | 'editor'>) ?? {},
-    userId: session.userId,
+    userId,
   }
 }
 
