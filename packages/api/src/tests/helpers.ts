@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../app.js'
 import { db } from '../db/index.js'
+import { visitorSessions } from '../db/schema.js'
 import { sql } from 'drizzle-orm'
 
 let _app: FastifyInstance | null = null
@@ -137,8 +138,9 @@ export async function createEvent(
   return data
 }
 
-/** Get a visitor session cookie by hitting GET /api/session/me which calls ensureSession */
+/** Create a visitor session directly in the DB and return a signed vsid cookie string */
 export async function getSessionCookie(app: FastifyInstance): Promise<string> {
-  const res = await app.inject({ method: 'GET', url: '/api/session/me' })
-  return extractCookies(res.headers)
+  const [session] = await db.insert(visitorSessions).values({}).returning({ id: visitorSessions.id })
+  const signed = app.signCookie(session.id)
+  return `vsid=${signed}`
 }

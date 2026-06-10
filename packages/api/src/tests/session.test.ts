@@ -9,7 +9,13 @@ afterAll(async () => { await closeApp() })
 beforeEach(async () => { await truncateAll() })
 
 describe('GET /api/session/me', () => {
-  it('returns empty session for a fresh visitor', async () => {
+  it('returns null session with no cookie', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/session/me' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ session: null, events: [] })
+  })
+
+  it('returns empty event list for an existing session with no RSVPs', async () => {
     const session = await getSessionCookie(app)
     const res = await app.inject({
       method: 'GET',

@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm'
 import { verifyPassword, hashPassword } from '../lib/crypto.js'
 import { signJwt, signRefreshToken, verifyRefreshToken } from '../middleware/auth.js'
 import { createError } from '../lib/errors.js'
-import { LoginSchema, CreateUserSchema } from '@haps/shared'
+import { LoginSchema, CreateUserSchema, UpdateProfileSchema, ChangePasswordSchema } from '@haps/shared'
 import { config } from '../lib/config.js'
 
 const authRoutes: FastifyPluginAsync = async (fastify) => {
@@ -108,6 +108,68 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       .limit(1)
     if (!row) throw createError(401, 'UNAUTHORIZED', 'User not found.')
     return { id: row.id, email: row.email, displayName: row.displayName, role: row.role, subscribed: row.subscribed }
+  })
+  fastify.patch('/api/auth/me', {
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const user = request.user!
+    const body = UpdateProfileSchema.parse(request.body)
+
+    const [updated] = await db
+      .update(users)
+      .set({ displayName: body.displayName, updatedAt: new Date() })
+      .where(eq(users.id, user.sub))
+      .returning({ id: users.id, email: users.email, displayName: users.displayName, role: users.role })
+
+    if (!updated) throw createError(404, 'USER_NOT_FOUND', 'User not found.')
+    return { user: updated }
+  })
+
+  fastify.post('/api/auth/change-password', {
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const user = request.user!
+    const body = ChangePasswordSchema.parse(request.body)
+
+    const [row] = await db
+      .select({ id: users.id, passwordHash: users.passwordHash })
+      .from(users)
+      .where(eq(users.id, user.sub))
+      .limit(1)
+
+    if (!row) throw createError(404, 'USER_NOT_FOUND', 'User not found.')
+
+    const valid = await verifyPassword(row.passwordHash, body.currentPassword)
+    if (!valid) throw createError(400, 'INVALID_CURRENT_PASSWORD', 'Current password is incorrect.')
+
+    const newHash = await hashPassword(body.newPassword)
+    await db
+      .update(users)
+      .set({ passwordHash: newHash, updatedAt: new Date() })
+      .where(eq(users.id, user.sub))
+
+    return reply.code(204).send()
+  })
+
+  fastify.delete('/api/auth/me', {
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const user = request.user!
+
+    const [row] = await db
+      .select({ id: users.id, role: users.role })
+      .from(users)
+      .where(eq(users.id, user.sub))
+      .limit(1)
+
+    if (!row) throw createError(404, 'USER_NOT_FOUND', 'User not found.')
+    if (row.role === 'admin') throw createError(400, 'CANNOT_DELETE_ADMIN', 'Admin accounts cannot be self-deleted. Use user management.')
+
+    await db.delete(users).where(eq(users.id, user.sub))
+
+    reply.clearCookie('auth_token', { path: '/' })
+    reply.clearCookie('refresh_token', { path: '/api/auth' })
+    return reply.code(204).send()
   })
 }
 

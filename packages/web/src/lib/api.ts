@@ -72,6 +72,16 @@ export const api = {
   getMe: () =>
     apiFetch<{ id: string; email: string; displayName: string; role: string; subscribed: boolean }>('/auth/me'),
 
+  updateProfile: (body: { displayName: string }) =>
+    apiFetch<{ user: { id: string; email: string; displayName: string; role: string } }>(
+      '/auth/me', { method: 'PATCH', body: JSON.stringify(body) }),
+
+  changePassword: (body: { currentPassword: string; newPassword: string }) =>
+    apiFetch<void>('/auth/change-password', { method: 'POST', body: JSON.stringify(body) }),
+
+  deleteAccount: () =>
+    apiFetch<void>('/auth/me', { method: 'DELETE' }),
+
   // Events
   getEvent: (slug: string, token?: string) => {
     const q = token ? `?t=${encodeURIComponent(token)}` : ''

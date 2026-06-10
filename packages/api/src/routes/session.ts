@@ -3,12 +3,14 @@ import { db } from '../db/index.js'
 import { visitorSessions, events, rsvps } from '../db/schema.js'
 import { eq, and, inArray, or } from 'drizzle-orm'
 import { UpdateSessionSchema } from '@haps/shared'
-import { ensureSession } from '../middleware/session.js'
+import { createError } from '../lib/errors.js'
 
 const sessionRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/api/session/me', async (request, reply) => {
-    await ensureSession(request, reply)
-    const session = request.session!
+    if (!request.session) {
+      return reply.send({ session: null, events: [] })
+    }
+    const session = request.session
 
     // Self-heal: if user is logged in but session hasn't been linked yet, link now
     if (request.user && !session.userId) {
@@ -82,8 +84,8 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
   })
 
   fastify.patch('/api/session/me', async (request, reply) => {
-    await ensureSession(request, reply)
-    const session = request.session!
+    if (!request.session) throw createError(404, 'SESSION_NOT_FOUND', 'No active session.')
+    const session = request.session
 
     const body = UpdateSessionSchema.parse(request.body)
     const updates: Partial<typeof visitorSessions.$inferInsert> = {}

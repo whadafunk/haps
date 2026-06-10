@@ -59,7 +59,6 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get('/api/events/:slug', async (request, reply) => {
     const { slug } = request.params as { slug: string }
-    await ensureSession(request, reply)
 
     const rows = await db
       .select()
@@ -77,9 +76,10 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
       throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
     }
 
-    // Validate attendee token from query string
+    // Validate attendee token from query string.
+    // Only create a session if the token is valid — this is the intended session-creation trigger.
     const queryT = (request.query as Record<string, string | undefined>)['t']
-    if (queryT && request.session && !isEditor) {
+    if (queryT && !isEditor) {
       const tokenRows = await db
         .select({ id: eventTokens.id, tokenHash: eventTokens.tokenHash })
         .from(eventTokens)
@@ -88,15 +88,16 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
       for (const tokenRow of tokenRows) {
         const valid = await verifyToken(tokenRow.tokenHash, queryT)
         if (valid) {
+          await ensureSession(request, reply)
           const updatedAccess: Record<string, 'attendee' | 'editor'> = {
-            ...request.session.eventAccess,
+            ...request.session!.eventAccess,
             [slug]: 'attendee',
           }
-          request.session.eventAccess = updatedAccess
+          request.session!.eventAccess = updatedAccess
           await db
             .update(visitorSessions)
             .set({ eventAccess: updatedAccess })
-            .where(eq(visitorSessions.id, request.session.id))
+            .where(eq(visitorSessions.id, request.session!.id))
           break
         }
       }

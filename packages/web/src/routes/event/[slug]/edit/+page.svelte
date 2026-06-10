@@ -23,6 +23,8 @@
   let blastLoading = $state(false)
   let blastError = $state('')
   let blastSuccess = $state('')
+  let blastHistory = $state<Array<{ id: string; subject: string | null; body: string; createdAt: string }>>([])
+  let blastHistoryLoaded = $state(false)
 
   let editLink = $state('')
 
@@ -58,6 +60,11 @@
       comments = res.comments
       commentsLoaded = true
     }).catch(() => { commentsLoaded = true })
+
+    api.listMessages(event.slug).then(res => {
+      blastHistory = res.messages.filter(m => m.type === 'blast').reverse()
+      blastHistoryLoaded = true
+    }).catch(() => { blastHistoryLoaded = true })
   })
 
   async function saveEvent() {
@@ -125,6 +132,10 @@
       blastSuccess = channels.length > 0
         ? `Blast posted. ${res.queued} delivery job${res.queued !== 1 ? 's' : ''} queued.`
         : 'Blast posted to event channel.'
+      // refresh history
+      api.listMessages(event.slug).then(r => {
+        blastHistory = r.messages.filter(m => m.type === 'blast').reverse()
+      }).catch(() => {})
       blastSubject = ''
       blastBody = ''
     } catch (e: unknown) {
@@ -279,6 +290,21 @@
           </button>
         </div>
       </div>
+
+      {#if blastHistoryLoaded && blastHistory.length > 0}
+        <div class="blast-history">
+          <h3>Previous blasts</h3>
+          {#each blastHistory as blast (blast.id)}
+            <div class="blast-row">
+              <div class="blast-header">
+                <span class="blast-subject">{blast.subject ?? '(no subject)'}</span>
+                <span class="blast-time">{new Date(blast.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+              <p class="blast-body">{blast.body}</p>
+            </div>
+          {/each}
+        </div>
+      {/if}
     </section>
   </div>
 </main>
@@ -334,4 +360,11 @@
   .btn-remove { background: none; border: none; color: #9a8f86; font-size: 0.75rem; cursor: pointer; padding: 0; align-self: flex-end; margin-top: 0.25rem; }
   .btn-remove:hover { color: #8b3016; }
   .muted { color: #6b6058; font-size: 0.875rem; }
+  .blast-history { margin-top: 1.25rem; border-top: 1px solid #cfc3b0; padding-top: 1rem; }
+  .blast-history h3 { margin: 0 0 0.75rem; font-size: 0.875rem; font-weight: 600; color: #6b6058; text-transform: uppercase; letter-spacing: 0.04em; }
+  .blast-row { background: #e8ddd0; border: 1px solid #cfc3b0; border-radius: 8px; padding: 0.75rem; margin-bottom: 0.5rem; }
+  .blast-header { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.375rem; }
+  .blast-subject { font-size: 0.875rem; font-weight: 600; color: #1a1510; }
+  .blast-time { font-size: 0.75rem; color: #9a8f86; white-space: nowrap; }
+  .blast-body { margin: 0; font-size: 0.8rem; color: #3d352e; white-space: pre-wrap; }
 </style>

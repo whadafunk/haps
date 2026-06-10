@@ -26,13 +26,15 @@ describe('GET /api/admin/events', () => {
     expect(res.json().events.length).toBeGreaterThan(0)
   })
 
-  it('returns 403 for organizer', async () => {
+  it('returns only own events for organizer', async () => {
+    await createEvent(app, orgCookies)
     const res = await app.inject({
       method: 'GET',
       url: '/api/admin/events',
       headers: { Cookie: orgCookies },
     })
-    expect(res.statusCode).toBe(403)
+    expect(res.statusCode).toBe(200)
+    expect(res.json().events.length).toBe(1)
   })
 
   it('returns 401 without auth', async () => {
