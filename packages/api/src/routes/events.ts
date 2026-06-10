@@ -81,7 +81,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     const queryT = (request.query as Record<string, string | undefined>)['t']
     if (queryT && !isEditor) {
       const tokenRows = await db
-        .select({ id: eventTokens.id, tokenHash: eventTokens.tokenHash })
+        .select({ id: eventTokens.id, tokenHash: eventTokens.tokenHash, singleUse: eventTokens.singleUse, claimedBySessionId: eventTokens.claimedBySessionId })
         .from(eventTokens)
         .where(and(eq(eventTokens.eventId, event.id), eq(eventTokens.type, 'attendee'), eq(eventTokens.status, 'active')))
 
@@ -89,6 +89,18 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
         const valid = await verifyToken(tokenRow.tokenHash, queryT)
         if (valid) {
           await ensureSession(request, reply)
+          const sessionId = request.session!.id
+
+          if (tokenRow.singleUse) {
+            if (tokenRow.claimedBySessionId !== null && tokenRow.claimedBySessionId !== sessionId) {
+              // Token already used by a different session — don't grant access
+              break
+            }
+            if (tokenRow.claimedBySessionId === null) {
+              await db.update(eventTokens).set({ claimedBySessionId: sessionId }).where(eq(eventTokens.id, tokenRow.id))
+            }
+          }
+
           const updatedAccess: Record<string, 'attendee' | 'editor'> = {
             ...request.session!.eventAccess,
             [slug]: 'attendee',
@@ -97,7 +109,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
           await db
             .update(visitorSessions)
             .set({ eventAccess: updatedAccess })
-            .where(eq(visitorSessions.id, request.session!.id))
+            .where(eq(visitorSessions.id, sessionId))
           break
         }
       }
@@ -230,7 +242,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
 
     const tokens = await db
-      .select({ id: eventTokens.id, type: eventTokens.type, label: eventTokens.label, status: eventTokens.status, createdAt: eventTokens.createdAt })
+      .select({ id: eventTokens.id, type: eventTokens.type, label: eventTokens.label, status: eventTokens.status, singleUse: eventTokens.singleUse, claimedBySessionId: eventTokens.claimedBySessionId, createdAt: eventTokens.createdAt })
       .from(eventTokens)
       .where(eq(eventTokens.eventId, event.id))
 
@@ -254,7 +266,8 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
       type: 'attendee',
       tokenHash,
       label: body.label ?? null,
-    }).returning({ id: eventTokens.id, type: eventTokens.type, label: eventTokens.label })
+      singleUse: body.singleUse ?? false,
+    }).returning({ id: eventTokens.id, type: eventTokens.type, label: eventTokens.label, singleUse: eventTokens.singleUse })
 
     const token = inserted[0]
     if (!token) throw createError(500, 'INTERNAL_ERROR', 'Failed to create token.')

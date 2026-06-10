@@ -1,7 +1,24 @@
 <script lang="ts">
   import type { PageData } from './$types'
+  import { api } from '$lib/api'
 
   let { data } = $props<{ data: PageData }>()
+
+  let copyingSlug = $state<string | null>(null)
+  let copiedSlug = $state<string | null>(null)
+
+  async function copyInviteLink(slug: string) {
+    copyingSlug = slug
+    try {
+      const res = await api.createToken(slug, { type: 'attendee', singleUse: true })
+      const url = `${window.location.origin}/event/${slug}?t=${res.rawToken}`
+      await navigator.clipboard.writeText(url)
+      copiedSlug = slug
+      setTimeout(() => { copiedSlug = null }, 2500)
+    } catch { /* silent */ } finally {
+      copyingSlug = null
+    }
+  }
 </script>
 
 <div class="admin-page">
@@ -23,7 +40,14 @@
             <td><a href="/event/{event.slug}">{event.title}</a></td>
             <td><span class="badge status-{event.status}">{event.status}</span></td>
             <td>{new Date(event.startsAt).toLocaleDateString()}</td>
-            <td><a href="/event/{event.slug}/edit" class="action-link">Edit</a></td>
+            <td class="actions">
+              <a href="/event/{event.slug}/edit" class="action-link">Edit</a>
+              <button
+                class="action-link copy-btn"
+                onclick={() => copyInviteLink(event.slug)}
+                disabled={copyingSlug === event.slug}
+              >{copiedSlug === event.slug ? '✓ Copied' : 'Copy link'}</button>
+            </td>
           </tr>
         {/each}
       </tbody>
@@ -45,6 +69,10 @@
   .badge.status-published { background: #e8f4e4; color: #2a5e28; }
   .badge.status-draft { background: #ede8e0; color: #4e453e; }
   .badge.status-cancelled { background: #f8e8e2; color: #7a2a1a; }
+  .actions { display: flex; gap: 0.75rem; align-items: center; }
   .action-link { font-size: 0.8rem; }
+  .copy-btn { background: none; border: none; cursor: pointer; color: #b05525; padding: 0; font-size: 0.8rem; font-family: inherit; }
+  .copy-btn:hover:not(:disabled) { text-decoration: underline; }
+  .copy-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .muted { color: #6b6058; font-size: 0.875rem; }
 </style>

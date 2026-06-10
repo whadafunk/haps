@@ -43,6 +43,13 @@
       "when": 1781123600000,
       "tag": "0005_guest_profile_blocking",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781200000000,
+      "tag": "0006_single_use_tokens",
+      "breakpoints": true
     }
   ]
 }

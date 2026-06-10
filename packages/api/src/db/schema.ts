@@ -63,13 +63,15 @@ export const events = pgTable('events', {
 }))
 
 export const eventTokens = pgTable('event_tokens', {
-  id:        uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-  eventId:   uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
-  type:      text('type').notNull(), // 'edit' | 'attendee'
-  tokenHash: text('token_hash').notNull(),
-  label:     text('label'),
-  status:    text('status').notNull().default('active'), // 'active' | 'blocked' | 'blacklisted'
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  id:                   uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  eventId:              uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  type:                 text('type').notNull(), // 'edit' | 'attendee'
+  tokenHash:            text('token_hash').notNull(),
+  label:                text('label'),
+  status:               text('status').notNull().default('active'), // 'active' | 'blocked' | 'blacklisted'
+  singleUse:            boolean('single_use').notNull().default(false),
+  claimedBySessionId:   uuid('claimed_by_session_id').references(() => visitorSessions.id, { onDelete: 'set null' }),
+  createdAt:            timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   eventTypeIdx: index('event_tokens_event_type_idx').on(t.eventId, t.type).where(sql`${t.status} = 'active'`),
 }))

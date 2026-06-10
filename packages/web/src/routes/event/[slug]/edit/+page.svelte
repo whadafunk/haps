@@ -28,9 +28,28 @@
 
   let editLink = $state('')
 
+  let copyingInvite = $state(false)
+  let copyInviteMsg = $state('')
+
   let coverUploading = $state(false)
   let coverError = $state('')
   let coverPreview = $state<string | null>(event.coverImageUrl ?? null)
+
+  async function copyInviteLink() {
+    copyingInvite = true
+    copyInviteMsg = ''
+    try {
+      const res = await api.createToken(event.slug, { type: 'attendee', singleUse: true })
+      const url = `${window.location.origin}/event/${event.slug}?t=${res.rawToken}`
+      await navigator.clipboard.writeText(url)
+      copyInviteMsg = 'Copied! Single-use — valid for one person only.'
+      setTimeout(() => { copyInviteMsg = '' }, 4000)
+    } catch {
+      copyInviteMsg = 'Failed to generate link.'
+    } finally {
+      copyingInvite = false
+    }
+  }
 
   async function uploadCover(e: Event) {
     const input = e.target as HTMLInputElement
@@ -157,6 +176,21 @@
       Edit link: <code>{editLink}</code>
     </div>
   {/if}
+
+  <div class="invite-card">
+    <div class="invite-header">
+      <div>
+        <h2>Invite links</h2>
+        <p class="invite-hint">Each link is single-use — works for one person only.</p>
+      </div>
+      <button class="btn-copy" onclick={copyInviteLink} disabled={copyingInvite}>
+        {copyingInvite ? 'Generating…' : '📋 Copy invite link'}
+      </button>
+    </div>
+    {#if copyInviteMsg}
+      <div class="invite-msg">{copyInviteMsg}</div>
+    {/if}
+  </div>
 
   <div class="cover-card">
     <h2>Cover image</h2>
@@ -317,6 +351,14 @@
   h1 { margin: 0.5rem 0 0; font-size: 1.5rem; color: #1a1510; }
   .edit-link-hint { font-size: 0.8rem; color: #6b6058; margin-bottom: 1.25rem; background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 8px; padding: 0.625rem 0.875rem; word-break: break-all; }
   .edit-link-hint code { color: #3d352e; }
+  .invite-card { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+  .invite-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .invite-header h2 { margin: 0; font-size: 1.1rem; color: #1a1510; }
+  .invite-hint { margin: 0.25rem 0 0; font-size: 0.8rem; color: #6b6058; }
+  .btn-copy { background: #b05525; color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+  .btn-copy:hover:not(:disabled) { background: #924418; }
+  .btn-copy:disabled { opacity: 0.6; cursor: not-allowed; }
+  .invite-msg { margin-top: 0.75rem; font-size: 0.875rem; color: #2d5a2a; background: #edf4ec; border: 1px solid #b8d9b4; border-radius: 8px; padding: 0.5rem 0.875rem; }
   .cover-card { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
   .cover-card h2 { margin: 0 0 0.75rem; font-size: 1.1rem; color: #1a1510; }
   .cover-preview { width: 100%; max-height: 240px; object-fit: cover; border-radius: 8px; display: block; margin-bottom: 0.75rem; }

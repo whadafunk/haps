@@ -123,6 +123,10 @@ export const api = {
     })
   },
 
+  createToken: (slug: string, body: { type: 'attendee'; label?: string; singleUse?: boolean }) =>
+    apiFetch<{ token: { id: string; type: string; label: string | null; singleUse: boolean }; rawToken: string }>(
+      `/events/${slug}/tokens`, { method: 'POST', body: JSON.stringify(body) }),
+
   // RSVPs
   submitRsvp: (slug: string, body: Record<string, unknown>) =>
     apiFetch<{ rsvp: Rsvp }>(`/events/${slug}/rsvps`, { method: 'POST', body: JSON.stringify(body) }),

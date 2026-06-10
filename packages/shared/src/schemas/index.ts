@@ -63,6 +63,7 @@ export const CreateCommentSchema = z.object({
 export const CreateTokenSchema = z.object({
   type: z.literal('attendee'),
   label: z.string().max(100).optional(),
+  singleUse: z.boolean().optional(),
 }).strict()
 
 // Session
