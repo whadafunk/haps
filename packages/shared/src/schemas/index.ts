@@ -121,3 +121,22 @@ export const ChangePasswordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z.string().min(8).max(128),
 }).strict()
+
+// Guest profile gate (collected before first RSVP)
+export const SubmitProfileSchema = z.object({
+  displayName:     z.string().min(1).max(200),
+  email:           z.string().email(),
+  phone:           z.string().max(50).optional(),
+  instagramHandle: z.string().max(100).optional(),
+}).strict()
+
+// Admin: block a session guest
+export const BlockGuestSchema = z.object({
+  reason:     z.string().min(1).max(1000),
+  blockEmail: z.boolean().optional(),
+}).strict()
+
+// Admin: permanently remove a session guest
+export const RemoveGuestSchema = z.object({
+  blockEmail: z.boolean().optional(),
+}).strict()

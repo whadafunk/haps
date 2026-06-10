@@ -83,7 +83,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
       const tokenRows = await db
         .select({ id: eventTokens.id, tokenHash: eventTokens.tokenHash })
         .from(eventTokens)
-        .where(and(eq(eventTokens.eventId, event.id), eq(eventTokens.type, 'attendee'), eq(eventTokens.revoked, false)))
+        .where(and(eq(eventTokens.eventId, event.id), eq(eventTokens.type, 'attendee'), eq(eventTokens.status, 'active')))
 
       for (const tokenRow of tokenRows) {
         const valid = await verifyToken(tokenRow.tokenHash, queryT)
@@ -110,7 +110,12 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
         maybeCount: sql<number>`count(*) filter (where ${rsvps.status} = 'maybe')`,
       })
       .from(rsvps)
-      .where(eq(rsvps.eventId, event.id))
+      .leftJoin(visitorSessions, eq(rsvps.sessionId, visitorSessions.id))
+      .where(and(
+        eq(rsvps.eventId, event.id),
+        // exclude blocked/removed session-based RSVPs from counts
+        sql`(${rsvps.sessionId} is null or coalesce(${visitorSessions.status}, 'active') = 'active')`,
+      ))
 
     const counts = countRows[0]
 
@@ -124,6 +129,9 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
       myRsvp = myRows[0] ?? null
     }
 
+    const sessionBlocked = request.session?.status === 'blocked' || request.session?.status === 'removed'
+    const sessionProfileRequired = !!(request.session && !request.session.email && !request.session.userId)
+
     return {
       event: {
         ...serializeEvent(event),
@@ -133,6 +141,9 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
       },
       myRsvp,
       isEditor: isEditor ?? false,
+      sessionProfileRequired: !sessionBlocked && sessionProfileRequired,
+      sessionBlocked,
+      sessionBlockReason: sessionBlocked ? (request.session?.statusReason ?? null) : null,
     }
   })
 
@@ -219,7 +230,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
 
     const tokens = await db
-      .select({ id: eventTokens.id, type: eventTokens.type, label: eventTokens.label, revoked: eventTokens.revoked, createdAt: eventTokens.createdAt })
+      .select({ id: eventTokens.id, type: eventTokens.type, label: eventTokens.label, status: eventTokens.status, createdAt: eventTokens.createdAt })
       .from(eventTokens)
       .where(eq(eventTokens.eventId, event.id))
 
@@ -294,7 +305,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     preHandler: [fastify.requireEditToken],
   }, async (request, reply) => {
     const { tokenId } = request.params as { slug: string; tokenId: string }
-    await db.update(eventTokens).set({ revoked: true }).where(eq(eventTokens.id, tokenId))
+    await db.update(eventTokens).set({ status: 'blacklisted' }).where(eq(eventTokens.id, tokenId))
     return reply.code(204).send()
   })
 }

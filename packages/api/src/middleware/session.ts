@@ -10,6 +10,10 @@ declare module 'fastify' {
       id: string
       displayName: string | null
       email: string | null
+      phone: string | null
+      instagramHandle: string | null
+      status: string
+      statusReason: string | null
       eventAccess: Record<string, 'attendee' | 'editor'>
       userId: string | null
     } | null
@@ -28,11 +32,15 @@ const sessionPlugin: FastifyPluginAsync = async (fastify) => {
 
     const rows = await db
       .select({
-        id: visitorSessions.id,
-        displayName: visitorSessions.displayName,
-        email: visitorSessions.email,
-        eventAccess: visitorSessions.eventAccess,
-        userId: visitorSessions.userId,
+        id:              visitorSessions.id,
+        displayName:     visitorSessions.displayName,
+        email:           visitorSessions.email,
+        phone:           visitorSessions.phone,
+        instagramHandle: visitorSessions.instagramHandle,
+        status:          visitorSessions.status,
+        statusReason:    visitorSessions.statusReason,
+        eventAccess:     visitorSessions.eventAccess,
+        userId:          visitorSessions.userId,
       })
       .from(visitorSessions)
       .where(eq(visitorSessions.id, sessionId.value))
@@ -42,11 +50,15 @@ const sessionPlugin: FastifyPluginAsync = async (fastify) => {
     if (!session) return
 
     request.session = {
-      id: session.id,
-      displayName: session.displayName,
-      email: session.email,
-      eventAccess: (session.eventAccess as Record<string, 'attendee' | 'editor'>) ?? {},
-      userId: session.userId,
+      id:              session.id,
+      displayName:     session.displayName,
+      email:           session.email,
+      phone:           session.phone,
+      instagramHandle: session.instagramHandle,
+      status:          session.status,
+      statusReason:    session.statusReason,
+      eventAccess:     (session.eventAccess as Record<string, 'attendee' | 'editor'>) ?? {},
+      userId:          session.userId,
     }
 
     db.update(visitorSessions)
@@ -67,11 +79,15 @@ export async function ensureSession(request: FastifyRequest, reply: FastifyReply
     .insert(visitorSessions)
     .values(userId ? { userId } : {})
     .returning({
-      id: visitorSessions.id,
-      displayName: visitorSessions.displayName,
-      email: visitorSessions.email,
-      eventAccess: visitorSessions.eventAccess,
-      userId: visitorSessions.userId,
+      id:              visitorSessions.id,
+      displayName:     visitorSessions.displayName,
+      email:           visitorSessions.email,
+      phone:           visitorSessions.phone,
+      instagramHandle: visitorSessions.instagramHandle,
+      status:          visitorSessions.status,
+      statusReason:    visitorSessions.statusReason,
+      eventAccess:     visitorSessions.eventAccess,
+      userId:          visitorSessions.userId,
     })
 
   const session = rows[0]
@@ -87,10 +103,14 @@ export async function ensureSession(request: FastifyRequest, reply: FastifyReply
   })
 
   request.session = {
-    id: session.id,
-    displayName: session.displayName,
-    email: session.email,
-    eventAccess: (session.eventAccess as Record<string, 'attendee' | 'editor'>) ?? {},
+    id:              session.id,
+    displayName:     session.displayName,
+    email:           session.email,
+    phone:           session.phone,
+    instagramHandle: session.instagramHandle,
+    status:          session.status ?? 'active',
+    statusReason:    session.statusReason,
+    eventAccess:     (session.eventAccess as Record<string, 'attendee' | 'editor'>) ?? {},
     userId,
   }
 }

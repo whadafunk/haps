@@ -4,9 +4,14 @@ import { error } from '@sveltejs/kit'
 
 export interface GuestDetail {
   id: string
+  shortId: string
   type: 'user' | 'session'
   displayName: string | null
   email: string | null
+  phone: string | null
+  instagramHandle: string | null
+  status: string
+  statusReason: string | null
   firstSeen: string
   events: {
     eventSlug: string
@@ -33,5 +38,5 @@ export const load: PageServerLoad = async ({ params, parent, cookies }) => {
   }
 
   const { guest } = await serverGet<{ guest: GuestDetail }>(endpoint, cookies)
-  return { guest }
+  return { guest, isSession: id.startsWith('s-') }
 }

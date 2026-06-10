@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types'
 import { error } from '@sveltejs/kit'
-import { serverGet, ServerApiError, API_BASE } from '$lib/serverFetch'
+import { serverGet, ServerApiError } from '$lib/serverFetch'
 import type { Event } from '@haps/shared'
 
 export const load: PageServerLoad = async ({ params, url, cookies }) => {
@@ -12,20 +12,26 @@ export const load: PageServerLoad = async ({ params, url, cookies }) => {
       event: Event & { guestCount: number; yesCount: number; maybeCount: number }
       myRsvp: { status: string; headCount: number; note?: string | null } | null
       isEditor: boolean
+      sessionProfileRequired: boolean
+      sessionBlocked: boolean
+      sessionBlockReason: string | null
     }>(path, cookies)
 
     const { event } = data
     const appUrl = process.env['APP_URL'] ?? 'http://localhost'
 
     return {
-      event: data.event,
-      myRsvp: data.myRsvp,
-      isEditor: data.isEditor,
+      event:                  data.event,
+      myRsvp:                 data.myRsvp,
+      isEditor:               data.isEditor,
+      sessionProfileRequired: data.sessionProfileRequired ?? false,
+      sessionBlocked:         data.sessionBlocked ?? false,
+      sessionBlockReason:     data.sessionBlockReason ?? null,
       meta: {
-        title: event.title,
+        title:       event.title,
         description: `${new Date(event.startsAt).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}${event.location ? ` · ${event.location}` : ''}`,
-        image: event.coverImageUrl ?? `${appUrl}/og-default.png`,
-        url: `${appUrl}/event/${event.slug}`,
+        image:       event.coverImageUrl ?? `${appUrl}/og-default.png`,
+        url:         `${appUrl}/event/${event.slug}`,
       },
     }
   } catch (e: unknown) {

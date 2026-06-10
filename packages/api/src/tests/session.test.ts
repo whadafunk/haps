@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import type { FastifyInstance } from 'fastify'
-import { getApp, closeApp, truncateAll, setupAdmin, createOrganizer, createEvent, getSessionCookie, extractCookies } from './helpers.js'
+import { getApp, closeApp, truncateAll, setupAdmin, createOrganizer, createEvent, getSessionCookie, getSessionWithProfile, extractCookies } from './helpers.js'
 
 let app: FastifyInstance
 
@@ -33,7 +33,7 @@ describe('GET /api/session/me', () => {
     const orgCookies = await createOrganizer(app, adminCookies)
     const { event } = await createEvent(app, orgCookies, { status: 'published' })
 
-    const session = await getSessionCookie(app)
+    const session = await getSessionWithProfile(app)
     await app.inject({
       method: 'POST',
       url: `/api/events/${event.slug}/rsvps`,

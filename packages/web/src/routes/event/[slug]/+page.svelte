@@ -13,6 +13,35 @@
   let rsvpLoading = $state(false)
   let rsvpError = $state('')
 
+  // Profile gate
+  let profileName = $state('')
+  let profileEmail = $state('')
+  let profilePhone = $state('')
+  let profileInstagram = $state('')
+  let profileLoading = $state(false)
+  let profileError = $state('')
+  let profileRequired = $state(data.sessionProfileRequired)
+
+  async function submitProfile() {
+    if (!profileName || !profileEmail) { profileError = 'Name and email are required.'; return }
+    profileLoading = true
+    profileError = ''
+    try {
+      await api.submitProfile({
+        displayName: profileName,
+        email: profileEmail,
+        phone: profilePhone || undefined,
+        instagramHandle: profileInstagram || undefined,
+      })
+      profileRequired = false
+      await invalidateAll()
+    } catch (e: unknown) {
+      profileError = e instanceof ApiError ? e.message : 'Failed to save profile.'
+    } finally {
+      profileLoading = false
+    }
+  }
+
   let commentBody = $state('')
   let commentName = $state('')
   let commentLoading = $state(false)
@@ -213,46 +242,82 @@
     {#if event.status === 'published'}
       <section class="section">
         <h2>RSVP</h2>
-        {#if data.myRsvp}
-          <p class="my-rsvp">Your RSVP: <strong>{data.myRsvp.status}</strong> (party of {data.myRsvp.headCount})</p>
-        {/if}
 
-        {#if rsvpError}
-          <div class="error-banner">{rsvpError}</div>
-        {/if}
-
-        <div class="rsvp-form">
-          <label>
-            Your name
-            <input type="text" bind:value={rsvpName} placeholder="Name" />
-          </label>
-          <div class="rsvp-buttons">
-            {#each ['yes', 'maybe', 'no'] as status}
-              <button
-                class="rsvp-btn rsvp-{status}"
-                class:active={rsvpStatus === status}
-                onclick={() => rsvpStatus = status}
-              >
-                {status === 'yes' ? '✓ Going' : status === 'maybe' ? '? Maybe' : '✗ Can\'t go'}
-              </button>
-            {/each}
+        {#if data.sessionBlocked}
+          <div class="blocked-banner">
+            <strong>You have been blocked from RSVPing.</strong>
+            {#if data.sessionBlockReason}
+              <p>{data.sessionBlockReason}</p>
+            {/if}
           </div>
-          <label>
-            Party size
-            <input type="number" min="1" max="20" bind:value={rsvpHeadCount} />
-          </label>
-          <label>
-            Note (optional)
-            <input type="text" bind:value={rsvpNote} placeholder="Any notes…" />
-          </label>
-          <label>
-            Email (optional, for reminders)
-            <input type="email" bind:value={rsvpEmail} placeholder="you@example.com" />
-          </label>
-          <button class="submit-btn" onclick={submitRsvp} disabled={rsvpLoading}>
-            {rsvpLoading ? 'Saving…' : data.myRsvp ? 'Update RSVP' : 'Submit RSVP'}
-          </button>
-        </div>
+        {:else if profileRequired}
+          <p class="profile-intro">Please introduce yourself before RSVPing.</p>
+          {#if profileError}
+            <div class="error-banner">{profileError}</div>
+          {/if}
+          <div class="rsvp-form">
+            <label>
+              Full name <span class="req">*</span>
+              <input type="text" bind:value={profileName} placeholder="Your name" />
+            </label>
+            <label>
+              Email <span class="req">*</span>
+              <input type="email" bind:value={profileEmail} placeholder="you@example.com" />
+            </label>
+            <label>
+              Phone (optional)
+              <input type="tel" bind:value={profilePhone} placeholder="+1 555 000 0000" />
+            </label>
+            <label>
+              Instagram (optional)
+              <input type="text" bind:value={profileInstagram} placeholder="@handle" />
+            </label>
+            <button class="submit-btn" onclick={submitProfile} disabled={profileLoading}>
+              {profileLoading ? 'Saving…' : 'Continue to RSVP'}
+            </button>
+          </div>
+        {:else}
+          {#if data.myRsvp}
+            <p class="my-rsvp">Your RSVP: <strong>{data.myRsvp.status}</strong> (party of {data.myRsvp.headCount})</p>
+          {/if}
+
+          {#if rsvpError}
+            <div class="error-banner">{rsvpError}</div>
+          {/if}
+
+          <div class="rsvp-form">
+            <label>
+              Your name
+              <input type="text" bind:value={rsvpName} placeholder="Name" />
+            </label>
+            <div class="rsvp-buttons">
+              {#each ['yes', 'maybe', 'no'] as status}
+                <button
+                  class="rsvp-btn rsvp-{status}"
+                  class:active={rsvpStatus === status}
+                  onclick={() => rsvpStatus = status}
+                >
+                  {status === 'yes' ? '✓ Going' : status === 'maybe' ? '? Maybe' : '✗ Can\'t go'}
+                </button>
+              {/each}
+            </div>
+            <label>
+              Party size
+              <input type="number" min="1" max="20" bind:value={rsvpHeadCount} />
+            </label>
+            <label>
+              Note (optional)
+              <input type="text" bind:value={rsvpNote} placeholder="Any notes…" />
+            </label>
+            <label>
+              Email (optional, for reminders)
+              <input type="email" bind:value={rsvpEmail} placeholder="you@example.com" />
+            </label>
+            <button class="submit-btn" onclick={submitRsvp} disabled={rsvpLoading}>
+              {rsvpLoading ? 'Saving…' : data.myRsvp ? 'Update RSVP' : 'Submit RSVP'}
+            </button>
+          </div>
+        {/if}
       </section>
     {/if}
 
@@ -397,6 +462,11 @@
   .section { background: var(--card-bg, #f0e8da); border: 1px solid var(--border, #cfc3b0); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
   .section h2 { margin: 0 0 1rem; font-size: 1.1rem; color: #1a1510; }
   .my-rsvp { font-size: 0.9rem; color: #3d352e; margin-bottom: 1rem; }
+  .profile-intro { font-size: 0.875rem; color: #3d352e; margin-bottom: 1rem; }
+  .req { color: #c03828; }
+  .blocked-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.9rem; }
+  .blocked-banner strong { display: block; margin-bottom: 0.25rem; }
+  .blocked-banner p { margin: 0; font-size: 0.875rem; }
   .rsvp-form { display: flex; flex-direction: column; gap: 0.75rem; }
   .rsvp-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .rsvp-btn { padding: 0.5rem 1rem; border-radius: 8px; border: 2px solid var(--border, #cfc3b0); background: var(--card-bg, #f0e8da); font-size: 0.875rem; font-weight: 500; color: #3d352e; cursor: pointer; }

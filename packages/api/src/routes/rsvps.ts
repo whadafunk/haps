@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, rsvps, visitorSessions } from '../db/schema.js'
+import { events, rsvps, visitorSessions, emailBlocklist } from '../db/schema.js'
 import { eq, and, count } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { CreateRsvpSchema, UpdateRsvpSchema } from '@haps/shared'
@@ -12,6 +12,28 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
     await ensureSession(request, reply)
 
     const body = CreateRsvpSchema.parse(request.body)
+
+    const session = request.session!
+
+    // Blocked / removed sessions cannot RSVP
+    if (session.status === 'blocked' || session.status === 'removed') {
+      throw createError(403, 'GUEST_BLOCKED', session.statusReason ?? 'You have been blocked from this platform.')
+    }
+
+    // Profile gate: only for anonymous guests — registered users already have an account email
+    if (!session.email && !session.userId) {
+      throw createError(428, 'PROFILE_REQUIRED', 'Please complete your profile before RSVPing.')
+    }
+
+    // Email blocklist check
+    if (body.email) {
+      const [blocked] = await db
+        .select({ id: emailBlocklist.id })
+        .from(emailBlocklist)
+        .where(eq(emailBlocklist.email, body.email.toLowerCase()))
+        .limit(1)
+      if (blocked) throw createError(403, 'EMAIL_BLOCKED', 'This email address has been blocked.')
+    }
 
     const eventRows = await db
       .select({ id: events.id, status: events.status, maxCapacity: events.maxCapacity, rsvpDeadline: events.rsvpDeadline })
@@ -37,7 +59,6 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    const session = request.session!
     if (!session.displayName) {
       await db
         .update(visitorSessions)
@@ -49,24 +70,24 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
     const inserted = await db
       .insert(rsvps)
       .values({
-        eventId: event.id,
-        sessionId: session.id,
-        userId: session.userId,
+        eventId:     event.id,
+        sessionId:   session.id,
+        userId:      session.userId,
         displayName: body.displayName,
-        email: body.email ?? null,
-        status: body.status,
-        headCount: body.headCount,
-        note: body.note ?? null,
+        email:       body.email ?? null,
+        status:      body.status,
+        headCount:   body.headCount,
+        note:        body.note ?? null,
       })
       .onConflictDoUpdate({
         target: [rsvps.eventId, rsvps.sessionId],
         set: {
           displayName: body.displayName,
-          email: body.email ?? null,
-          status: body.status,
-          headCount: body.headCount,
-          note: body.note ?? null,
-          updatedAt: new Date(),
+          email:       body.email ?? null,
+          status:      body.status,
+          headCount:   body.headCount,
+          note:        body.note ?? null,
+          updatedAt:   new Date(),
         },
       })
       .returning()
@@ -162,27 +183,35 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
 
     const rows = await db
       .select({
-        id: rsvps.id,
+        id:          rsvps.id,
         displayName: rsvps.displayName,
-        status: rsvps.status,
-        headCount: rsvps.headCount,
-        note: rsvps.note,
-        checkedIn: rsvps.checkedIn,
-        email: rsvps.email,
-        createdAt: rsvps.createdAt,
+        status:      rsvps.status,
+        headCount:   rsvps.headCount,
+        note:        rsvps.note,
+        checkedIn:   rsvps.checkedIn,
+        email:       rsvps.email,
+        sessionId:   rsvps.sessionId,
+        createdAt:   rsvps.createdAt,
+        sessionStatus: visitorSessions.status,
       })
       .from(rsvps)
+      .leftJoin(visitorSessions, eq(rsvps.sessionId, visitorSessions.id))
       .where(eq(rsvps.eventId, event.id))
 
+    // Filter out blocked/removed session guests from the public list
+    const visible = isEditor
+      ? rows
+      : rows.filter((r) => !r.sessionId || (r.sessionStatus ?? 'active') === 'active')
+
     return {
-      rsvps: rows.map((r) => ({
-        id: r.id,
+      rsvps: visible.map((r) => ({
+        id:          r.id,
         displayName: r.displayName,
-        status: r.status,
-        headCount: r.headCount,
-        note: r.note,
-        checkedIn: r.checkedIn,
-        createdAt: r.createdAt.toISOString(),
+        status:      r.status,
+        headCount:   r.headCount,
+        note:        r.note,
+        checkedIn:   r.checkedIn,
+        createdAt:   r.createdAt.toISOString(),
         ...(isEditor ? { email: r.email } : {}),
       })),
     }
@@ -191,14 +220,14 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
 
 function serializeRsvp(rsvp: typeof rsvps.$inferSelect) {
   return {
-    id: rsvp.id,
-    status: rsvp.status,
-    headCount: rsvp.headCount,
-    note: rsvp.note,
+    id:          rsvp.id,
+    status:      rsvp.status,
+    headCount:   rsvp.headCount,
+    note:        rsvp.note,
     displayName: rsvp.displayName,
-    checkedIn: rsvp.checkedIn,
-    createdAt: rsvp.createdAt.toISOString(),
-    updatedAt: rsvp.updatedAt.toISOString(),
+    checkedIn:   rsvp.checkedIn,
+    createdAt:   rsvp.createdAt.toISOString(),
+    updatedAt:   rsvp.updatedAt.toISOString(),
   }
 }
 

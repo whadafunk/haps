@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import type { FastifyInstance } from 'fastify'
-import { getApp, closeApp, truncateAll, setupAdmin, createOrganizer, createEvent, getSessionCookie } from './helpers.js'
+import { getApp, closeApp, truncateAll, setupAdmin, createOrganizer, createEvent, getSessionWithProfile } from './helpers.js'
 
 let app: FastifyInstance
 let adminCookies: string
@@ -21,7 +21,7 @@ beforeEach(async () => {
 
 describe('POST /api/events/:slug/rsvps', () => {
   it('creates an RSVP and stores display name on session', async () => {
-    const session = await getSessionCookie(app)
+    const session = await getSessionWithProfile(app)
     const res = await app.inject({
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
@@ -34,7 +34,7 @@ describe('POST /api/events/:slug/rsvps', () => {
   })
 
   it('upserts (updates) an existing RSVP', async () => {
-    const session = await getSessionCookie(app)
+    const session = await getSessionWithProfile(app)
     await app.inject({
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
@@ -52,7 +52,7 @@ describe('POST /api/events/:slug/rsvps', () => {
   })
 
   it('returns 404 for an unknown event', async () => {
-    const session = await getSessionCookie(app)
+    const session = await getSessionWithProfile(app)
     const res = await app.inject({
       method: 'POST',
       url: '/api/events/no-such-event/rsvps',
@@ -64,7 +64,7 @@ describe('POST /api/events/:slug/rsvps', () => {
 
   it('returns 403 when event is not published', async () => {
     const { event } = await createEvent(app, orgCookies) // draft
-    const session = await getSessionCookie(app)
+    const session = await getSessionWithProfile(app)
     const res = await app.inject({
       method: 'POST',
       url: `/api/events/${event.slug}/rsvps`,
@@ -78,7 +78,7 @@ describe('POST /api/events/:slug/rsvps', () => {
 
 describe('GET /api/events/:slug/rsvps', () => {
   it('returns the RSVP list to an editor', async () => {
-    const session = await getSessionCookie(app)
+    const session = await getSessionWithProfile(app)
     await app.inject({
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
@@ -98,7 +98,7 @@ describe('GET /api/events/:slug/rsvps', () => {
   })
 
   it('returns names only (no email) to the public', async () => {
-    const session = await getSessionCookie(app)
+    const session = await getSessionWithProfile(app)
     await app.inject({
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
@@ -113,7 +113,7 @@ describe('GET /api/events/:slug/rsvps', () => {
 
 describe('DELETE /api/events/:slug/rsvps/:rsvpId', () => {
   it('owner can delete their own RSVP', async () => {
-    const session = await getSessionCookie(app)
+    const session = await getSessionWithProfile(app)
     const createRes = await app.inject({
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
@@ -130,7 +130,7 @@ describe('DELETE /api/events/:slug/rsvps/:rsvpId', () => {
   })
 
   it('editor can remove any RSVP', async () => {
-    const session = await getSessionCookie(app)
+    const session = await getSessionWithProfile(app)
     const createRes = await app.inject({
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,

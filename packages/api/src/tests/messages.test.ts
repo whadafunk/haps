@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import type { FastifyInstance } from 'fastify'
-import { getApp, closeApp, truncateAll, setupAdmin, createOrganizer, createEvent, getSessionCookie } from './helpers.js'
+import { getApp, closeApp, truncateAll, setupAdmin, createOrganizer, createEvent, getSessionCookie, getSessionWithProfile } from './helpers.js'
 
 let app: FastifyInstance
 let adminCookies: string
@@ -29,7 +29,7 @@ describe('GET /api/events/:slug/messages', () => {
 
 describe('POST /api/events/:slug/messages', () => {
   it('allows a yes RSVP to post', async () => {
-    const session = await getSessionCookie(app)
+    const session = await getSessionWithProfile(app)
     await app.inject({
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
@@ -48,7 +48,7 @@ describe('POST /api/events/:slug/messages', () => {
   })
 
   it('allows a maybe RSVP to post', async () => {
-    const session = await getSessionCookie(app)
+    const session = await getSessionWithProfile(app, { email: 'bob@test.com' })
     await app.inject({
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
@@ -102,7 +102,7 @@ describe('POST /api/events/:slug/blast', () => {
   it('queues email delivery jobs for yes RSVPs with email', async () => {
     // Create two yes RSVPs with emails
     for (const name of ['Alice', 'Bob']) {
-      const session = await getSessionCookie(app)
+      const session = await getSessionWithProfile(app, { email: `${name.toLowerCase()}@test.com` })
       await app.inject({
         method: 'POST',
         url: `/api/events/${eventSlug}/rsvps`,
@@ -121,12 +121,12 @@ describe('POST /api/events/:slug/blast', () => {
   })
 
   it('does not queue jobs for yes RSVPs without email', async () => {
-    const session = await getSessionCookie(app)
+    const session = await getSessionWithProfile(app, { email: 'noemail@test.com' })
     await app.inject({
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
       headers: { Cookie: session },
-      payload: { displayName: 'NoEmail', status: 'yes' }, // no email
+      payload: { displayName: 'NoEmail', status: 'yes' }, // no rsvp-level email, but session has one
     })
     const res = await app.inject({
       method: 'POST',
@@ -165,7 +165,7 @@ describe('POST /api/events/:slug/blast', () => {
 
 describe('DELETE /api/events/:slug/messages/:messageId', () => {
   it('editor can delete any message', async () => {
-    const session = await getSessionCookie(app)
+    const session = await getSessionWithProfile(app)
     await app.inject({
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,

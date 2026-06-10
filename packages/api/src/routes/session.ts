@@ -1,8 +1,8 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { visitorSessions, events, rsvps } from '../db/schema.js'
+import { visitorSessions, events, rsvps, emailBlocklist } from '../db/schema.js'
 import { eq, and, inArray, or } from 'drizzle-orm'
-import { UpdateSessionSchema } from '@haps/shared'
+import { UpdateSessionSchema, SubmitProfileSchema } from '@haps/shared'
 import { createError } from '../lib/errors.js'
 
 const sessionRoutes: FastifyPluginAsync = async (fastify) => {
@@ -95,6 +95,31 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
     await db.update(visitorSessions).set(updates).where(eq(visitorSessions.id, session.id))
 
     return { session: { displayName: body.displayName ?? session.displayName, email: body.email ?? session.email } }
+  })
+
+  // Profile gate: guest submits required details before their first RSVP
+  fastify.post('/api/session/profile', async (request, reply) => {
+    if (!request.session) throw createError(404, 'SESSION_NOT_FOUND', 'No active session.')
+    const session = request.session
+
+    const body = SubmitProfileSchema.parse(request.body)
+
+    // Check email blocklist
+    const [blocked] = await db
+      .select({ id: emailBlocklist.id })
+      .from(emailBlocklist)
+      .where(eq(emailBlocklist.email, body.email.toLowerCase()))
+      .limit(1)
+    if (blocked) throw createError(403, 'EMAIL_BLOCKED', 'This email address has been blocked.')
+
+    await db.update(visitorSessions).set({
+      displayName:     body.displayName,
+      email:           body.email.toLowerCase(),
+      phone:           body.phone ?? null,
+      instagramHandle: body.instagramHandle ?? null,
+    }).where(eq(visitorSessions.id, session.id))
+
+    return { ok: true }
   })
 }
 

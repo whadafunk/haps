@@ -1,15 +1,14 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { users, events, instanceConfig, visitorSessions, rsvps } from '../db/schema.js'
-import { eq, count, sql, and, isNull, desc } from 'drizzle-orm'
+import { users, events, instanceConfig, visitorSessions, rsvps, eventTokens, emailBlocklist } from '../db/schema.js'
+import { eq, count, sql, and, isNull, desc, ne } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
-import { CreateUserSchema } from '@haps/shared'
+import { CreateUserSchema, BlockGuestSchema, RemoveGuestSchema } from '@haps/shared'
 import { hashPassword } from '../lib/crypto.js'
 import { config } from '../lib/config.js'
 import { z } from 'zod'
 
 const adminRoutes: FastifyPluginAsync = async (fastify) => {
-  // All admin routes require admin role
   const adminPreHandler = [fastify.requireRole('admin')]
   const staffPreHandler = [fastify.requireRole('organizer')]
 
@@ -90,14 +89,14 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
     return {
       config: {
-        instanceName: row?.instanceName ?? config.INSTANCE_NAME,
-        smtpHost:     row?.smtpHost ?? config.SMTP_HOST ?? null,
-        smtpPort:     row?.smtpPort ?? config.SMTP_PORT,
-        smtpUser:     row?.smtpUser ?? config.SMTP_USER ?? null,
-        smtpFrom:     row?.smtpFrom ?? config.SMTP_FROM ?? null,
+        instanceName:   row?.instanceName ?? config.INSTANCE_NAME,
+        smtpHost:       row?.smtpHost ?? config.SMTP_HOST ?? null,
+        smtpPort:       row?.smtpPort ?? config.SMTP_PORT,
+        smtpUser:       row?.smtpUser ?? config.SMTP_USER ?? null,
+        smtpFrom:       row?.smtpFrom ?? config.SMTP_FROM ?? null,
         smtpConfigured: !!(row?.smtpHost ?? config.SMTP_HOST),
-        storageType:  config.STORAGE_TYPE,
-        defaultTheme: row?.defaultTheme ?? null,
+        storageType:    config.STORAGE_TYPE,
+        defaultTheme:   row?.defaultTheme ?? null,
       },
     }
   })
@@ -121,17 +120,18 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     const [row] = await db.select().from(instanceConfig).limit(1)
     return {
       config: {
-        instanceName: row?.instanceName ?? config.INSTANCE_NAME,
-        smtpHost:     row?.smtpHost ?? null,
-        smtpPort:     row?.smtpPort ?? config.SMTP_PORT,
-        smtpUser:     row?.smtpUser ?? null,
-        smtpFrom:     row?.smtpFrom ?? null,
+        instanceName:   row?.instanceName ?? config.INSTANCE_NAME,
+        smtpHost:       row?.smtpHost ?? null,
+        smtpPort:       row?.smtpPort ?? config.SMTP_PORT,
+        smtpUser:       row?.smtpUser ?? null,
+        smtpFrom:       row?.smtpFrom ?? null,
         smtpConfigured: !!(row?.smtpHost),
-        storageType:  config.STORAGE_TYPE,
-        defaultTheme: row?.defaultTheme ?? null,
+        storageType:    config.STORAGE_TYPE,
+        defaultTheme:   row?.defaultTheme ?? null,
       },
     }
   })
+
   // ── People directory ─────────────────────────────────────────────────────
 
   fastify.get('/api/admin/guests', { preHandler: staffPreHandler }, async (request) => {
@@ -145,6 +145,7 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
           type:        sql<string>`'user'`,
           displayName: users.displayName,
           email:       users.email,
+          status:      sql<string>`'active'`,
           firstSeen:   sql<Date>`min(${rsvps.createdAt})`,
           eventCount:  sql<number>`count(distinct ${rsvps.eventId})::int`,
         })
@@ -160,6 +161,7 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
           type:        sql<string>`'session'`,
           displayName: sql<string>`coalesce(${visitorSessions.displayName}, max(${rsvps.displayName}))`,
           email:       sql<string | null>`coalesce(${visitorSessions.email}, max(${rsvps.email}))`,
+          status:      visitorSessions.status,
           firstSeen:   sql<Date>`min(${rsvps.createdAt})`,
           eventCount:  sql<number>`count(distinct ${rsvps.eventId})::int`,
         })
@@ -182,7 +184,7 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     const isAdmin = user.role === 'admin'
 
     const [guest] = await db
-      .select({ id: users.id, displayName: users.displayName, email: users.email, createdAt: users.createdAt })
+      .select({ id: users.id, displayName: users.displayName, email: users.email, phone: users.phone, instagramHandle: users.instagramHandle, createdAt: users.createdAt })
       .from(users)
       .where(eq(users.id, guestId))
       .limit(1)
@@ -190,13 +192,13 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
     const eventRows = await db
       .select({
-        eventSlug:    events.slug,
-        eventTitle:   events.title,
-        startsAt:     events.startsAt,
-        timezone:     events.timezone,
-        rsvpStatus:   rsvps.status,
-        headCount:    rsvps.headCount,
-        checkedIn:    rsvps.checkedIn,
+        eventSlug:     events.slug,
+        eventTitle:    events.title,
+        startsAt:      events.startsAt,
+        timezone:      events.timezone,
+        rsvpStatus:    rsvps.status,
+        headCount:     rsvps.headCount,
+        checkedIn:     rsvps.checkedIn,
         rsvpCreatedAt: rsvps.createdAt,
       })
       .from(rsvps)
@@ -206,14 +208,19 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
     return {
       guest: {
-        id: guest.id,
-        type: 'user',
-        displayName: guest.displayName,
-        email: guest.email,
-        firstSeen: guest.createdAt.toISOString(),
+        id:              guest.id,
+        shortId:         guest.id.slice(0, 8),
+        type:            'user',
+        displayName:     guest.displayName,
+        email:           guest.email,
+        phone:           guest.phone,
+        instagramHandle: guest.instagramHandle,
+        status:          'active',
+        statusReason:    null,
+        firstSeen:       guest.createdAt.toISOString(),
         events: eventRows.map((r) => ({
           ...r,
-          startsAt: r.startsAt.toISOString(),
+          startsAt:      r.startsAt.toISOString(),
           rsvpCreatedAt: r.rsvpCreatedAt.toISOString(),
         })),
       },
@@ -226,7 +233,16 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     const isAdmin = user.role === 'admin'
 
     const [session] = await db
-      .select({ id: visitorSessions.id, displayName: visitorSessions.displayName, email: visitorSessions.email, createdAt: visitorSessions.createdAt })
+      .select({
+        id:              visitorSessions.id,
+        displayName:     visitorSessions.displayName,
+        email:           visitorSessions.email,
+        phone:           visitorSessions.phone,
+        instagramHandle: visitorSessions.instagramHandle,
+        status:          visitorSessions.status,
+        statusReason:    visitorSessions.statusReason,
+        createdAt:       visitorSessions.createdAt,
+      })
       .from(visitorSessions)
       .where(eq(visitorSessions.id, guestId))
       .limit(1)
@@ -234,13 +250,13 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
     const eventRows = await db
       .select({
-        eventSlug:    events.slug,
-        eventTitle:   events.title,
-        startsAt:     events.startsAt,
-        timezone:     events.timezone,
-        rsvpStatus:   rsvps.status,
-        headCount:    rsvps.headCount,
-        checkedIn:    rsvps.checkedIn,
+        eventSlug:     events.slug,
+        eventTitle:    events.title,
+        startsAt:      events.startsAt,
+        timezone:      events.timezone,
+        rsvpStatus:    rsvps.status,
+        headCount:     rsvps.headCount,
+        checkedIn:     rsvps.checkedIn,
         rsvpCreatedAt: rsvps.createdAt,
       })
       .from(rsvps)
@@ -248,23 +264,135 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
       .where(and(eq(rsvps.sessionId, guestId), isNull(rsvps.userId), isAdmin ? undefined : eq(events.organizerId, user.sub)))
       .orderBy(desc(events.startsAt))
 
-    const displayName = session.displayName ?? 'Anonymous'
-    const email = session.email ?? null
-
     return {
       guest: {
-        id: session.id,
-        type: 'session',
-        displayName,
-        email,
-        firstSeen: session.createdAt.toISOString(),
+        id:              session.id,
+        shortId:         session.id.slice(0, 8),
+        type:            'session',
+        displayName:     session.displayName ?? 'Anonymous',
+        email:           session.email ?? null,
+        phone:           session.phone ?? null,
+        instagramHandle: session.instagramHandle ?? null,
+        status:          session.status,
+        statusReason:    session.statusReason ?? null,
+        firstSeen:       session.createdAt.toISOString(),
         events: eventRows.map((r) => ({
           ...r,
-          startsAt: r.startsAt.toISOString(),
+          startsAt:      r.startsAt.toISOString(),
           rsvpCreatedAt: r.rsvpCreatedAt.toISOString(),
         })),
       },
     }
+  })
+
+  // ── Block / Unblock / Remove (session guests only) ───────────────────────
+
+  fastify.patch('/api/admin/guests/session/:guestId/block', { preHandler: staffPreHandler }, async (request, reply) => {
+    const actorId = request.user!.sub
+    const { guestId } = request.params as { guestId: string }
+    const body = BlockGuestSchema.parse(request.body)
+
+    const [session] = await db
+      .select({ id: visitorSessions.id, email: visitorSessions.email, status: visitorSessions.status })
+      .from(visitorSessions)
+      .where(eq(visitorSessions.id, guestId))
+      .limit(1)
+    if (!session) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
+    if (session.status === 'removed') throw createError(409, 'GUEST_REMOVED', 'Cannot block a removed guest.')
+
+    await db.transaction(async (tx) => {
+      await tx.update(visitorSessions)
+        .set({ status: 'blocked', statusReason: body.reason, statusAt: new Date(), statusBy: actorId })
+        .where(eq(visitorSessions.id, guestId))
+
+      // Block all active attendee tokens linked via RSVPs for this session
+      const rsvpTokenIds = await tx
+        .select({ tokenId: rsvps.tokenId })
+        .from(rsvps)
+        .where(and(eq(rsvps.sessionId, guestId), ne(rsvps.tokenId, sql`null`)))
+      const tokenIds = rsvpTokenIds.map((r) => r.tokenId).filter(Boolean) as string[]
+      for (const tid of tokenIds) {
+        await tx.update(eventTokens).set({ status: 'blocked' }).where(and(eq(eventTokens.id, tid), eq(eventTokens.status, 'active')))
+      }
+
+      if (body.blockEmail && session.email) {
+        await tx.insert(emailBlocklist)
+          .values({ email: session.email.toLowerCase(), permanent: false, reason: body.reason, createdBy: actorId })
+          .onConflictDoNothing()
+      }
+    })
+
+    return reply.code(204).send()
+  })
+
+  fastify.patch('/api/admin/guests/session/:guestId/unblock', { preHandler: staffPreHandler }, async (request, reply) => {
+    const { guestId } = request.params as { guestId: string }
+
+    const [session] = await db
+      .select({ id: visitorSessions.id, status: visitorSessions.status })
+      .from(visitorSessions)
+      .where(eq(visitorSessions.id, guestId))
+      .limit(1)
+    if (!session) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
+    if (session.status !== 'blocked') throw createError(409, 'NOT_BLOCKED', 'Guest is not blocked.')
+
+    await db.transaction(async (tx) => {
+      await tx.update(visitorSessions)
+        .set({ status: 'active', statusReason: null, statusAt: null, statusBy: null })
+        .where(eq(visitorSessions.id, guestId))
+
+      // Re-activate their tokens that were blocked (not blacklisted)
+      const rsvpTokenIds = await tx
+        .select({ tokenId: rsvps.tokenId })
+        .from(rsvps)
+        .where(and(eq(rsvps.sessionId, guestId), ne(rsvps.tokenId, sql`null`)))
+      const tokenIds = rsvpTokenIds.map((r) => r.tokenId).filter(Boolean) as string[]
+      for (const tid of tokenIds) {
+        await tx.update(eventTokens).set({ status: 'active' }).where(and(eq(eventTokens.id, tid), eq(eventTokens.status, 'blocked')))
+      }
+    })
+
+    return reply.code(204).send()
+  })
+
+  fastify.delete('/api/admin/guests/session/:guestId', { preHandler: staffPreHandler }, async (request, reply) => {
+    const actorId = request.user!.sub
+    const { guestId } = request.params as { guestId: string }
+    const body = RemoveGuestSchema.parse(request.body ?? {})
+
+    const [session] = await db
+      .select({ id: visitorSessions.id, email: visitorSessions.email })
+      .from(visitorSessions)
+      .where(eq(visitorSessions.id, guestId))
+      .limit(1)
+    if (!session) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
+
+    await db.transaction(async (tx) => {
+      await tx.update(visitorSessions)
+        .set({ status: 'removed', statusAt: new Date(), statusBy: actorId })
+        .where(eq(visitorSessions.id, guestId))
+
+      // Blacklist all their tokens permanently
+      const rsvpTokenIds = await tx
+        .select({ tokenId: rsvps.tokenId })
+        .from(rsvps)
+        .where(and(eq(rsvps.sessionId, guestId), ne(rsvps.tokenId, sql`null`)))
+      const tokenIds = rsvpTokenIds.map((r) => r.tokenId).filter(Boolean) as string[]
+      for (const tid of tokenIds) {
+        await tx.update(eventTokens).set({ status: 'blacklisted' }).where(eq(eventTokens.id, tid))
+      }
+
+      // Delete all RSVPs
+      await tx.delete(rsvps).where(eq(rsvps.sessionId, guestId))
+
+      if (body.blockEmail && session.email) {
+        await tx.insert(emailBlocklist)
+          .values({ email: session.email.toLowerCase(), permanent: true, createdBy: actorId })
+          .onConflictDoUpdate({ target: emailBlocklist.email, set: { permanent: true, createdBy: actorId } })
+      }
+    })
+
+    return reply.code(204).send()
   })
 }
 

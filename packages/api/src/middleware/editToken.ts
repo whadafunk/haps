@@ -46,7 +46,7 @@ const editTokenPlugin: FastifyPluginAsync = async (fastify) => {
       .select({ id: eventTokens.id, tokenHash: eventTokens.tokenHash })
       .from(eventTokens)
       .innerJoin(events, eq(events.id, eventTokens.eventId))
-      .where(and(eq(events.slug, slug), eq(eventTokens.type, 'edit'), eq(eventTokens.revoked, false)))
+      .where(and(eq(events.slug, slug), eq(eventTokens.type, 'edit'), eq(eventTokens.status, 'active')))
       .limit(1)
 
     if (!row) return
@@ -92,7 +92,7 @@ const editTokenPlugin: FastifyPluginAsync = async (fastify) => {
       .select({ id: eventTokens.id, tokenHash: eventTokens.tokenHash })
       .from(eventTokens)
       .innerJoin(events, eq(events.id, eventTokens.eventId))
-      .where(and(eq(events.slug, slug), eq(eventTokens.type, 'edit'), eq(eventTokens.revoked, false)))
+      .where(and(eq(events.slug, slug), eq(eventTokens.type, 'edit'), eq(eventTokens.status, 'active')))
       .limit(1)
 
     if (!row) throw createError(403, 'INVALID_EDIT_TOKEN', 'Edit token invalid.')

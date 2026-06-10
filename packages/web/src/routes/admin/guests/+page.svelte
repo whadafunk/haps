@@ -12,7 +12,8 @@
       ? data.guests
       : data.guests.filter((g: GuestRow) =>
           (g.displayName ?? '').toLowerCase().includes(search.toLowerCase()) ||
-          (g.email ?? '').toLowerCase().includes(search.toLowerCase())
+          (g.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
+          g.id.slice(0, 8).includes(search.toLowerCase())
         )
   )
 
@@ -59,6 +60,11 @@
             <div class="guest-meta">
               <span class="event-count">{guest.eventCount} event{guest.eventCount !== 1 ? 's' : ''}</span>
               <span class="first-seen">{formatDate(guest.firstSeen)}</span>
+              {#if guest.status === 'blocked'}
+                <span class="status-badge status-blocked">Blocked</span>
+              {:else if guest.status === 'removed'}
+                <span class="status-badge status-removed">Removed</span>
+              {/if}
               <span class="type-badge type-{guest.type}">{guest.type === 'user' ? 'Registered' : 'Guest'}</span>
             </div>
           </a>
@@ -132,4 +138,15 @@
   }
   .type-user { background: #e8f0fc; color: #2a4a7a; }
   .type-session { background: #ede8e0; color: #4e453e; }
+
+  .status-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .status-blocked { background: #fef3cd; color: #7a5a10; }
+  .status-removed { background: #ede8e0; color: #9a8f86; text-decoration: line-through; }
 </style>

@@ -1,29 +1,38 @@
 import { pgTable, uuid, text, boolean, timestamp, jsonb, integer, unique, index } from 'drizzle-orm/pg-core'
-import { sql, isNull, eq } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 
 export const users = pgTable('users', {
-  id:           uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-  email:        text('email').notNull().unique(),
-  passwordHash: text('password_hash').notNull(),
-  displayName:  text('display_name').notNull(),
-  role:         text('role').notNull(), // 'admin' | 'organizer' | 'member'
-  avatarUrl:    text('avatar_url'),
-  subscribed:   boolean('subscribed').notNull().default(false),
-  active:       boolean('active').notNull().default(true),
-  createdAt:    timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt:    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id:              uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  email:           text('email').notNull().unique(),
+  passwordHash:    text('password_hash').notNull(),
+  displayName:     text('display_name').notNull(),
+  role:            text('role').notNull(), // 'admin' | 'organizer' | 'member'
+  avatarUrl:       text('avatar_url'),
+  phone:           text('phone'),
+  instagramHandle: text('instagram_handle'),
+  subscribed:      boolean('subscribed').notNull().default(false),
+  active:          boolean('active').notNull().default(true),
+  createdAt:       timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:       timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 export const visitorSessions = pgTable('visitor_sessions', {
-  id:          uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-  userId:      uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
-  displayName: text('display_name'),
-  email:       text('email'),
-  eventAccess: jsonb('event_access').notNull().default(sql`'{}'::jsonb`),
-  createdAt:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  lastSeenAt:  timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  id:              uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  userId:          uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  displayName:     text('display_name'),
+  email:           text('email'),
+  phone:           text('phone'),
+  instagramHandle: text('instagram_handle'),
+  eventAccess:     jsonb('event_access').notNull().default(sql`'{}'::jsonb`),
+  status:          text('status').notNull().default('active'), // 'active' | 'blocked' | 'removed'
+  statusReason:    text('status_reason'),
+  statusAt:        timestamp('status_at', { withTimezone: true }),
+  statusBy:        uuid('status_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt:       timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt:      timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
-  userIdx: index('visitor_sessions_user_idx').on(t.userId).where(sql`${t.userId} is not null`),
+  userIdx:   index('visitor_sessions_user_idx').on(t.userId).where(sql`${t.userId} is not null`),
+  statusIdx: index('visitor_sessions_status_idx').on(t.status).where(sql`${t.status} != 'active'`),
 }))
 
 export const events = pgTable('events', {
@@ -59,10 +68,10 @@ export const eventTokens = pgTable('event_tokens', {
   type:      text('type').notNull(), // 'edit' | 'attendee'
   tokenHash: text('token_hash').notNull(),
   label:     text('label'),
-  revoked:   boolean('revoked').notNull().default(false),
+  status:    text('status').notNull().default('active'), // 'active' | 'blocked' | 'blacklisted'
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
-  eventTypeIdx: index('event_tokens_event_type_idx').on(t.eventId, t.type).where(sql`${t.revoked} = false`),
+  eventTypeIdx: index('event_tokens_event_type_idx').on(t.eventId, t.type).where(sql`${t.status} = 'active'`),
 }))
 
 export const rsvps = pgTable('rsvps', {
@@ -87,6 +96,15 @@ export const rsvps = pgTable('rsvps', {
   sessionIdx:         index('rsvps_session_idx').on(t.sessionId),
   userIdx:            index('rsvps_user_idx').on(t.userId),
 }))
+
+export const emailBlocklist = pgTable('email_blocklist', {
+  id:        uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  email:     text('email').notNull().unique(),
+  permanent: boolean('permanent').notNull().default(false),
+  reason:    text('reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+})
 
 export const instanceConfig = pgTable('instance_config', {
   id:           text('id').primaryKey(), // always 'singleton'

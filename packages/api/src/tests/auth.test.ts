@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import type { FastifyInstance } from 'fastify'
-import { getApp, closeApp, truncateAll, setupAdmin, createOrganizer, createEvent, getSessionCookie, extractCookies, mergeCookies } from './helpers.js'
+import { getApp, closeApp, truncateAll, setupAdmin, createOrganizer, createEvent, getSessionCookie, getSessionWithProfile, extractCookies, mergeCookies } from './helpers.js'
 
 let app: FastifyInstance
 let adminCookies: string
@@ -118,7 +118,7 @@ describe('POST /api/auth/register', () => {
     const { event } = await createEvent(app, orgCookies, { status: 'published' })
 
     // Guest RSVPs with a visitor session
-    const sessionCookie = await getSessionCookie(app)
+    const sessionCookie = await getSessionWithProfile(app)
     await app.inject({
       method: 'POST',
       url: `/api/events/${event.slug}/rsvps`,
@@ -167,7 +167,7 @@ describe('POST /api/auth/register', () => {
     })
 
     // Login on device B which has an independent session RSVP for the same event
-    const sessionB = await getSessionCookie(app)
+    const sessionB = await getSessionWithProfile(app, { email: 'alice-b@test.com' })
     await app.inject({
       method: 'POST',
       url: `/api/events/${event.slug}/rsvps`,

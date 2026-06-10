@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../app.js'
 import { db } from '../db/index.js'
-import { visitorSessions } from '../db/schema.js'
+import { visitorSessions, emailBlocklist } from '../db/schema.js'
 import { sql } from 'drizzle-orm'
 
 let _app: FastifyInstance | null = null
@@ -22,7 +22,7 @@ export async function closeApp(): Promise<void> {
 
 export async function truncateAll(): Promise<void> {
   await db.execute(sql`
-    TRUNCATE delivery_jobs, event_messages, comments, rsvps, event_tokens, events, visitor_sessions, users
+    TRUNCATE delivery_jobs, event_messages, comments, rsvps, event_tokens, events, visitor_sessions, users, email_blocklist
     RESTART IDENTITY CASCADE
   `)
 }
@@ -141,6 +141,21 @@ export async function createEvent(
 /** Create a visitor session directly in the DB and return a signed vsid cookie string */
 export async function getSessionCookie(app: FastifyInstance): Promise<string> {
   const [session] = await db.insert(visitorSessions).values({}).returning({ id: visitorSessions.id })
+  const signed = app.signCookie(session.id)
+  return `vsid=${signed}`
+}
+
+/** Create a session with a profile already set (bypasses the profile gate on RSVP) */
+export async function getSessionWithProfile(
+  app: FastifyInstance,
+  opts: { email?: string; displayName?: string } = {},
+): Promise<string> {
+  const email = opts.email ?? 'guest@test.com'
+  const displayName = opts.displayName ?? 'Test Guest'
+  const [session] = await db
+    .insert(visitorSessions)
+    .values({ email, displayName })
+    .returning({ id: visitorSessions.id })
   const signed = app.signCookie(session.id)
   return `vsid=${signed}`
 }

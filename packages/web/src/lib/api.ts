@@ -179,6 +179,9 @@ export const api = {
   updateSession: (body: { displayName?: string; email?: string }) =>
     apiFetch<{ session: { displayName: string | null; email: string | null } }>('/session/me', { method: 'PATCH', body: JSON.stringify(body) }),
 
+  submitProfile: (body: { displayName: string; email: string; phone?: string; instagramHandle?: string }) =>
+    apiFetch<{ ok: boolean }>('/session/profile', { method: 'POST', body: JSON.stringify(body) }),
+
   // Admin
   listAdminEvents: () =>
     apiFetch<{ events: Array<{ slug: string; title: string; status: string; startsAt: string }> }>('/admin/events'),
@@ -188,6 +191,16 @@ export const api = {
 
   createUser: (body: { email: string; password: string; displayName: string; role: string }) =>
     apiFetch<{ user: { id: string; email: string; displayName: string; role: string } }>('/admin/users', { method: 'POST', body: JSON.stringify(body) }),
+
+  // Admin guests
+  blockGuest: (sessionId: string, body: { reason: string; blockEmail?: boolean }) =>
+    apiFetch<void>(`/admin/guests/session/${sessionId}/block`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  unblockGuest: (sessionId: string) =>
+    apiFetch<void>(`/admin/guests/session/${sessionId}/unblock`, { method: 'PATCH', body: '{}' }),
+
+  removeGuest: (sessionId: string, body: { blockEmail?: boolean }) =>
+    apiFetch<void>(`/admin/guests/session/${sessionId}`, { method: 'DELETE', body: JSON.stringify(body) }),
 
   // Setup
   getSetupStatus: () =>
