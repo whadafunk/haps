@@ -1,7 +1,7 @@
 <main class="page">
   <div class="container">
-    <h1>Log in</h1>
-    <p class="subtitle">Guest accounts are coming soon.</p>
+    <h1>Create account</h1>
+    <p class="subtitle">Registration is coming soon.</p>
     <p class="back"><a href="/">← Back to home</a></p>
   </div>
 </main>

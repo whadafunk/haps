@@ -11,5 +11,5 @@ export const load: PageServerLoad = async ({ cookies }) => {
   cookies.delete('auth_token', { path: '/' })
   cookies.delete('refresh_token', { path: '/api/auth' })
 
-  redirect(302, '/backend')
+  redirect(302, '/admin')
 }

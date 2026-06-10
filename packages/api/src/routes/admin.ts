@@ -11,17 +11,17 @@ import { z } from 'zod'
 const adminRoutes: FastifyPluginAsync = async (fastify) => {
   // All admin routes require admin role
   const adminPreHandler = [fastify.requireRole('admin')]
+  const staffPreHandler = [fastify.requireRole('organizer')]
 
-  fastify.get('/api/admin/events', { preHandler: adminPreHandler }, async () => {
-    const rows = await db
-      .select({
-        slug: events.slug,
-        title: events.title,
-        status: events.status,
-        startsAt: events.startsAt,
-      })
+  fastify.get('/api/admin/events', { preHandler: staffPreHandler }, async (request) => {
+    const user = request.user!
+    const query = db
+      .select({ slug: events.slug, title: events.title, status: events.status, startsAt: events.startsAt })
       .from(events)
-      .orderBy(events.startsAt)
+
+    const rows = user.role === 'admin'
+      ? await query.orderBy(events.startsAt)
+      : await query.where(eq(events.organizerId, user.sub)).orderBy(events.startsAt)
 
     return { events: rows.map((e) => ({ ...e, startsAt: e.startsAt.toISOString() })) }
   })

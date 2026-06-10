@@ -1,10 +1,11 @@
 import type { PageServerLoad, Actions } from './$types'
 import { serverGet, serverPost, API_BASE } from '$lib/serverFetch'
 import { buildCookieHeader } from '$lib/serverFetch'
-import { fail } from '@sveltejs/kit'
+import { redirect, fail } from '@sveltejs/kit'
 
 export const load: PageServerLoad = async ({ cookies, parent }) => {
-  await parent()
+  const { user } = await parent()
+  if (!user) redirect(302, '/admin')
   const res = await serverGet<{ users: Array<{ id: string; email: string; displayName: string; role: string; active: boolean; createdAt: string }> }>('/admin/users', cookies)
   return { users: res.users }
 }

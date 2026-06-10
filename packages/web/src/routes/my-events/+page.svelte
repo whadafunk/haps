@@ -6,10 +6,25 @@
   function formatDate(iso: string) {
     return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
   }
+
+  const showRegisterNudge = $derived(!data.user && data.events.length > 0)
 </script>
 
 <main class="page">
   <div class="container">
+    {#if showRegisterNudge}
+      <div class="register-nudge">
+        <div class="nudge-text">
+          <strong>Keep your event history.</strong>
+          Register to access your events across all devices and never miss an update.
+        </div>
+        <div class="nudge-actions">
+          <a href="/register" class="nudge-btn-primary">Create account</a>
+          <a href="/login" class="nudge-btn-secondary">Log in</a>
+        </div>
+      </div>
+    {/if}
+
     <h1>My Events</h1>
     {#if data.session?.displayName}
       <p class="greeting">Hi, {data.session.displayName}!</p>
@@ -47,6 +62,40 @@
   .container { max-width: 600px; margin: 0 auto; }
   h1 { margin: 0 0 0.25rem; color: #1a1510; }
   .greeting { color: #6b6058; margin: 0 0 1.5rem; }
+
+  .register-nudge {
+    background: #f5ede2;
+    border: 1px solid #d4a574;
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .nudge-text { font-size: 0.9rem; color: #3d352e; flex: 1; min-width: 200px; }
+  .nudge-text strong { color: #1a1510; }
+  .nudge-actions { display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0; }
+  .nudge-btn-primary {
+    background: #b05525;
+    color: #fff;
+    text-decoration: none;
+    padding: 0.375rem 0.875rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .nudge-btn-primary:hover { background: #924418; }
+  .nudge-btn-secondary {
+    color: #3d352e;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+  .nudge-btn-secondary:hover { color: #b05525; }
+
   .empty { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 2rem; text-align: center; color: #6b6058; }
   .event-list { display: flex; flex-direction: column; gap: 0.625rem; }
   .event-card { display: flex; align-items: center; justify-content: space-between; background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1rem 1.25rem; text-decoration: none; color: inherit; }

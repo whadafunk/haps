@@ -1,4 +1,5 @@
 import type { PageServerLoad } from './$types'
+import { redirect } from '@sveltejs/kit'
 import { serverGet } from '$lib/serverFetch'
 
 interface AdminConfig {
@@ -12,7 +13,9 @@ interface AdminConfig {
   defaultTheme: string | null
 }
 
-export const load: PageServerLoad = async ({ cookies }) => {
+export const load: PageServerLoad = async ({ cookies, parent }) => {
+  const { user } = await parent()
+  if (!user) redirect(302, '/admin')
   const { config } = await serverGet<{ config: AdminConfig }>('/admin/config', cookies)
   return { config }
 }
