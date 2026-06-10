@@ -13,14 +13,17 @@
   let rsvpLoading = $state(false)
   let rsvpError = $state('')
 
-  // Profile gate
+  // Profile gate — shown lazily when RSVP returns 428 PROFILE_REQUIRED
   let profileName = $state('')
   let profileEmail = $state('')
   let profilePhone = $state('')
   let profileInstagram = $state('')
   let profileLoading = $state(false)
   let profileError = $state('')
-  let profileRequired = $state(data.sessionProfileRequired)
+  let profileRequired = $state(false)
+
+  type PendingRsvp = { displayName: string; status: string; headCount: number; note: string; email: string }
+  let pendingRsvp = $state<PendingRsvp | null>(null)
 
   async function submitProfile() {
     if (!profileName || !profileEmail) { profileError = 'Name and email are required.'; return }
@@ -34,7 +37,18 @@
         instagramHandle: profileInstagram || undefined,
       })
       profileRequired = false
-      await invalidateAll()
+      if (pendingRsvp) {
+        const p = pendingRsvp
+        pendingRsvp = null
+        rsvpName = p.displayName
+        rsvpStatus = p.status
+        rsvpHeadCount = p.headCount
+        rsvpNote = p.note
+        rsvpEmail = p.email
+        await submitRsvp()
+      } else {
+        await invalidateAll()
+      }
     } catch (e: unknown) {
       profileError = e instanceof ApiError ? e.message : 'Failed to save profile.'
     } finally {
@@ -115,6 +129,16 @@
         guestList = res.rsvps
       }
     } catch (e: unknown) {
+      if (e instanceof ApiError && e.statusCode === 428) {
+        // Session exists now (ensureSession ran before the 428), but profile is incomplete.
+        // Show the profile gate and remember the pending RSVP to re-submit after.
+        pendingRsvp = { displayName: rsvpName, status: rsvpStatus, headCount: rsvpHeadCount, note: rsvpNote, email: rsvpEmail }
+        profileName = rsvpName  // pre-fill from what they already typed
+        profileEmail = rsvpEmail
+        profileRequired = true
+        rsvpError = ''
+        return
+      }
       rsvpError = e instanceof ApiError ? e.message : 'Failed to submit RSVP.'
     } finally {
       rsvpLoading = false
