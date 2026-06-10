@@ -52,6 +52,7 @@ export async function serverGet<T>(path: string, cookies: Cookies): Promise<T> {
     const body = await res.json().catch(() => null)
     throw new ServerApiError(res.status, body?.error?.code ?? 'UNKNOWN', body?.error?.message ?? res.statusText)
   }
+  forwardCookies(res, cookies)
   return res.json() as Promise<T>
 }
 
@@ -69,5 +70,6 @@ export async function serverPost<T>(path: string, body: unknown, cookies: Cookie
     const b = await res.json().catch(() => null)
     throw new ServerApiError(res.status, b?.error?.code ?? 'UNKNOWN', b?.error?.message ?? res.statusText)
   }
+  forwardCookies(res, cookies)
   return res.json() as Promise<T>
 }
