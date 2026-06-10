@@ -39,7 +39,7 @@ export function forwardCookies(res: Response, cookies: Cookies): void {
       else if (lower.startsWith('max-age=')) opts.maxAge = parseInt(lower.slice(8), 10)
       else if (lower.startsWith('path=')) opts.path = d.slice(5)
     }
-    cookies.set(name, value, opts)
+    cookies.set(name, value, { ...opts, encode: (v: string) => v })
   }
 }
 
