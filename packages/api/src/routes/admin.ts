@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { users, events, instanceConfig } from '../db/schema.js'
-import { eq, count } from 'drizzle-orm'
+import { users, events, instanceConfig, visitorSessions, rsvps } from '../db/schema.js'
+import { eq, count, sql, and, isNull, desc } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { CreateUserSchema } from '@haps/shared'
 import { hashPassword } from '../lib/crypto.js'
@@ -129,6 +129,140 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
         smtpConfigured: !!(row?.smtpHost),
         storageType:  config.STORAGE_TYPE,
         defaultTheme: row?.defaultTheme ?? null,
+      },
+    }
+  })
+  // ── People directory ─────────────────────────────────────────────────────
+
+  fastify.get('/api/admin/guests', { preHandler: staffPreHandler }, async (request) => {
+    const user = request.user!
+    const isAdmin = user.role === 'admin'
+
+    const [userRows, sessionRows] = await Promise.all([
+      db
+        .select({
+          id:          users.id,
+          type:        sql<string>`'user'`,
+          displayName: users.displayName,
+          email:       users.email,
+          firstSeen:   sql<Date>`min(${rsvps.createdAt})`,
+          eventCount:  sql<number>`count(distinct ${rsvps.eventId})::int`,
+        })
+        .from(rsvps)
+        .innerJoin(users, eq(rsvps.userId, users.id))
+        .innerJoin(events, eq(rsvps.eventId, events.id))
+        .where(and(eq(users.role, 'member'), isAdmin ? undefined : eq(events.organizerId, user.sub)))
+        .groupBy(users.id),
+
+      db
+        .select({
+          id:          visitorSessions.id,
+          type:        sql<string>`'session'`,
+          displayName: sql<string>`coalesce(${visitorSessions.displayName}, max(${rsvps.displayName}))`,
+          email:       sql<string | null>`coalesce(${visitorSessions.email}, max(${rsvps.email}))`,
+          firstSeen:   sql<Date>`min(${rsvps.createdAt})`,
+          eventCount:  sql<number>`count(distinct ${rsvps.eventId})::int`,
+        })
+        .from(rsvps)
+        .innerJoin(visitorSessions, eq(rsvps.sessionId, visitorSessions.id))
+        .innerJoin(events, eq(rsvps.eventId, events.id))
+        .where(and(isNull(rsvps.userId), isAdmin ? undefined : eq(events.organizerId, user.sub)))
+        .groupBy(visitorSessions.id),
+    ])
+
+    const all = [...userRows, ...sessionRows].sort(
+      (a, b) => new Date(b.firstSeen).getTime() - new Date(a.firstSeen).getTime()
+    )
+    return { guests: all.map((g) => ({ ...g, firstSeen: new Date(g.firstSeen).toISOString() })) }
+  })
+
+  fastify.get('/api/admin/guests/user/:guestId', { preHandler: staffPreHandler }, async (request) => {
+    const user = request.user!
+    const { guestId } = request.params as { guestId: string }
+    const isAdmin = user.role === 'admin'
+
+    const [guest] = await db
+      .select({ id: users.id, displayName: users.displayName, email: users.email, createdAt: users.createdAt })
+      .from(users)
+      .where(eq(users.id, guestId))
+      .limit(1)
+    if (!guest) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
+
+    const eventRows = await db
+      .select({
+        eventSlug:    events.slug,
+        eventTitle:   events.title,
+        startsAt:     events.startsAt,
+        timezone:     events.timezone,
+        rsvpStatus:   rsvps.status,
+        headCount:    rsvps.headCount,
+        checkedIn:    rsvps.checkedIn,
+        rsvpCreatedAt: rsvps.createdAt,
+      })
+      .from(rsvps)
+      .innerJoin(events, eq(events.id, rsvps.eventId))
+      .where(and(eq(rsvps.userId, guestId), isAdmin ? undefined : eq(events.organizerId, user.sub)))
+      .orderBy(desc(events.startsAt))
+
+    return {
+      guest: {
+        id: guest.id,
+        type: 'user',
+        displayName: guest.displayName,
+        email: guest.email,
+        firstSeen: guest.createdAt.toISOString(),
+        events: eventRows.map((r) => ({
+          ...r,
+          startsAt: r.startsAt.toISOString(),
+          rsvpCreatedAt: r.rsvpCreatedAt.toISOString(),
+        })),
+      },
+    }
+  })
+
+  fastify.get('/api/admin/guests/session/:guestId', { preHandler: staffPreHandler }, async (request) => {
+    const user = request.user!
+    const { guestId } = request.params as { guestId: string }
+    const isAdmin = user.role === 'admin'
+
+    const [session] = await db
+      .select({ id: visitorSessions.id, displayName: visitorSessions.displayName, email: visitorSessions.email, createdAt: visitorSessions.createdAt })
+      .from(visitorSessions)
+      .where(eq(visitorSessions.id, guestId))
+      .limit(1)
+    if (!session) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
+
+    const eventRows = await db
+      .select({
+        eventSlug:    events.slug,
+        eventTitle:   events.title,
+        startsAt:     events.startsAt,
+        timezone:     events.timezone,
+        rsvpStatus:   rsvps.status,
+        headCount:    rsvps.headCount,
+        checkedIn:    rsvps.checkedIn,
+        rsvpCreatedAt: rsvps.createdAt,
+      })
+      .from(rsvps)
+      .innerJoin(events, eq(events.id, rsvps.eventId))
+      .where(and(eq(rsvps.sessionId, guestId), isNull(rsvps.userId), isAdmin ? undefined : eq(events.organizerId, user.sub)))
+      .orderBy(desc(events.startsAt))
+
+    const displayName = session.displayName ?? 'Anonymous'
+    const email = session.email ?? null
+
+    return {
+      guest: {
+        id: session.id,
+        type: 'session',
+        displayName,
+        email,
+        firstSeen: session.createdAt.toISOString(),
+        events: eventRows.map((r) => ({
+          ...r,
+          startsAt: r.startsAt.toISOString(),
+          rsvpCreatedAt: r.rsvpCreatedAt.toISOString(),
+        })),
       },
     }
   })
