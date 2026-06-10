@@ -17,7 +17,7 @@
     loading = true
     try {
       await api.register({ email, password, displayName })
-      goto('/my-events')
+      goto('/my-events', { invalidateAll: true })
     } catch (e: unknown) {
       error = e instanceof ApiError ? e.message : 'Registration failed. Please try again.'
     } finally {
