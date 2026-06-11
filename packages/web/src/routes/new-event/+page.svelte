@@ -28,16 +28,14 @@
         Location
         <input type="text" name="location" maxlength="500" placeholder="Address or venue name" />
       </label>
-      <div class="row">
-        <label>
-          Start *
-          <input type="datetime-local" name="startsAt" required />
-        </label>
-        <label>
-          End
-          <input type="datetime-local" name="endsAt" />
-        </label>
-      </div>
+      <label>
+        Date *
+        <input type="date" name="eventDate" required />
+      </label>
+      <label>
+        Time *
+        <input type="time" name="eventTime" required />
+      </label>
       <label>
         Timezone
         <select name="timezone">
@@ -80,9 +78,6 @@
   input, textarea, select { padding: 0.5rem 0.75rem; border: 1px solid #c8bdb0; border-radius: 8px; font-size: 1rem; font-family: inherit; background: #fff; color: #1a1510; }
   textarea { resize: vertical; }
   input:focus, textarea:focus, select:focus { outline: 2px solid #b05525; outline-offset: -1px; }
-  .row { display: grid; grid-template-columns: 1fr; gap: 1rem; }
-  @media (min-width: 480px) { .row { grid-template-columns: 1fr 1fr; } }
-  input[type='datetime-local'] { min-width: 0; width: 100%; }
   .btn-primary { background: #b05525; color: #fff; border: none; padding: 0.625rem; border-radius: 8px; font-size: 1rem; font-weight: 600; }
   .btn-primary:hover:not(:disabled) { background: #924418; }
   .btn-primary:disabled { opacity: 0.6; }

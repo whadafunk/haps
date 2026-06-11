@@ -13,20 +13,19 @@ export const actions: Actions = {
     const title = data.get('title')?.toString() ?? ''
     const description = data.get('description')?.toString() || undefined
     const location = data.get('location')?.toString() || undefined
-    const startsAt = data.get('startsAt')?.toString() ?? ''
-    const endsAt = data.get('endsAt')?.toString() || undefined
+    const eventDate = data.get('eventDate')?.toString() ?? ''
+    const eventTime = data.get('eventTime')?.toString() ?? ''
     const timezone = data.get('timezone')?.toString() ?? 'UTC'
     const theme = data.get('theme')?.toString() || undefined
 
-    if (!title || !startsAt) return fail(400, { error: 'Title and start date are required.' })
+    if (!title || !eventDate || !eventTime) return fail(400, { error: 'Title, date, and time are required.' })
 
     try {
       const res = await serverPost<{ event: { slug: string }; editToken: string; editLink: string; inviteToken: string }>(
         '/events',
         {
           title, description, location,
-          startsAt: new Date(startsAt).toISOString(),
-          endsAt: endsAt ? new Date(endsAt).toISOString() : undefined,
+          startsAt: new Date(`${eventDate}T${eventTime}`).toISOString(),
           timezone,
           theme,
         },
