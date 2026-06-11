@@ -10,11 +10,12 @@ export const load: PageServerLoad = async ({ params, url, cookies }) => {
   try {
     const data = await serverGet<{
       event: Event & { guestCount: number; yesCount: number; maybeCount: number }
-      myRsvp: { status: string; headCount: number; note?: string | null } | null
+      myRsvp: { status: string; headCount: number; note?: string | null; displayName: string } | null
       isEditor: boolean
       sessionProfileRequired: boolean
       sessionBlocked: boolean
       sessionBlockReason: string | null
+      inviteAlreadyUsed: boolean
     }>(path, cookies)
 
     const { event } = data
@@ -27,6 +28,7 @@ export const load: PageServerLoad = async ({ params, url, cookies }) => {
       sessionProfileRequired: data.sessionProfileRequired ?? false,
       sessionBlocked:         data.sessionBlocked ?? false,
       sessionBlockReason:     data.sessionBlockReason ?? null,
+      inviteAlreadyUsed:      data.inviteAlreadyUsed ?? false,
       meta: {
         title:       event.title,
         description: `${new Date(event.startsAt).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}${event.location ? ` · ${event.location}` : ''}`,

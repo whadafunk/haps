@@ -1,27 +1,46 @@
 import type { PageServerLoad } from './$types'
 import { error } from '@sveltejs/kit'
-import { serverGet, ServerApiError, API_BASE, buildCookieHeader } from '$lib/serverFetch'
+import { ServerApiError, API_BASE, buildCookieHeader, forwardCookies } from '$lib/serverFetch'
 import type { Event, Rsvp } from '@haps/shared'
 
-export const load: PageServerLoad = async ({ params, cookies }) => {
+export const load: PageServerLoad = async ({ params, url, cookies }) => {
   const cookieHeader = buildCookieHeader(cookies)
+  const initialInviteToken = url.searchParams.get('it') ?? null
 
   try {
-    const [eventRes, rsvpsRes] = await Promise.all([
-      serverGet<{
-        event: Event & { guestCount: number; yesCount: number; maybeCount: number }
-        isEditor: boolean
-        myRsvp: unknown
-      }>(`/events/${params.slug}`, cookies),
+    const [eventRaw, rsvpsRes, tokensRes] = await Promise.all([
+      fetch(`${API_BASE}/api/events/${params.slug}`, {
+        headers: {
+          'x-edit-token': params.token,
+          ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+        },
+      }),
       fetch(`${API_BASE}/api/events/${params.slug}/rsvps`, {
         headers: {
           'x-edit-token': params.token,
           ...(cookieHeader ? { Cookie: cookieHeader } : {}),
         },
       }).then((r) => r.json() as Promise<{ rsvps: Rsvp[] }>),
+      fetch(`${API_BASE}/api/events/${params.slug}/tokens`, {
+        headers: {
+          'x-edit-token': params.token,
+          ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+        },
+      }).then((r) => r.json() as Promise<{ tokens: Array<{ id: string; type: string; label: string | null; status: string; singleUse: boolean; claimedBySessionId: string | null; createdAt: string }> }>),
     ])
 
-    return { event: eventRes.event, rsvps: rsvpsRes.rsvps, editToken: params.token }
+    if (!eventRaw.ok) {
+      const body = await eventRaw.json().catch(() => null)
+      throw new ServerApiError(eventRaw.status, body?.error?.code ?? 'UNKNOWN', body?.error?.message ?? eventRaw.statusText)
+    }
+    forwardCookies(eventRaw, cookies)
+    const eventRes = await eventRaw.json() as {
+      event: Event & { guestCount: number; yesCount: number; maybeCount: number }
+      isEditor: boolean
+      myRsvp: unknown
+    }
+
+    return { event: eventRes.event, rsvps: rsvpsRes.rsvps, tokens: tokensRes.tokens ?? [], editToken: params.token, initialInviteToken }
   } catch (e: unknown) {
     if (e instanceof ServerApiError && e.statusCode === 403) error(403, 'Invalid edit token.')
     if (e instanceof ServerApiError && e.statusCode === 404) error(404, 'Event not found.')

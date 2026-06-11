@@ -21,7 +21,7 @@ export const actions: Actions = {
     if (!title || !startsAt) return fail(400, { error: 'Title and start date are required.' })
 
     try {
-      const res = await serverPost<{ event: { slug: string }; editToken: string; editLink: string }>(
+      const res = await serverPost<{ event: { slug: string }; editToken: string; editLink: string; inviteToken: string }>(
         '/events',
         {
           title, description, location,
@@ -32,7 +32,7 @@ export const actions: Actions = {
         },
         cookies,
       )
-      redirect(302, `/event/${res.event.slug}/edit/${res.editToken}?created=1`)
+      redirect(302, `/event/${res.event.slug}/edit/${res.editToken}?created=1&it=${encodeURIComponent(res.inviteToken)}`)
     } catch (e: unknown) {
       if (e instanceof ServerApiError) return fail(e.statusCode, { error: e.message })
       throw e

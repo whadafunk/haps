@@ -123,9 +123,13 @@ export const api = {
     })
   },
 
-  createToken: (slug: string, body: { type: 'attendee'; label?: string; singleUse?: boolean }) =>
+  listTokens: (slug: string, editToken: string) =>
+    apiFetch<{ tokens: Array<{ id: string; type: string; label: string | null; status: string; singleUse: boolean; claimedBySessionId: string | null; createdAt: string }> }>(
+      `/events/${slug}/tokens`, { headers: { 'x-edit-token': editToken } }),
+
+  createToken: (slug: string, body: { type: 'attendee'; label?: string; singleUse?: boolean }, editToken?: string) =>
     apiFetch<{ token: { id: string; type: string; label: string | null; singleUse: boolean }; rawToken: string }>(
-      `/events/${slug}/tokens`, { method: 'POST', body: JSON.stringify(body) }),
+      `/events/${slug}/tokens`, { method: 'POST', body: JSON.stringify(body), headers: editToken ? { 'x-edit-token': editToken } : {} }),
 
   // RSVPs
   submitRsvp: (slug: string, body: Record<string, unknown>) =>

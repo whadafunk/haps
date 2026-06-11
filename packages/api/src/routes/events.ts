@@ -17,8 +17,10 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
   }, async (request, reply) => {
     const body = CreateEventSchema.parse(request.body)
     const slug = generateSlug()
-    const rawToken = generateToken()
-    const tokenHash = await hashToken(rawToken)
+    const rawEditToken = generateToken()
+    const editTokenHash = await hashToken(rawEditToken)
+    const rawInviteToken = generateToken()
+    const inviteTokenHash = await hashToken(rawInviteToken)
 
     const [event] = await db.transaction(async (tx) => {
       const inserted = await tx.insert(events).values({
@@ -41,20 +43,20 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
       const evt = inserted[0]
       if (!evt) throw new Error('Insert failed')
 
-      await tx.insert(eventTokens).values({
-        eventId: evt.id,
-        type: 'edit',
-        tokenHash,
-        label: 'host',
-      })
+      await tx.insert(eventTokens).values([
+        { eventId: evt.id, type: 'edit', tokenHash: editTokenHash, label: 'host' },
+        { eventId: evt.id, type: 'attendee', tokenHash: inviteTokenHash, label: 'general', singleUse: false },
+      ])
 
       return inserted
     })
 
     if (!event) throw createError(500, 'INTERNAL_ERROR', 'Failed to create event.')
 
-    const editLink = `${config.APP_URL}/event/${slug}/edit/${rawToken}`
-    return reply.code(201).send({ event: serializeEvent(event), editLink, editToken: rawToken })
+    const editLink = `${config.APP_URL}/event/${slug}/edit/${rawEditToken}`
+    const inviteLink = `${config.APP_URL}/event/${slug}?t=${rawInviteToken}`
+    fastify.log.info({ slug, inviteLink: '[redacted]' }, 'event created with edit+invite tokens')
+    return reply.code(201).send({ event: serializeEvent(event), editLink, editToken: rawEditToken, inviteLink, inviteToken: rawInviteToken })
   })
 
   fastify.get('/api/events/:slug', async (request, reply) => {
@@ -79,6 +81,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     // Validate attendee token from query string.
     // Only create a session if the token is valid — this is the intended session-creation trigger.
     const queryT = (request.query as Record<string, string | undefined>)['t']
+    let inviteAlreadyUsed = false
     if (queryT && !isEditor) {
       const tokenRows = await db
         .select({ id: eventTokens.id, tokenHash: eventTokens.tokenHash, singleUse: eventTokens.singleUse, claimedBySessionId: eventTokens.claimedBySessionId })
@@ -93,10 +96,12 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
 
           if (tokenRow.singleUse) {
             if (tokenRow.claimedBySessionId !== null && tokenRow.claimedBySessionId !== sessionId) {
-              // Token already used by a different session — don't grant access
+              fastify.log.info({ tokenId: tokenRow.id, sessionId }, 'single-use invite token already claimed by different session')
+              inviteAlreadyUsed = true
               break
             }
             if (tokenRow.claimedBySessionId === null) {
+              fastify.log.info({ tokenId: tokenRow.id, sessionId }, 'single-use invite token claimed')
               await db.update(eventTokens).set({ claimedBySessionId: sessionId }).where(eq(eventTokens.id, tokenRow.id))
             }
           }
@@ -134,7 +139,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     let myRsvp = null
     if (request.session) {
       const myRows = await db
-        .select({ status: rsvps.status, headCount: rsvps.headCount, note: rsvps.note })
+        .select({ status: rsvps.status, headCount: rsvps.headCount, note: rsvps.note, displayName: rsvps.displayName })
         .from(rsvps)
         .where(and(eq(rsvps.eventId, event.id), eq(rsvps.sessionId, request.session.id)))
         .limit(1)
@@ -156,6 +161,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
       sessionProfileRequired: !sessionBlocked && sessionProfileRequired,
       sessionBlocked,
       sessionBlockReason: sessionBlocked ? (request.session?.statusReason ?? null) : null,
+      inviteAlreadyUsed,
     }
   })
 

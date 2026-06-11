@@ -5,11 +5,12 @@
 
   let { data } = $props<{ data: PageData }>()
 
+  let editingRsvp = $state(!data.myRsvp)
   let rsvpStatus = $state(data.myRsvp?.status ?? '')
-  let rsvpName = $state('')
+  let rsvpName = $state(data.myRsvp?.displayName ?? '')
   let rsvpEmail = $state('')
-  let rsvpNote = $state('')
-  let rsvpHeadCount = $state(1)
+  let rsvpNote = $state(data.myRsvp?.note ?? '')
+  let rsvpHeadCount = $state(data.myRsvp?.headCount ?? 1)
   let rsvpLoading = $state(false)
   let rsvpError = $state('')
 
@@ -123,6 +124,7 @@
         email: rsvpEmail || undefined,
       })
       await invalidateAll()
+      editingRsvp = false
       // Reload guest list after RSVP
       if (event.showGuests) {
         const res = await api.listRsvps(event.slug)
@@ -130,10 +132,31 @@
       }
     } catch (e: unknown) {
       if (e instanceof ApiError && e.statusCode === 428) {
-        // Session exists now (ensureSession ran before the 428), but profile is incomplete.
-        // Show the profile gate and remember the pending RSVP to re-submit after.
+        if (rsvpName && rsvpEmail) {
+          // Name and email already provided — save profile silently and retry.
+          try {
+            await api.submitProfile({ displayName: rsvpName, email: rsvpEmail })
+            await api.submitRsvp(event.slug, {
+              displayName: rsvpName,
+              status: rsvpStatus,
+              headCount: rsvpHeadCount,
+              note: rsvpNote || undefined,
+              email: rsvpEmail,
+            })
+            await invalidateAll()
+            editingRsvp = false
+            if (event.showGuests) {
+              const res = await api.listRsvps(event.slug)
+              guestList = res.rsvps
+            }
+          } catch (e2: unknown) {
+            rsvpError = e2 instanceof ApiError ? e2.message : 'Failed to submit RSVP.'
+          }
+          return
+        }
+        // Email not provided — show profile gate so they can enter it.
         pendingRsvp = { displayName: rsvpName, status: rsvpStatus, headCount: rsvpHeadCount, note: rsvpNote, email: rsvpEmail }
-        profileName = rsvpName  // pre-fill from what they already typed
+        profileName = rsvpName
         profileEmail = rsvpEmail
         profileRequired = true
         rsvpError = ''
@@ -267,7 +290,12 @@
       <section class="section">
         <h2>RSVP</h2>
 
-        {#if data.sessionBlocked}
+        {#if data.inviteAlreadyUsed}
+          <div class="invite-used-banner">
+            <strong>This invite link has already been used.</strong>
+            <p>Contact the host for a new invite link.</p>
+          </div>
+        {:else if data.sessionBlocked}
           <div class="blocked-banner">
             <strong>You have been blocked from RSVPing.</strong>
             {#if data.sessionBlockReason}
@@ -300,11 +328,22 @@
               {profileLoading ? 'Saving…' : 'Continue to RSVP'}
             </button>
           </div>
+        {:else if data.myRsvp && !editingRsvp}
+          <!-- Read-only RSVP summary -->
+          <div class="rsvp-summary">
+            <div class="rsvp-summary-status rsvp-summary-{data.myRsvp.status}">
+              {data.myRsvp.status === 'yes' ? 'Going' : data.myRsvp.status === 'maybe' ? 'Maybe' : 'Not going'}
+              {#if data.myRsvp.headCount > 1} · party of {data.myRsvp.headCount}{/if}
+            </div>
+            <div class="rsvp-summary-name">{data.myRsvp.displayName}</div>
+            {#if data.myRsvp.note}
+              <div class="rsvp-summary-note">"{data.myRsvp.note}"</div>
+            {/if}
+            <button class="change-rsvp-btn" onclick={() => { editingRsvp = true; rsvpError = '' }}>
+              Change RSVP
+            </button>
+          </div>
         {:else}
-          {#if data.myRsvp}
-            <p class="my-rsvp">Your RSVP: <strong>{data.myRsvp.status}</strong> (party of {data.myRsvp.headCount})</p>
-          {/if}
-
           {#if rsvpError}
             <div class="error-banner">{rsvpError}</div>
           {/if}
@@ -337,9 +376,16 @@
               Email (optional, for reminders)
               <input type="email" bind:value={rsvpEmail} placeholder="you@example.com" />
             </label>
-            <button class="submit-btn" onclick={submitRsvp} disabled={rsvpLoading}>
-              {rsvpLoading ? 'Saving…' : data.myRsvp ? 'Update RSVP' : 'Submit RSVP'}
-            </button>
+            <div class="rsvp-actions">
+              <button class="submit-btn" onclick={submitRsvp} disabled={rsvpLoading}>
+                {rsvpLoading ? 'Saving…' : data.myRsvp ? 'Update RSVP' : 'Submit RSVP'}
+              </button>
+              {#if data.myRsvp}
+                <button class="cancel-btn" onclick={() => { editingRsvp = false; rsvpError = '' }}>
+                  Cancel
+                </button>
+              {/if}
+            </div>
           </div>
         {/if}
       </section>
@@ -485,7 +531,21 @@
   .editor-banner a { color: var(--accent, #b05525); text-decoration: none; font-weight: 600; }
   .section { background: var(--card-bg, #f0e8da); border: 1px solid var(--border, #cfc3b0); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
   .section h2 { margin: 0 0 1rem; font-size: 1.1rem; color: #1a1510; }
-  .my-rsvp { font-size: 0.9rem; color: #3d352e; margin-bottom: 1rem; }
+  .invite-used-banner { background: #fef4e0; color: #7a5a1a; border: 1px solid #e0c870; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
+  .invite-used-banner strong { display: block; margin-bottom: 0.25rem; }
+  .invite-used-banner p { margin: 0; font-size: 0.875rem; }
+  .rsvp-summary { background: var(--card-inner, #e8ddd0); border: 1px solid var(--border, #cfc3b0); border-radius: 10px; padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.375rem; }
+  .rsvp-summary-status { font-size: 1rem; font-weight: 700; color: #1a1510; }
+  .rsvp-summary-yes { color: #2a5e28; }
+  .rsvp-summary-maybe { color: #7a5a1a; }
+  .rsvp-summary-no { color: #4e453e; }
+  .rsvp-summary-name { font-size: 0.875rem; color: #3d352e; }
+  .rsvp-summary-note { font-size: 0.875rem; color: #6b6058; font-style: italic; }
+  .change-rsvp-btn { align-self: flex-start; margin-top: 0.5rem; background: none; border: 1px solid var(--border, #cfc3b0); border-radius: 6px; padding: 0.375rem 0.75rem; font-size: 0.8rem; font-weight: 500; color: #3d352e; cursor: pointer; }
+  .change-rsvp-btn:hover { border-color: var(--accent, #b05525); color: var(--accent, #b05525); }
+  .rsvp-actions { display: flex; gap: 0.75rem; align-items: center; }
+  .cancel-btn { background: none; border: 1px solid var(--border, #cfc3b0); border-radius: 8px; padding: 0.625rem 1rem; font-size: 0.9rem; color: #3d352e; cursor: pointer; }
+  .cancel-btn:hover { border-color: #9a8f86; }
   .profile-intro { font-size: 0.875rem; color: #3d352e; margin-bottom: 1rem; }
   .req { color: #c03828; }
   .blocked-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.9rem; }

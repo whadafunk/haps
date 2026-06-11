@@ -49,6 +49,19 @@
           </div>
         {/if}
       </div>
+    {:else if data.session?.displayName}
+      <div class="user-menu">
+        <button class="user-menu-btn" onclick={() => (menuOpen = !menuOpen)}>
+          {data.session.displayName}<span class="chevron" class:open={menuOpen}>▾</span>
+        </button>
+        {#if menuOpen}
+          <div class="user-menu-dropdown" role="menu">
+            <a href="/my-events" class="menu-item" onclick={() => (menuOpen = false)}>My events</a>
+            <a href="/register" class="menu-item" onclick={() => (menuOpen = false)}>Create account</a>
+            <a href="/login" class="menu-item" onclick={() => (menuOpen = false)}>Log in</a>
+          </div>
+        {/if}
+      </div>
     {:else}
       <a href="/register" class="nav-link">Register</a>
       <a href="/login" class="nav-link nav-link-cta">Log in</a>
