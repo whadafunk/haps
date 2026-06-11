@@ -36,7 +36,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     const eventRows = await db
-      .select({ id: events.id, status: events.status, maxCapacity: events.maxCapacity, rsvpDeadline: events.rsvpDeadline })
+      .select({ id: events.id, status: events.status, eventType: events.eventType, maxCapacity: events.maxCapacity, rsvpDeadline: events.rsvpDeadline })
       .from(events)
       .where(eq(events.slug, slug))
       .limit(1)
@@ -48,6 +48,15 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
       throw createError(403, 'RSVP_DEADLINE_PASSED', 'RSVP deadline has passed.')
     }
 
+    // Invite-only events require an attendee token to have been claimed in this session
+    if (event.eventType === 'invite_only') {
+      const access = session.eventAccess?.[slug]
+      if (access !== 'attendee' && access !== 'editor') {
+        throw createError(403, 'TOKEN_REQUIRED', 'An invite link is required to RSVP to this event.')
+      }
+    }
+
+    let rsvpStatus: string = body.status
     if (body.status === 'yes' && event.maxCapacity) {
       const countRows = await db
         .select({ yesCount: count() })
@@ -55,7 +64,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
         .where(and(eq(rsvps.eventId, event.id), eq(rsvps.status, 'yes')))
       const yesCount = Number(countRows[0]?.yesCount ?? 0)
       if (yesCount >= event.maxCapacity) {
-        throw createError(409, 'EVENT_FULL', 'Event has reached maximum capacity.')
+        rsvpStatus = 'waitlist'
       }
     }
 
@@ -75,7 +84,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
         userId:      session.userId,
         displayName: body.displayName,
         email:       body.email ?? null,
-        status:      body.status,
+        status:      rsvpStatus,
         headCount:   body.headCount,
         note:        body.note ?? null,
       })
@@ -84,7 +93,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
         set: {
           displayName: body.displayName,
           email:       body.email ?? null,
-          status:      body.status,
+          status:      rsvpStatus,
           headCount:   body.headCount,
           note:        body.note ?? null,
           updatedAt:   new Date(),

@@ -21,6 +21,7 @@ export interface Event {
   coverImageUrl?: string | null
   theme?: string | null
   status: 'draft' | 'published' | 'cancelled' | 'archived'
+  eventType: 'open' | 'invite_only'
   showGuests: boolean
   allowComments: boolean
   maxCapacity?: number | null

@@ -53,6 +53,7 @@ export const events = pgTable('events', {
   maxCapacity:   integer('max_capacity'),
   rsvpDeadline:  timestamp('rsvp_deadline', { withTimezone: true }),
   expiresAt:     timestamp('expires_at', { withTimezone: true }),
+  eventType:     text('event_type').notNull().default('open'), // 'open' | 'invite_only'
   createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt:     timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({

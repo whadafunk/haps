@@ -17,21 +17,26 @@ export const actions: Actions = {
     const eventTime = data.get('eventTime')?.toString() ?? ''
     const timezone = data.get('timezone')?.toString() ?? 'UTC'
     const theme = data.get('theme')?.toString() || undefined
+    const eventTypeRaw = data.get('eventType')?.toString()
+    const eventType = eventTypeRaw === 'invite_only' ? 'invite_only' : 'open'
+    const maxCapacityRaw = data.get('maxCapacity')?.toString()
+    const maxCapacity = maxCapacityRaw ? parseInt(maxCapacityRaw, 10) : undefined
 
     if (!title || !eventDate || !eventTime) return fail(400, { error: 'Title, date, and time are required.' })
 
     try {
-      const res = await serverPost<{ event: { slug: string }; editToken: string; editLink: string; inviteToken: string }>(
+      const res = await serverPost<{ event: { slug: string }; editToken: string; editLink: string; inviteToken: string | null }>(
         '/events',
         {
           title, description, location,
           startsAt: new Date(`${eventDate}T${eventTime}`).toISOString(),
-          timezone,
-          theme,
+          timezone, theme, eventType,
+          ...(maxCapacity ? { maxCapacity } : {}),
         },
         cookies,
       )
-      redirect(302, `/event/${res.event.slug}/edit/${res.editToken}?created=1&it=${encodeURIComponent(res.inviteToken)}`)
+      const itParam = res.inviteToken ? `&it=${encodeURIComponent(res.inviteToken)}` : ''
+      redirect(302, `/event/${res.event.slug}/edit/${res.editToken}?created=1${itParam}`)
     } catch (e: unknown) {
       if (e instanceof ServerApiError) return fail(e.statusCode, { error: e.message })
       throw e

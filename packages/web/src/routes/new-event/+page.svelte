@@ -4,6 +4,28 @@
 
   let { data, form } = $props<{ data: PageData; form: ActionData }>()
   let loading = $state(false)
+  let selectedTheme = $state('')
+  let selectedType = $state<'open' | 'invite_only'>('open')
+
+  const THEMES: Record<string, Record<string, string>> = {
+    forest: {
+      '--accent': '#2d6e30', '--accent-hover': '#1f5022',
+      '--card-bg': '#e4efe0', '--border': '#9cbb9c',
+    },
+    ocean: {
+      '--accent': '#1a5fa8', '--accent-hover': '#124480',
+      '--card-bg': '#dce8f6', '--border': '#9cb8d8',
+    },
+    sunset: {
+      '--accent': '#c03828', '--accent-hover': '#9e2820',
+      '--card-bg': '#f4ddd8', '--border': '#d8a898',
+    },
+  }
+
+  function themeStyle(theme: string): string {
+    const vars = THEMES[theme] ?? {}
+    return Object.entries(vars).map(([k, v]) => `${k}: ${v}`).join('; ')
+  }
 </script>
 
 <main class="page">
@@ -15,7 +37,25 @@
       <div class="error-banner">{form.error}</div>
     {/if}
 
-    <form class="card" method="POST" use:enhance={() => { loading = true; return async ({ update }) => { loading = false; await update() } }}>
+    <form class="card" method="POST" style={themeStyle(selectedTheme)} use:enhance={() => { loading = true; return async ({ update }) => { loading = false; await update() } }}>
+      <fieldset class="type-fieldset">
+        <legend>Event type *</legend>
+        <label class="type-option">
+          <input type="radio" name="eventType" value="open" checked={selectedType === 'open'} onchange={() => selectedType = 'open'} />
+          <div class="type-option-body">
+            <span class="type-name">Open</span>
+            <span class="type-desc">Anyone with the invite link can RSVP</span>
+          </div>
+        </label>
+        <label class="type-option">
+          <input type="radio" name="eventType" value="invite_only" checked={selectedType === 'invite_only'} onchange={() => selectedType = 'invite_only'} />
+          <div class="type-option-body">
+            <span class="type-name">Invite-only</span>
+            <span class="type-desc">Generate personal invite links for each guest</span>
+          </div>
+        </label>
+      </fieldset>
+
       <label>
         Event title *
         <input type="text" name="title" required maxlength="200" placeholder="Birthday party, company off-site…" />
@@ -51,9 +91,15 @@
           <option value="Australia/Sydney">Sydney (AEST)</option>
         </select>
       </label>
+      {#if selectedType === 'open'}
+        <label>
+          Max capacity
+          <input type="number" name="maxCapacity" min="1" placeholder="Unlimited" />
+        </label>
+      {/if}
       <label>
         Theme
-        <select name="theme">
+        <select name="theme" bind:value={selectedTheme}>
           <option value="">Default (warm)</option>
           <option value="forest">Forest (green)</option>
           <option value="ocean">Ocean (blue)</option>
@@ -73,13 +119,21 @@
   .back { font-size: 0.875rem; color: #6b6058; text-decoration: none; display: block; margin-bottom: 1rem; }
   .back:hover { color: #b05525; }
   h1 { margin: 0 0 1.5rem; font-size: 1.5rem; color: #1a1510; }
-  .card { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
+  .card { background: var(--card-bg, #f0e8da); border: 1px solid var(--border, #cfc3b0); border-radius: 12px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; transition: background 0.2s, border-color 0.2s; }
   label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; font-weight: 500; color: #3d352e; }
   input, textarea, select { padding: 0.5rem 0.75rem; border: 1px solid #c8bdb0; border-radius: 8px; font-size: 1rem; font-family: inherit; background: #fff; color: #1a1510; }
   textarea { resize: vertical; }
-  input:focus, textarea:focus, select:focus { outline: 2px solid #b05525; outline-offset: -1px; }
-  .btn-primary { background: #b05525; color: #fff; border: none; padding: 0.625rem; border-radius: 8px; font-size: 1rem; font-weight: 600; }
-  .btn-primary:hover:not(:disabled) { background: #924418; }
+  input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent, #b05525); outline-offset: -1px; }
+  .btn-primary { background: var(--accent, #b05525); color: #fff; border: none; padding: 0.625rem; border-radius: 8px; font-size: 1rem; font-weight: 600; transition: background 0.2s; }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-hover, #924418); }
   .btn-primary:disabled { opacity: 0.6; }
   .error-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
+  .type-fieldset { border: 1px solid #c8bdb0; border-radius: 8px; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+  .type-fieldset legend { font-size: 0.875rem; font-weight: 500; color: #3d352e; padding: 0 0.25rem; }
+  .type-option { display: flex; align-items: flex-start; gap: 0.625rem; padding: 0.5rem 0.625rem; border: 1px solid transparent; border-radius: 6px; cursor: pointer; font-weight: normal; }
+  .type-option:has(input:checked) { border-color: var(--accent, #b05525); background: rgba(176, 85, 37, 0.05); }
+  .type-option input { margin-top: 0.2rem; flex-shrink: 0; }
+  .type-option-body { display: flex; flex-direction: column; gap: 0.15rem; }
+  .type-name { font-size: 0.875rem; font-weight: 600; color: #1a1510; }
+  .type-desc { font-size: 0.8rem; color: #6b6058; }
 </style>

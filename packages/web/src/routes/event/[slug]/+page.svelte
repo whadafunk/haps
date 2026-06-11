@@ -279,6 +279,12 @@
       </div>
     {/if}
 
+    {#if event.status === 'cancelled'}
+      <div class="cancelled-banner">
+        This event has been cancelled.
+      </div>
+    {/if}
+
     {#if data.isEditor}
       <div class="editor-banner">
         You are the host. <a href="/event/{event.slug}/edit">Manage event →</a>
@@ -527,6 +533,7 @@
   .cal-link { font-size: 0.8rem; color: #924418; text-decoration: none; }
   .cal-link:hover { color: #6d3210; }
   .description { margin-bottom: 1.5rem; white-space: pre-wrap; color: #3d352e; line-height: 1.6; }
+  .cancelled-banner { background: #f8e8e2; color: #7a2a1a; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; font-weight: 600; }
   .editor-banner { background: var(--card-bg, #f0e8da); color: #7a3010; border: 1px solid var(--border, #cfc3b0); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; font-size: 0.875rem; }
   .editor-banner a { color: var(--accent, #b05525); text-decoration: none; font-weight: 600; }
   .section { background: var(--card-bg, #f0e8da); border: 1px solid var(--border, #cfc3b0); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }

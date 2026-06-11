@@ -33,6 +33,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
         endsAt: body.endsAt ? new Date(body.endsAt) : null,
         timezone: body.timezone,
         theme: body.theme ?? null,
+        eventType: body.eventType,
         showGuests: body.showGuests,
         allowComments: body.allowComments,
         maxCapacity: body.maxCapacity ?? null,
@@ -43,10 +44,14 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
       const evt = inserted[0]
       if (!evt) throw new Error('Insert failed')
 
-      await tx.insert(eventTokens).values([
+      const tokenValues: (typeof eventTokens.$inferInsert)[] = [
         { eventId: evt.id, type: 'edit', tokenHash: editTokenHash, label: 'host' },
-        { eventId: evt.id, type: 'attendee', tokenHash: inviteTokenHash, label: 'general', singleUse: false },
-      ])
+      ]
+      // Open events get a general reusable invite token; invite-only events use per-person tokens
+      if (body.eventType !== 'invite_only') {
+        tokenValues.push({ eventId: evt.id, type: 'attendee', tokenHash: inviteTokenHash, label: 'general', singleUse: false })
+      }
+      await tx.insert(eventTokens).values(tokenValues)
 
       return inserted
     })
@@ -54,9 +59,9 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!event) throw createError(500, 'INTERNAL_ERROR', 'Failed to create event.')
 
     const editLink = `${config.APP_URL}/event/${slug}/edit/${rawEditToken}`
-    const inviteLink = `${config.APP_URL}/event/${slug}?t=${rawInviteToken}`
-    fastify.log.info({ slug, inviteLink: '[redacted]' }, 'event created with edit+invite tokens')
-    return reply.code(201).send({ event: serializeEvent(event), editLink, editToken: rawEditToken, inviteLink, inviteToken: rawInviteToken })
+    const inviteLink = body.eventType !== 'invite_only' ? `${config.APP_URL}/event/${slug}?t=${rawInviteToken}` : null
+    fastify.log.info({ slug }, 'event created')
+    return reply.code(201).send({ event: serializeEvent(event), editLink, editToken: rawEditToken, inviteLink, inviteToken: body.eventType !== 'invite_only' ? rawInviteToken : null })
   })
 
   fastify.get('/api/events/:slug', async (request, reply) => {
@@ -185,6 +190,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     if (body.maxCapacity !== undefined) updates['maxCapacity'] = body.maxCapacity ?? null
     if (body.rsvpDeadline !== undefined) updates['rsvpDeadline'] = body.rsvpDeadline ? new Date(body.rsvpDeadline) : null
     if (body.expiresAt !== undefined) updates['expiresAt'] = body.expiresAt ? new Date(body.expiresAt) : null
+    if (body.eventType !== undefined) updates['eventType'] = body.eventType
 
     const updated = await db.update(events).set(updates as Parameters<ReturnType<typeof db.update>['set']>[0]).where(eq(events.slug, slug)).returning()
     const event = updated[0]
@@ -345,6 +351,7 @@ function serializeEvent(event: typeof events.$inferSelect) {
     status: event.status,
     showGuests: event.showGuests,
     allowComments: event.allowComments,
+    eventType: event.eventType as 'open' | 'invite_only',
     maxCapacity: event.maxCapacity,
     rsvpDeadline: event.rsvpDeadline?.toISOString() ?? null,
     expiresAt: event.expiresAt?.toISOString() ?? null,

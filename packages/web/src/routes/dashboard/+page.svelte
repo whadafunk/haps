@@ -29,7 +29,7 @@
           {#each data.events as event (event.slug)}
             <div class="event-row">
               <div>
-                <a href="/event/{event.slug}" class="event-title">{event.title}</a>
+                <a href="/event/{event.slug}/edit" class="event-title">{event.title}</a>
                 <p class="event-meta">{formatDate(event.startsAt)}</p>
               </div>
               <span class="badge status-{event.status}">{event.status}</span>

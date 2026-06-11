@@ -19,11 +19,25 @@
   let comments = $state<Array<{ id: string; displayName: string; body: string; createdAt: string }>>([])
   let commentsLoaded = $state(false)
 
-  type TokenRow = { id: string; type: string; label: string | null; status: string; singleUse: boolean; claimedBySessionId: string | null; createdAt: string; rawToken?: string }
-  let inviteTokens = $state<TokenRow[]>((data.tokens as TokenRow[]).filter((t: TokenRow) => t.type === 'attendee'))
+  type TokenRow = { id: string; type: string; label: string | null; status: string; singleUse: boolean; claimedBySessionId: string | null; createdAt: string }
+  const generalTokenId = (data.tokens as TokenRow[]).find(t => t.type === 'attendee' && !t.singleUse && t.status === 'active')?.id ?? null
+  let generalTokenRaw = $state<string | null>(null)
+  let generalCopied = $state(false)
   let generatingInvite = $state(false)
+  let singleUseCopied = $state(false)
   let inviteError = $state('')
-  let copiedId = $state('')
+
+  // Invite-only token management
+  let inviteTokens = $state((data.tokens as TokenRow[]).filter(t => t.type === 'attendee'))
+  let newlyGenerated = $state<Array<{ tokenId: string; rawToken: string }>>([])
+  let newLinkLabel = $state('')
+  let generatingPersonalInvite = $state(false)
+  let invitePersonalError = $state('')
+  let copiedInviteTokenId = $state<string | null>(null)
+  let showInviteModal = $state(false)
+  const activeInviteTokens = $derived(inviteTokens.filter((t: TokenRow) => t.status === 'active'))
+  const claimedInviteCount = $derived(activeInviteTokens.filter((t: TokenRow) => t.claimedBySessionId !== null).length)
+  const unclaimedInviteCount = $derived(activeInviteTokens.filter((t: TokenRow) => t.claimedBySessionId === null).length)
 
   let blastSubject = $state('')
   let blastBody = $state('')
@@ -63,29 +77,21 @@
       localStorage.setItem(`haps:editLink:${event.slug}`, url)
     } catch { /* storage disabled */ }
 
-    // Store the initial invite token from URL (passed from event creation) in localStorage
+    // Load general token raw value from localStorage (stored at event creation)
     const initialIt = data.initialInviteToken
-    if (initialIt) {
-      const matchingToken = (data.tokens as TokenRow[]).find((t: TokenRow) => t.type === 'attendee' && !t.singleUse)
-      if (matchingToken) {
-        try {
-          localStorage.setItem(`haps:inviteToken:${event.slug}:${matchingToken.id}`, initialIt)
-        } catch { /* storage disabled */ }
-      }
-      // Remove the ?it= param from the URL without navigating
-      params.delete('it')
-      const newSearch = params.toString()
-      history.replaceState(null, '', url + (newSearch ? '?' + newSearch : ''))
-    }
-
-    // Hydrate invite tokens with raw tokens stored at creation time
-    inviteTokens = inviteTokens.map(t => {
+    if (initialIt && generalTokenId) {
       try {
-        const raw = localStorage.getItem(`haps:inviteToken:${event.slug}:${t.id}`)
-        if (raw) return { ...t, rawToken: raw }
+        localStorage.setItem(`haps:inviteToken:${event.slug}:${generalTokenId}`, initialIt)
       } catch { /* storage disabled */ }
-      return t
-    })
+      params.delete('it')
+      history.replaceState(null, '', url + (params.toString() ? '?' + params.toString() : ''))
+    }
+    if (generalTokenId) {
+      try {
+        const raw = localStorage.getItem(`haps:inviteToken:${event.slug}:${generalTokenId}`)
+        if (raw) generalTokenRaw = raw
+      } catch { /* storage disabled */ }
+    }
 
     api.listComments(event.slug).then(res => {
       comments = res.comments
@@ -97,28 +103,81 @@
     return `${window.location.origin}/event/${event.slug}?t=${rawToken}`
   }
 
-  async function copyInvite(id: string, rawToken: string) {
+  async function copyGeneralLink() {
+    if (!generalTokenRaw) return
     try {
-      await navigator.clipboard.writeText(inviteUrl(rawToken))
-      copiedId = id
-      setTimeout(() => { copiedId = '' }, 2000)
+      await navigator.clipboard.writeText(inviteUrl(generalTokenRaw))
+      generalCopied = true
+      setTimeout(() => { generalCopied = false }, 2000)
     } catch { /* clipboard unavailable */ }
   }
 
-  async function generateInviteLink(singleUse: boolean) {
+  async function copySingleUseLink() {
     generatingInvite = true
     inviteError = ''
     try {
-      const res = await api.createToken(event.slug, { type: 'attendee', label: singleUse ? 'single-use' : 'general', singleUse }, data.editToken)
-      const newToken: TokenRow = { ...res.token, status: 'active', claimedBySessionId: null, createdAt: new Date().toISOString(), rawToken: res.rawToken }
-      inviteTokens = [...inviteTokens, newToken]
-      try {
-        localStorage.setItem(`haps:inviteToken:${event.slug}:${res.token.id}`, res.rawToken)
-      } catch { /* storage disabled */ }
+      const res = await api.createToken(event.slug, { type: 'attendee', singleUse: true }, data.editToken)
+      await navigator.clipboard.writeText(inviteUrl(res.rawToken))
+      singleUseCopied = true
+      setTimeout(() => { singleUseCopied = false }, 2000)
     } catch (e: unknown) {
       inviteError = e instanceof ApiError ? e.message : 'Failed to generate link.'
     } finally {
       generatingInvite = false
+    }
+  }
+
+  async function generatePersonalInvite() {
+    generatingPersonalInvite = true
+    invitePersonalError = ''
+    try {
+      const res = await api.createToken(event.slug, { type: 'attendee', singleUse: true, label: newLinkLabel || undefined }, data.editToken)
+      inviteTokens = [...inviteTokens, { id: res.token.id, type: 'attendee', label: res.token.label, status: 'active', singleUse: true, claimedBySessionId: null, createdAt: new Date().toISOString() }]
+      newlyGenerated = [...newlyGenerated, { tokenId: res.token.id, rawToken: res.rawToken }]
+      newLinkLabel = ''
+    } catch (e: unknown) {
+      invitePersonalError = e instanceof ApiError ? e.message : 'Failed to generate invite.'
+    } finally {
+      generatingPersonalInvite = false
+    }
+  }
+
+  async function revokeInviteToken(tokenId: string) {
+    if (!confirm('Revoke this invite link? It will no longer work.')) return
+    try {
+      await api.deleteToken(event.slug, tokenId, data.editToken)
+      inviteTokens = inviteTokens.map(t => t.id === tokenId ? { ...t, status: 'blacklisted' } : t)
+      newlyGenerated = newlyGenerated.filter(g => g.tokenId !== tokenId)
+    } catch { /**/ }
+  }
+
+  async function copyPersonalInviteLink(tokenId: string) {
+    const gen = newlyGenerated.find(g => g.tokenId === tokenId)
+    if (!gen) return
+    try {
+      await navigator.clipboard.writeText(inviteUrl(gen.rawToken))
+      copiedInviteTokenId = tokenId
+      setTimeout(() => { copiedInviteTokenId = null }, 2000)
+    } catch { /**/ }
+  }
+
+  let publishError = $state('')
+
+  async function updateStatus(newStatus: string) {
+    if (newStatus === 'published') {
+      publishError = ''
+      if (!event.title?.trim()) { publishError = 'Event title is required.'; return }
+      if (!event.startsAt) { publishError = 'Event date is required.'; return }
+    }
+    saving = true
+    saveError = ''
+    try {
+      await api.updateEvent(event.slug, { status: newStatus }, data.editToken)
+      event.status = newStatus
+    } catch (e: unknown) {
+      saveError = e instanceof ApiError ? e.message : 'Failed to update status.'
+    } finally {
+      saving = false
     }
   }
 
@@ -141,7 +200,6 @@
         location: event.location,
         startsAt: event.startsAt,
         endsAt: event.endsAt ?? undefined,
-        status: event.status,
         theme: event.theme ?? undefined,
         showGuests: event.showGuests,
         allowComments: event.allowComments,
@@ -261,15 +319,6 @@
             <option value="sunset">Sunset (red)</option>
           </select>
         </label>
-        <label>
-          Status
-          <select bind:value={event.status}>
-            <option value="draft">Draft</option>
-            <option value="published">Published</option>
-            <option value="cancelled">Cancelled</option>
-            <option value="archived">Archived</option>
-          </select>
-        </label>
         <div class="checkboxes">
           <label class="checkbox"><input type="checkbox" bind:checked={event.showGuests} /> Show guest list publicly</label>
           <label class="checkbox"><input type="checkbox" bind:checked={event.allowComments} /> Allow comments</label>
@@ -282,6 +331,29 @@
             {deleting ? 'Deleting…' : 'Delete event'}
           </button>
         </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Status</h2>
+      <div class="status-row">
+        <span class="status-badge status-{event.status}">{event.status}</span>
+        {#if event.status === 'draft'}
+          <div class="status-actions">
+            {#if publishError}
+              <p class="publish-error">{publishError}</p>
+            {/if}
+            <button class="btn-publish" onclick={() => updateStatus('published')} disabled={saving}>
+              Publish event
+            </button>
+          </div>
+        {:else if event.status === 'published'}
+          <button class="btn-cancel-event" onclick={() => { if (confirm('Cancel this event? Guests will see a cancellation notice.')) updateStatus('cancelled') }} disabled={saving}>
+            Cancel event
+          </button>
+        {:else if event.status === 'cancelled'}
+          <p class="status-note">This event has been cancelled.</p>
+        {/if}
       </div>
     </section>
 
@@ -307,56 +379,40 @@
     </section>
 
     <section class="card wide">
-      <h2>Invite link</h2>
-      <p class="muted">Share this link with your guests to let them RSVP. Generate a single-use link to invite someone specific.</p>
+      <h2>Invite links <span class="event-type-badge event-type-{event.eventType}">{event.eventType === 'invite_only' ? 'Invite-only' : 'Open'}</span></h2>
 
-      {#if inviteError}
-        <div class="error-banner">{inviteError}</div>
-      {/if}
-
-      {#if inviteTokens.length === 0}
-        <p class="muted">No invite links yet. Generate one below.</p>
+      {#if event.status === 'draft'}
+        <p class="draft-lock">Publish the event to share invite links.</p>
+      {:else if event.eventType === 'invite_only'}
+        <div class="invite-summary">
+          <span class="invite-counter">{activeInviteTokens.length} invite{activeInviteTokens.length !== 1 ? 's' : ''} · {claimedInviteCount} claimed · {unclaimedInviteCount} unclaimed</span>
+          <button class="btn-manage-invites" onclick={() => showInviteModal = true}>Manage invitations →</button>
+        </div>
       {:else}
-        <div class="invite-list">
-          {#each inviteTokens as t (t.id)}
-            <div class="invite-row">
-              <div class="invite-info">
-                <span class="invite-label">{t.singleUse ? 'Single-use' : 'General'}{t.label && t.label !== 'general' && t.label !== 'single-use' ? ` · ${t.label}` : ''}</span>
-                {#if t.singleUse}
-                  <span class="invite-status {t.claimedBySessionId ? 'claimed' : 'available'}">{t.claimedBySessionId ? 'Claimed' : 'Available'}</span>
-                {/if}
-                {#if t.status !== 'active'}
-                  <span class="invite-status revoked">Revoked</span>
-                {/if}
-              </div>
-              {#if t.rawToken}
-                <div class="invite-url-row">
-                  <code class="invite-url">{inviteUrl(t.rawToken)}</code>
-                  <button class="copy-btn" onclick={() => copyInvite(t.id, t.rawToken!)}>
-                    {copiedId === t.id ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-              {:else}
-                <p class="invite-lost">Link not available — raw token was only shown once at generation. Generate a new one if needed.</p>
-              {/if}
+        {#if inviteError}
+          <div class="error-banner">{inviteError}</div>
+        {/if}
+        <div class="invite-type-rows">
+          <div class="invite-type-row">
+            <div class="invite-type-info">
+              <span class="invite-type-label">General invite link</span>
+              <span class="invite-type-desc">Reusable — anyone with this link can RSVP</span>
             </div>
-          {/each}
+            {#if generalTokenRaw}
+              <button class="copy-btn" onclick={copyGeneralLink}>{generalCopied ? 'Copied!' : 'Copy'}</button>
+            {:else}
+              <span class="muted" style="font-size:0.8rem">Not available (visit via edit link to restore)</span>
+            {/if}
+          </div>
         </div>
       {/if}
-
-      <div class="invite-actions">
-        <button class="btn-primary" onclick={() => generateInviteLink(false)} disabled={generatingInvite}>
-          {generatingInvite ? 'Generating…' : 'Generate general invite link'}
-        </button>
-        <button class="btn-secondary-sm" onclick={() => generateInviteLink(true)} disabled={generatingInvite}>
-          Generate single-use link
-        </button>
-      </div>
     </section>
 
     <section class="card wide">
       <h2>Comments ({comments.length})</h2>
-      {#if !commentsLoaded}
+      {#if event.status === 'draft'}
+        <p class="draft-lock">Comments are available once the event is published.</p>
+      {:else if !commentsLoaded}
         <p class="muted">Loading…</p>
       {:else if comments.length === 0}
         <p class="muted">No comments yet.</p>
@@ -378,6 +434,10 @@
 
     <section class="card wide">
       <h2>Send blast</h2>
+
+      {#if event.status === 'draft'}
+        <p class="draft-lock">Publish the event before sending updates to guests.</p>
+      {:else}
       <p class="muted">Post a message to the event channel. Optionally deliver it to guests via email or SMS.</p>
 
       {#if blastError}
@@ -400,9 +460,68 @@
           </button>
         </div>
       </div>
+      {/if}
     </section>
   </div>
 </main>
+
+{#if showInviteModal}
+  <div class="modal-backdrop" onclick={() => showInviteModal = false} role="presentation">
+    <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Manage invite links">
+      <div class="modal-header">
+        <h3>Manage invite links</h3>
+        <button class="modal-close" onclick={() => showInviteModal = false} aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="invite-counter">{activeInviteTokens.length} invite{activeInviteTokens.length !== 1 ? 's' : ''} · {claimedInviteCount} claimed · {unclaimedInviteCount} unclaimed</p>
+
+        {#if invitePersonalError}
+          <div class="error-banner">{invitePersonalError}</div>
+        {/if}
+
+        <div class="generate-row">
+          <input type="text" bind:value={newLinkLabel} placeholder="Guest name or label (optional)" class="generate-input" />
+          <button class="btn-generate" onclick={generatePersonalInvite} disabled={generatingPersonalInvite}>
+            {generatingPersonalInvite ? 'Generating…' : '+ Generate invite link'}
+          </button>
+        </div>
+
+        {#if inviteTokens.length === 0}
+          <p class="muted">No invite links yet.</p>
+        {:else}
+          <div class="invite-list">
+            {#each inviteTokens as token (token.id)}
+              {@const gen = newlyGenerated.find(g => g.tokenId === token.id)}
+              <div class="invite-row">
+                <div class="invite-info">
+                  <span class="invite-label">{token.label ?? 'Unnamed'}</span>
+                  <span class="invite-status {token.status !== 'active' ? 'revoked' : token.claimedBySessionId ? 'claimed' : 'available'}">
+                    {token.status !== 'active' ? 'Revoked' : token.claimedBySessionId ? 'Claimed' : 'Unclaimed'}
+                  </span>
+                </div>
+                {#if gen}
+                  <div class="invite-link-row">
+                    <code class="invite-url">{inviteUrl(gen.rawToken)}</code>
+                    <button class="copy-btn" onclick={() => copyPersonalInviteLink(token.id)}>
+                      {copiedInviteTokenId === token.id ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                {:else if token.status === 'active' && !token.claimedBySessionId}
+                  <p class="invite-lost">Link not shown — generated in a previous session</p>
+                {/if}
+                {#if token.status === 'active' && !token.claimedBySessionId}
+                  <div class="invite-actions">
+                    <button class="btn-revoke" onclick={() => revokeInviteToken(token.id)}>Revoke</button>
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .edit-page { max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
@@ -423,6 +542,24 @@
   .card { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1.25rem; }
   .card.wide { grid-column: 1 / -1; }
   h2 { margin: 0 0 1rem; font-size: 1.1rem; color: #1a1510; }
+  .status-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .status-badge { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.25rem 0.625rem; border-radius: 4px; background: #ede8e0; color: #4e453e; }
+  .status-badge.status-published { background: #e8f4e4; color: #2a5e28; }
+  .status-badge.status-cancelled { background: #f8e8e2; color: #7a2a1a; }
+  .status-actions { display: flex; flex-direction: column; gap: 0.375rem; }
+  .publish-error { margin: 0; font-size: 0.8rem; color: #8b3016; }
+  .btn-publish { background: #2a5e28; color: #fff; border: none; padding: 0.5rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+  .btn-publish:hover:not(:disabled) { background: #1f4a1e; }
+  .btn-publish:disabled { opacity: 0.6; }
+  .btn-cancel-event { background: none; border: 1px solid #f0c8b8; color: #8b3016; padding: 0.5rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+  .btn-cancel-event:hover:not(:disabled) { background: #fdf2ee; }
+  .status-note { margin: 0; font-size: 0.875rem; color: #6b6058; }
+  .draft-lock { margin: 0; font-size: 0.875rem; color: #9a8f86; font-style: italic; }
+  .invite-type-rows { display: flex; flex-direction: column; gap: 0.75rem; }
+  .invite-type-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 1rem; background: #e8ddd0; border: 1px solid #cfc3b0; border-radius: 8px; }
+  .invite-type-info { display: flex; flex-direction: column; gap: 0.2rem; }
+  .invite-type-label { font-size: 0.875rem; font-weight: 600; color: #1a1510; }
+  .invite-type-desc { font-size: 0.8rem; color: #6b6058; }
   .form { display: flex; flex-direction: column; gap: 0.75rem; }
   label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; font-weight: 500; color: #3d352e; }
   label.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; font-weight: 400; }
@@ -466,8 +603,30 @@
   .invite-status.claimed { background: #ede8e0; color: #4e453e; }
   .invite-status.revoked { background: #f8e8e2; color: #7a2a1a; }
   .invite-url-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+  .invite-link-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
   .invite-url { font-size: 0.75rem; color: #3d2c08; background: #fff8e8; padding: 0.3rem 0.5rem; border-radius: 6px; border: 1px solid #e0c870; word-break: break-all; flex: 1; min-width: 0; }
-  .invite-lost { font-size: 0.8rem; color: #9a8f86; font-style: italic; margin: 0; }
-  .invite-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  .invite-lost { font-size: 0.78rem; color: #9a8f86; font-style: italic; margin: 0; }
+  .invite-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .muted { color: #6b6058; font-size: 0.875rem; }
+  .event-type-badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.15rem 0.5rem; border-radius: 4px; vertical-align: middle; margin-left: 0.5rem; }
+  .event-type-open { background: #e8f4e4; color: #2a5e28; }
+  .event-type-invite_only { background: #eee8f8; color: #5a2a8a; }
+  .invite-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .invite-counter { font-size: 0.875rem; color: #6b6058; }
+  .btn-manage-invites { background: none; border: 1px solid #cfc3b0; color: #b05525; padding: 0.375rem 0.875rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
+  .btn-manage-invites:hover { border-color: #b05525; background: #fdf2ee; }
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(26, 21, 16, 0.45); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+  .modal { background: #f8f2e8; border: 1px solid #cfc3b0; border-radius: 16px; width: 100%; max-width: 560px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 1.25rem 1.5rem 1rem; border-bottom: 1px solid #e0d4c4; flex-shrink: 0; }
+  .modal-header h3 { margin: 0; font-size: 1.1rem; color: #1a1510; }
+  .modal-close { background: none; border: none; font-size: 1.5rem; line-height: 1; color: #6b6058; cursor: pointer; padding: 0.1rem 0.25rem; }
+  .modal-close:hover { color: #1a1510; }
+  .modal-body { padding: 1.25rem 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 0; }
+  .generate-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  .generate-input { flex: 1; min-width: 160px; padding: 0.5rem 0.75rem; border: 1px solid #c8bdb0; border-radius: 8px; font-size: 0.9rem; font-family: inherit; background: #fff; color: #1a1510; }
+  .btn-generate { background: #b05525; color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .btn-generate:hover:not(:disabled) { background: #924418; }
+  .btn-generate:disabled { opacity: 0.6; }
+  .btn-revoke { background: none; border: 1px solid #f0c8b8; color: #8b3016; padding: 0.25rem 0.625rem; border-radius: 6px; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
+  .btn-revoke:hover { background: #fdf2ee; }
 </style>

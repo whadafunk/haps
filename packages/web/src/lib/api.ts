@@ -131,6 +131,12 @@ export const api = {
     apiFetch<{ token: { id: string; type: string; label: string | null; singleUse: boolean }; rawToken: string }>(
       `/events/${slug}/tokens`, { method: 'POST', body: JSON.stringify(body), headers: editToken ? { 'x-edit-token': editToken } : {} }),
 
+  deleteToken: (slug: string, tokenId: string, editToken?: string) =>
+    apiFetch<void>(`/events/${slug}/tokens/${tokenId}`, {
+      method: 'DELETE',
+      headers: editToken ? { 'x-edit-token': editToken } : {},
+    }),
+
   // RSVPs
   submitRsvp: (slug: string, body: Record<string, unknown>) =>
     apiFetch<{ rsvp: Rsvp }>(`/events/${slug}/rsvps`, { method: 'POST', body: JSON.stringify(body) }),
