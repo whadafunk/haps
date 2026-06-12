@@ -245,7 +245,10 @@
 
   <div class="content">
     <div class="event-header">
-      <span class="status-badge status-{event.status}">{event.status}</span>
+      <div class="header-badges">
+        <span class="status-badge status-{event.status}">{event.status}</span>
+        <span class="type-badge type-{event.eventType}">{event.eventType === 'invite_only' ? 'Invite-Only' : 'Open'}</span>
+      </div>
       <h1>{event.title}</h1>
 
       <div class="event-meta">
@@ -523,9 +526,13 @@
   }
   .cover { height: 240px; background-size: cover; background-position: center; border-radius: 0 0 12px 12px; margin-bottom: 1.5rem; }
   .event-header { margin-bottom: 1.5rem; }
-  .status-badge { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 0.2rem 0.5rem; border-radius: 4px; background: #ede8e0; color: #4e453e; }
+  .header-badges { display: flex; gap: 0.375rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+  .status-badge, .type-badge { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 0.2rem 0.5rem; border-radius: 4px; }
+  .status-badge { background: #ede8e0; color: #4e453e; }
   .status-badge.status-published { background: #e8f4e4; color: #2a5e28; }
   .status-badge.status-cancelled { background: #f8e8e2; color: #7a2a1a; }
+  .type-badge.type-open { background: #e8f4e4; color: #2a5e28; }
+  .type-badge.type-invite_only { background: #fef4e0; color: #7a5a1a; }
   h1 { font-size: 1.75rem; font-weight: 800; margin: 0.5rem 0 1rem; color: #1a1510; }
   .event-meta { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
   .meta-item { font-size: 0.9rem; color: #3d352e; }

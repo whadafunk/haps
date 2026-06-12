@@ -15,7 +15,7 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/api/admin/events', { preHandler: staffPreHandler }, async (request) => {
     const user = request.user!
     const query = db
-      .select({ slug: events.slug, title: events.title, status: events.status, startsAt: events.startsAt })
+      .select({ slug: events.slug, title: events.title, status: events.status, startsAt: events.startsAt, eventType: events.eventType })
       .from(events)
 
     const rows = user.role === 'admin'

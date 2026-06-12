@@ -7,7 +7,7 @@ export const load: PageServerLoad = async ({ cookies, parent }) => {
   if (!user) return { events: [], users: [] }
 
   const [eventsRes, usersRes] = await Promise.all([
-    serverGet<{ events: Array<{ slug: string; title: string; status: string; startsAt: string }> }>('/admin/events', cookies),
+    serverGet<{ events: Array<{ slug: string; title: string; status: string; startsAt: string; eventType: string }> }>('/admin/events', cookies),
     user.role === 'admin'
       ? serverGet<{ users: Array<{ id: string; email: string; role: string; createdAt: string }> }>('/admin/users', cookies)
       : Promise.resolve({ users: [] as Array<{ id: string; email: string; role: string; createdAt: string }> }),

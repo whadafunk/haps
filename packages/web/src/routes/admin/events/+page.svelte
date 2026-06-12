@@ -15,13 +15,14 @@
   {:else}
     <table class="table">
       <thead>
-        <tr><th>Title</th><th>Status</th><th>Date</th><th>Actions</th></tr>
+        <tr><th>Title</th><th>Status</th><th>Type</th><th>Date</th><th>Actions</th></tr>
       </thead>
       <tbody>
         {#each data.events as event (event.slug)}
           <tr>
             <td><a href="/event/{event.slug}/edit">{event.title}</a></td>
             <td><span class="badge status-{event.status}">{event.status}</span></td>
+            <td><span class="badge type-{event.eventType}">{event.eventType === 'invite_only' ? 'Invite-Only' : 'Open'}</span></td>
             <td>{new Date(event.startsAt).toLocaleDateString()}</td>
             <td class="actions">
               <a href="/event/{event.slug}/edit" class="action-link">Manage</a>
@@ -48,6 +49,8 @@
   .badge.status-published { background: #e8f4e4; color: #2a5e28; }
   .badge.status-draft { background: #ede8e0; color: #4e453e; }
   .badge.status-cancelled { background: #f8e8e2; color: #7a2a1a; }
+  .badge.type-open { background: #e8f4e4; color: #2a5e28; }
+  .badge.type-invite_only { background: #fef4e0; color: #7a5a1a; }
   .actions { display: flex; gap: 0.75rem; align-items: center; }
   .action-link { font-size: 0.8rem; }
   .muted { color: #6b6058; font-size: 0.875rem; }
