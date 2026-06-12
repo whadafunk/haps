@@ -316,37 +316,32 @@
           <label class="checkbox"><input type="checkbox" bind:checked={event.showGuests} /> Show guest list publicly</label>
           <label class="checkbox"><input type="checkbox" bind:checked={event.allowComments} /> Allow comments</label>
         </div>
+        {#if event.status === 'published' && data.rsvps.length > 0}
+          <p class="delete-warning">This event is published and has {data.rsvps.length} RSVP{data.rsvps.length !== 1 ? 's' : ''}. You might want to cancel it first and notify the people.</p>
+        {/if}
+        {#if publishError}
+          <p class="publish-error">{publishError}</p>
+        {/if}
         <div class="form-actions">
           <button onclick={saveEvent} disabled={saving} class="btn-primary">
             {saving ? 'Saving…' : 'Save changes'}
           </button>
           <button onclick={deleteEvent} disabled={deleting} class="btn-danger">
-            {deleting ? 'Deleting…' : 'Delete event'}
+            {deleting ? 'Deleting…' : 'Delete'}
           </button>
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>Status</h2>
-      <div class="status-row">
-        <span class="status-badge status-{event.status}">{event.status}</span>
-        {#if event.status === 'draft'}
-          <div class="status-actions">
-            {#if publishError}
-              <p class="publish-error">{publishError}</p>
-            {/if}
+          {#if event.status === 'draft'}
             <button class="btn-publish" onclick={() => updateStatus('published')} disabled={saving}>
-              Publish event
+              Publish
             </button>
-          </div>
-        {:else if event.status === 'published'}
-          <button class="btn-cancel-event" onclick={() => { if (confirm('Cancel this event? Guests will see a cancellation notice.')) updateStatus('cancelled') }} disabled={saving}>
-            Cancel event
-          </button>
-        {:else if event.status === 'cancelled'}
-          <p class="status-note">This event has been cancelled.</p>
-        {/if}
+          {:else if event.status === 'published'}
+            <span class="status-badge status-published">Published</span>
+            <button class="btn-cancel-event" onclick={() => { if (confirm('Cancel this event? Guests will see a cancellation notice.')) updateStatus('cancelled') }} disabled={saving}>
+              Cancel
+            </button>
+          {:else if event.status === 'cancelled'}
+            <span class="status-badge status-cancelled">Cancelled</span>
+          {/if}
+        </div>
       </div>
     </section>
 
@@ -535,18 +530,16 @@
   .card { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1.25rem; }
   .card.wide { grid-column: 1 / -1; }
   h2 { margin: 0 0 1rem; font-size: 1.1rem; color: #1a1510; }
-  .status-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-  .status-badge { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.25rem 0.625rem; border-radius: 4px; background: #ede8e0; color: #4e453e; }
+  .status-badge { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.25rem 0.625rem; border-radius: 4px; background: #ede8e0; color: #4e453e; align-self: center; }
   .status-badge.status-published { background: #e8f4e4; color: #2a5e28; }
   .status-badge.status-cancelled { background: #f8e8e2; color: #7a2a1a; }
-  .status-actions { display: flex; flex-direction: column; gap: 0.375rem; }
   .publish-error { margin: 0; font-size: 0.8rem; color: #8b3016; }
+  .delete-warning { margin: 0; font-size: 0.8rem; color: #8b3016; background: #fdf2ee; border: 1px solid #f0c8b8; border-radius: 6px; padding: 0.5rem 0.75rem; }
   .btn-publish { background: #2a5e28; color: #fff; border: none; padding: 0.5rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
   .btn-publish:hover:not(:disabled) { background: #1f4a1e; }
   .btn-publish:disabled { opacity: 0.6; }
   .btn-cancel-event { background: none; border: 1px solid #f0c8b8; color: #8b3016; padding: 0.5rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
   .btn-cancel-event:hover:not(:disabled) { background: #fdf2ee; }
-  .status-note { margin: 0; font-size: 0.875rem; color: #6b6058; }
   .draft-lock { margin: 0; font-size: 0.875rem; color: #9a8f86; font-style: italic; }
   .invite-type-rows { display: flex; flex-direction: column; gap: 0.75rem; }
   .invite-type-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 1rem; background: #e8ddd0; border: 1px solid #cfc3b0; border-radius: 8px; }
