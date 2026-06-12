@@ -10,7 +10,6 @@
         <a href="/admin">Dashboard</a>
         <a href="/admin/events">Events</a>
         <a href="/admin/guests">People</a>
-        <a href="/new-event" class="new-event">+ New Event</a>
         {#if data.user.role === 'admin'}
           <div class="sidebar-divider"></div>
           <a href="/admin/users">Users</a>
@@ -51,8 +50,7 @@
   }
   .sidebar-nav a:hover { background: rgba(255,255,255,0.07); color: #e8ddd0; }
   .sidebar-nav a[aria-current="page"] { background: rgba(255,255,255,0.1); color: #e8ddd0; }
-  .sidebar-nav .new-event { color: #e8a07a; }
-  .sidebar-divider { width: 100%; height: 1px; background: #2e2820; margin: 0.25rem 0; }
+.sidebar-divider { width: 100%; height: 1px; background: #2e2820; margin: 0.25rem 0; }
   .sidebar-footer {
     margin-top: auto;
     padding-top: 0.75rem;
