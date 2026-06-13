@@ -44,13 +44,18 @@
   const claimedInviteCount = $derived(activeInviteTokens.filter((t: TokenRow) => t.claimedBySessionId !== null).length)
   const unclaimedInviteCount = $derived(activeInviteTokens.filter((t: TokenRow) => t.claimedBySessionId === null).length)
 
+  type BlastRow = { id: string; subject: string | null; body: string; createdAt: string }
+  let blasts = $state<BlastRow[]>([])
+  let blastsLoaded = $state(false)
+  let showBlastModal = $state(false)
+  let viewingBlast = $state<BlastRow | null>(null)
+
   let blastSubject = $state('')
   let blastBody = $state('')
   let blastEmail = $state(true)
   let blastSms = $state(false)
   let blastLoading = $state(false)
   let blastError = $state('')
-  let blastSuccess = $state('')
 
   let coverUploading = $state(false)
   let coverError = $state('')
@@ -93,6 +98,11 @@
       comments = res.comments
       commentsLoaded = true
     }).catch(() => { commentsLoaded = true })
+
+    api.listMessages(event.slug).then(res => {
+      blasts = res.messages.filter((m: { type: string }) => m.type === 'blast')
+      blastsLoaded = true
+    }).catch(() => { blastsLoaded = true })
   })
 
   function inviteUrl(rawToken: string) {
@@ -244,12 +254,10 @@
     if (blastSms) channels.push('sms')
     blastLoading = true
     blastError = ''
-    blastSuccess = ''
     try {
-      const res = await api.sendBlast(event.slug, { subject: blastSubject, body: blastBody, channels }, data.editToken)
-      blastSuccess = channels.length > 0
-        ? `Blast posted. ${res.queued} delivery job${res.queued !== 1 ? 's' : ''} queued.`
-        : 'Blast posted to event channel.'
+      await api.sendBlast(event.slug, { subject: blastSubject, body: blastBody, channels }, data.editToken)
+      blasts = [{ id: String(Date.now()), subject: blastSubject || null, body: blastBody, createdAt: new Date().toISOString() }, ...blasts]
+      showBlastModal = false
       blastSubject = ''
       blastBody = ''
     } catch (e: unknown) {
@@ -416,33 +424,28 @@
     </section>
 
     <section class="card wide">
-      <h2>Send blast</h2>
+      <div class="blast-card-header">
+        <h2>Updates</h2>
+        {#if event.status !== 'draft'}
+          <button class="btn-manage-invites" onclick={() => { blastError = ''; showBlastModal = true }}>Send update →</button>
+        {/if}
+      </div>
 
       {#if event.status === 'draft'}
         <p class="draft-lock">Publish the event before sending updates to guests.</p>
+      {:else if !blastsLoaded}
+        <p class="muted">Loading…</p>
+      {:else if blasts.length === 0}
+        <p class="muted">No updates sent yet.</p>
       {:else}
-      <p class="muted">Post a message to the event channel. Optionally deliver it to guests via email or SMS.</p>
-
-      {#if blastError}
-        <div class="error-banner">{blastError}</div>
-      {/if}
-      {#if blastSuccess}
-        <div class="success-banner">{blastSuccess}</div>
-      {/if}
-
-      <div class="form">
-        <label>Subject <input type="text" bind:value={blastSubject} placeholder="Event update" /></label>
-        <label>Message <textarea bind:value={blastBody} rows="4" placeholder="Write your update…"></textarea></label>
-        <div class="checkboxes">
-          <label class="checkbox"><input type="checkbox" bind:checked={blastEmail} /> Send via email (to yes RSVPs with email)</label>
-          <label class="checkbox"><input type="checkbox" bind:checked={blastSms} /> Send via SMS (Phase 2 — requires Twilio)</label>
+        <div class="blast-list">
+          {#each blasts as blast (blast.id)}
+            <button class="blast-row" onclick={() => viewingBlast = blast}>
+              <span class="blast-subject">{blast.subject ?? blast.body.slice(0, 80)}</span>
+              <span class="blast-date">{new Date(blast.createdAt).toLocaleDateString()}</span>
+            </button>
+          {/each}
         </div>
-        <div class="form-actions">
-          <button onclick={sendBlast} disabled={blastLoading} class="btn-primary">
-            {blastLoading ? 'Sending…' : 'Send blast'}
-          </button>
-        </div>
-      </div>
       {/if}
     </section>
   </div>
@@ -536,6 +539,52 @@
   </div>
 {/if}
 
+{#if viewingBlast}
+  <div class="modal-backdrop" onclick={() => viewingBlast = null} role="presentation">
+    <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="View update">
+      <div class="modal-header">
+        <h3>{viewingBlast.subject ?? 'Update'}</h3>
+        <button class="modal-close" onclick={() => viewingBlast = null} aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="blast-full-body">{viewingBlast.body}</p>
+        <p class="blast-full-meta">{new Date(viewingBlast.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if showBlastModal}
+  <div class="modal-backdrop" onclick={() => showBlastModal = false} role="presentation">
+    <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Send update">
+      <div class="modal-header">
+        <h3>Send update</h3>
+        <button class="modal-close" onclick={() => showBlastModal = false} aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="muted" style="margin-bottom:1rem">Post a message to the event channel. Optionally deliver it to guests via email or SMS.</p>
+        {#if blastError}
+          <div class="error-banner">{blastError}</div>
+        {/if}
+        <div class="form">
+          <label>Subject <input type="text" bind:value={blastSubject} placeholder="Event update" /></label>
+          <label>Message <textarea bind:value={blastBody} rows="5" placeholder="Write your update…"></textarea></label>
+          <div class="checkboxes">
+            <label class="checkbox"><input type="checkbox" bind:checked={blastEmail} /> Send via email (to yes RSVPs with email)</label>
+            <label class="checkbox"><input type="checkbox" bind:checked={blastSms} /> Send via SMS (Phase 2 — requires Twilio)</label>
+          </div>
+          <div class="form-actions">
+            <button onclick={sendBlast} disabled={blastLoading} class="btn-primary">
+              {blastLoading ? 'Sending…' : 'Send'}
+            </button>
+            <button onclick={() => showBlastModal = false} class="btn-danger">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .edit-page { max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
   .header { margin-bottom: 1rem; }
@@ -614,6 +663,15 @@
   .invite-counter { font-size: 0.875rem; color: #6b6058; }
   .btn-manage-invites { background: none; border: 1px solid #cfc3b0; color: #b05525; padding: 0.375rem 0.875rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
   .btn-manage-invites:hover { border-color: #b05525; background: #fdf2ee; }
+  .blast-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .blast-card-header h2 { margin: 0; }
+  .blast-list { display: flex; flex-direction: column; gap: 0.375rem; }
+  .blast-row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: 0.625rem 0.75rem; background: #e8ddd0; border: 1px solid #cfc3b0; border-radius: 8px; cursor: pointer; text-align: left; font-family: inherit; width: 100%; }
+  .blast-row:hover { background: #dfd4c4; }
+  .blast-subject { font-size: 0.875rem; font-weight: 500; color: #1a1510; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .blast-date { font-size: 0.75rem; color: #9a8f86; flex-shrink: 0; }
+  .blast-full-body { white-space: pre-wrap; font-size: 0.9rem; color: #3d352e; line-height: 1.6; margin: 0 0 1rem; }
+  .blast-full-meta { font-size: 0.8rem; color: #9a8f86; margin: 0; }
   .modal-backdrop { position: fixed; inset: 0; background: rgba(26, 21, 16, 0.45); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 1rem; }
   .modal { background: #f8f2e8; border: 1px solid #cfc3b0; border-radius: 16px; width: 100%; max-width: 560px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
   .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 1.25rem 1.5rem 1rem; border-bottom: 1px solid #e0d4c4; flex-shrink: 0; }
