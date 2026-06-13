@@ -16,6 +16,11 @@
   let editLink = $state('')
   let linkCopied = $state(false)
 
+  let rsvps = $state([...data.rsvps])
+  const yesCount = $derived(rsvps.filter(r => r.status === 'yes').length)
+  const maybeCount = $derived(rsvps.filter(r => r.status === 'maybe').length)
+  let showGuestModal = $state(false)
+
   let comments = $state<Array<{ id: string; displayName: string; body: string; createdAt: string }>>([])
   let commentsLoaded = $state(false)
 
@@ -228,7 +233,7 @@
     if (!confirm('Remove this RSVP?')) return
     try {
       await api.deleteRsvp(event.slug, rsvpId, data.editToken)
-      await invalidateAll()
+      rsvps = rsvps.filter(r => r.id !== rsvpId)
     } catch { /**/ }
   }
 
@@ -295,7 +300,7 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card wide">
       <h2>Event details</h2>
 
       {#if saveError}
@@ -323,8 +328,8 @@
           <label class="checkbox"><input type="checkbox" bind:checked={event.showGuests} /> Show guest list publicly</label>
           <label class="checkbox"><input type="checkbox" bind:checked={event.allowComments} /> Allow comments</label>
         </div>
-        {#if event.status === 'published' && data.rsvps.length > 0}
-          <p class="delete-warning">This event is published and has {data.rsvps.length} RSVP{data.rsvps.length !== 1 ? 's' : ''}. You might want to cancel it first and notify the people.</p>
+        {#if event.status === 'published' && rsvps.length > 0}
+          <p class="delete-warning">This event is published and has {rsvps.length} RSVP{rsvps.length !== 1 ? 's' : ''}. You might want to cancel it first and notify the people.</p>
         {/if}
         {#if publishError}
           <p class="publish-error">{publishError}</p>
@@ -352,25 +357,17 @@
       </div>
     </section>
 
-    <section class="card">
-      <h2>Guest list ({data.rsvps.length})</h2>
-      {#if data.rsvps.length === 0}
-        <p class="muted">No RSVPs yet.</p>
-      {:else}
-        <div class="rsvp-list">
-          {#each data.rsvps as rsvp (rsvp.id)}
-            <div class="rsvp-row">
-              <div>
-                <strong>{rsvp.displayName}</strong>
-                <span class="badge badge-{rsvp.status}">{rsvp.status}</span>
-                {#if rsvp.headCount > 1}<span class="muted">+{rsvp.headCount - 1}</span>{/if}
-              </div>
-              {#if rsvp.note}<p class="note">{rsvp.note}</p>{/if}
-              <button class="btn-remove" onclick={() => removeRsvp(rsvp.id)}>Remove</button>
-            </div>
-          {/each}
-        </div>
-      {/if}
+    <section class="card wide">
+      <div class="invite-summary">
+        <span class="invite-counter">
+          {#if rsvps.length === 0}
+            No RSVPs yet
+          {:else}
+            {rsvps.length} RSVP{rsvps.length !== 1 ? 's' : ''} · {yesCount} going{maybeCount > 0 ? ` · ${maybeCount} maybe` : ''}
+          {/if}
+        </span>
+        <button class="btn-manage-invites" onclick={() => showGuestModal = true}>Manage guests →</button>
+      </div>
     </section>
 
     <section class="card wide">
@@ -459,6 +456,36 @@
     </section>
   </div>
 </main>
+
+{#if showGuestModal}
+  <div class="modal-backdrop" onclick={() => showGuestModal = false} role="presentation">
+    <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Manage guests">
+      <div class="modal-header">
+        <h3>Guests ({rsvps.length})</h3>
+        <button class="modal-close" onclick={() => showGuestModal = false} aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        {#if rsvps.length === 0}
+          <p class="muted">No RSVPs yet.</p>
+        {:else}
+          <div class="rsvp-list">
+            {#each rsvps as rsvp (rsvp.id)}
+              <div class="rsvp-row">
+                <div class="rsvp-info">
+                  <strong>{rsvp.displayName}</strong>
+                  <span class="badge badge-{rsvp.status}">{rsvp.status}</span>
+                  {#if rsvp.headCount > 1}<span class="muted">+{rsvp.headCount - 1}</span>{/if}
+                </div>
+                {#if rsvp.note}<p class="note">{rsvp.note}</p>{/if}
+                <button class="btn-remove" onclick={() => removeRsvp(rsvp.id)}>Remove</button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if showInviteModal}
   <div class="modal-backdrop" onclick={() => showInviteModal = false} role="presentation">
@@ -571,6 +598,7 @@
   .success-banner { background: #edf4ec; color: #2d5a2a; border: 1px solid #b8d9b4; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
   .rsvp-list { display: flex; flex-direction: column; gap: 0.5rem; }
   .rsvp-row { display: flex; align-items: flex-start; justify-content: space-between; padding: 0.75rem; background: #e8ddd0; border-radius: 8px; border: 1px solid #cfc3b0; gap: 0.5rem; }
+  .rsvp-info { display: flex; align-items: center; gap: 0.375rem; flex-wrap: wrap; }
   .badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.15rem 0.4rem; border-radius: 4px; margin-left: 0.375rem; background: #ede8e0; color: #4e453e; }
   .badge-yes { background: #e8f4e4; color: #2a5e28; }
   .badge-maybe { background: #fef4e0; color: #7a5a1a; }
