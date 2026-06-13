@@ -79,7 +79,7 @@
           <tbody>
             {#each data.events.slice(0, 10) as event (event.slug)}
               <tr>
-                <td><a href="/event/{event.slug}">{event.title}</a></td>
+                <td><a href="/event/{event.slug}/edit">{event.title}</a></td>
                 <td><span class="badge status-{event.status}">{event.status}</span></td>
                 <td><span class="badge type-{event.eventType}">{event.eventType === 'invite_only' ? 'Invite-Only' : 'Open'}</span></td>
                 <td>{new Date(event.startsAt).toLocaleDateString()}</td>
