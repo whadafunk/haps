@@ -201,6 +201,7 @@
         allowComments: event.allowComments,
       }, data.editToken)
       saveSuccess = true
+      setTimeout(() => { saveSuccess = false }, 2000)
     } catch (e: unknown) {
       saveError = e instanceof ApiError ? e.message : 'Failed to save.'
     } finally {
@@ -299,9 +300,6 @@
       {#if saveError}
         <div class="error-banner">{saveError}</div>
       {/if}
-      {#if saveSuccess}
-        <div class="success-banner">Saved!</div>
-      {/if}
 
       <div class="form">
         <label>Title <input type="text" bind:value={event.title} /></label>
@@ -328,8 +326,8 @@
           <p class="publish-error">{publishError}</p>
         {/if}
         <div class="form-actions">
-          <button onclick={saveEvent} disabled={saving} class="btn-primary">
-            {saving ? 'Saving…' : 'Save changes'}
+          <button onclick={saveEvent} disabled={saving} class="btn-primary" class:btn-saved={saveSuccess}>
+            {saving ? 'Saving…' : saveSuccess ? 'Saved ✓' : 'Save changes'}
           </button>
           <button onclick={deleteEvent} disabled={deleting} class="btn-danger">
             {deleting ? 'Deleting…' : 'Delete'}
@@ -584,6 +582,7 @@
   .btn-primary { background: #b05525; color: #fff; border: none; padding: 0.625rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
   .btn-primary:hover:not(:disabled) { background: #924418; }
   .btn-primary:disabled { opacity: 0.6; }
+  .btn-primary.btn-saved { background: #2a5e28; }
   .btn-danger { background: #f0e8da; color: #8b3016; border: 1px solid #f0c8b8; padding: 0.625rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
   .btn-danger:hover:not(:disabled) { background: #fdf2ee; }
   .btn-danger:disabled { opacity: 0.6; }
