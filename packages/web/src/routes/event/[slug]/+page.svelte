@@ -65,11 +65,6 @@
   type EventMessage = { id: string; displayName: string; subject: string | null; body: string; type: string; createdAt: string }
   let messages = $state<EventMessage[]>([])
   let messagesLoaded = $state(false)
-  let messageBody = $state('')
-  let messageName = $state('')
-  let messageLoading = $state(false)
-  let messageError = $state('')
-
   let comments = $state<Array<{ id: string; displayName: string; body: string; createdAt: string }>>([])
   let commentsLoaded = $state(false)
 
@@ -199,21 +194,6 @@
       messages = res.messages
       messagesLoaded = true
     } catch { /**/ }
-  }
-
-  async function postMessage() {
-    if (!messageBody || !messageName) { messageError = 'Name and message are required.'; return }
-    messageLoading = true
-    messageError = ''
-    try {
-      const res = await api.postMessage(event.slug, { displayName: messageName, body: messageBody })
-      messages = [...messages, res.message]
-      messageBody = ''
-    } catch (e: unknown) {
-      messageError = e instanceof ApiError ? e.message : 'Failed to post message.'
-    } finally {
-      messageLoading = false
-    }
   }
 
   $effect(() => {
@@ -426,50 +406,29 @@
       </section>
     {/if}
 
-    <!-- Event channel (messages + blasts) -->
-    <section class="section">
-      <h2>Updates</h2>
-
-      {#if messagesLoaded && messages.length > 0}
-        <div class="messages">
-          {#each messages as msg (msg.id)}
-            <div class="message message-{msg.type}">
-              {#if msg.type === 'blast' && msg.subject}
-                <div class="message-subject">{msg.subject}</div>
-              {/if}
-              <p class="message-body">{msg.body}</p>
-              <div class="message-meta">
-                <span class="message-author">{msg.displayName}</span>
-                <span class="message-time">{new Date(msg.createdAt).toLocaleDateString()}</span>
+    <!-- Updates (host-only blasts) -->
+    {#if messages.length > 0 || !messagesLoaded}
+      <section class="section">
+        <h2>Updates</h2>
+        {#if messagesLoaded}
+          <div class="messages">
+            {#each messages as msg (msg.id)}
+              <div class="message">
+                {#if msg.subject}
+                  <div class="message-subject">{msg.subject}</div>
+                {/if}
+                <p class="message-body">{msg.body}</p>
+                <div class="message-meta">
+                  <span class="message-time">{new Date(msg.createdAt).toLocaleDateString()}</span>
+                </div>
               </div>
-            </div>
-          {/each}
-        </div>
-      {:else if messagesLoaded}
-        <p class="muted">No updates yet.</p>
-      {:else}
-        <p class="muted">Loading…</p>
-      {/if}
-
-      {#if event.status === 'published' && (data.myRsvp?.status === 'yes' || data.myRsvp?.status === 'maybe' || data.isEditor)}
-        {#if messageError}
-          <div class="error-banner">{messageError}</div>
+            {/each}
+          </div>
+        {:else}
+          <p class="muted">Loading…</p>
         {/if}
-        <div class="message-form">
-          <label>
-            Your name
-            <input type="text" bind:value={messageName} placeholder="Name" />
-          </label>
-          <label>
-            Message
-            <textarea bind:value={messageBody} rows="2" placeholder="Write a message…"></textarea>
-          </label>
-          <button onclick={postMessage} disabled={messageLoading}>
-            {messageLoading ? 'Posting…' : 'Post message'}
-          </button>
-        </div>
-      {/if}
-    </section>
+      </section>
+    {/if}
 
     <!-- Comments -->
     {#if event.allowComments}
@@ -592,18 +551,12 @@
   .comment-form button { background: var(--accent, #b05525); color: #fff; border: none; padding: 0.625rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
   .comment-form button:hover:not(:disabled) { background: var(--accent-hover, #924418); }
   .comment-form button:disabled { opacity: 0.6; }
-  .messages { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
-  .message { border-radius: 8px; padding: 0.75rem; border: 1px solid var(--border, #cfc3b0); background: var(--card-inner, #e8ddd0); }
-  .message-blast { border-color: var(--accent, #b05525); background: var(--card-bg, #f0e8da); }
+  .messages { display: flex; flex-direction: column; gap: 0.5rem; }
+  .message { border-radius: 8px; padding: 0.75rem; border: 1px solid var(--accent, #b05525); background: var(--card-bg, #f0e8da); }
   .message-subject { font-weight: 700; font-size: 0.9rem; color: #1a1510; margin-bottom: 0.25rem; }
   .message-body { margin: 0 0 0.375rem; font-size: 0.9rem; color: #3d352e; white-space: pre-wrap; }
-  .message-meta { display: flex; gap: 0.5rem; align-items: baseline; }
-  .message-author { font-size: 0.8rem; font-weight: 500; color: #1a1510; }
+  .message-meta { display: flex; gap: 0.5rem; }
   .message-time { font-size: 0.75rem; color: #9a8f86; }
-  .message-form { display: flex; flex-direction: column; gap: 0.75rem; }
-  .message-form button { background: var(--accent, #b05525); color: #fff; border: none; padding: 0.625rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
-  .message-form button:hover:not(:disabled) { background: var(--accent-hover, #924418); }
-  .message-form button:disabled { opacity: 0.6; }
   .muted { color: #6b6058; font-size: 0.875rem; }
   button { cursor: pointer; }
 </style>
