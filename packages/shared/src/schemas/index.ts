@@ -10,7 +10,11 @@ export const LoginSchema = z.object({
 export const CreateEventSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(10000).optional(),
-  location: z.string().max(500).optional(),
+  location: z.string().max(2000).optional(),
+  coordinates: z.string().max(500).optional(),
+  dressCode: z.string().max(200).optional(),
+  allowPlusOnes: z.boolean().default(false),
+  maxPlusOnes: z.number().int().min(1).max(3).optional(),
   startsAt: z.string().datetime(),
   endsAt: z.string().datetime().optional(),
   timezone: z.string().min(1).max(100),
@@ -21,12 +25,19 @@ export const CreateEventSchema = z.object({
   maxCapacity: z.number().int().positive().optional(),
   rsvpDeadline: z.string().datetime().optional(),
   expiresAt: z.string().datetime().optional(),
-}).strict()
+}).strict().refine(
+  (data) => new Date(data.startsAt) > new Date(),
+  { message: 'Event start date must be in the future.', path: ['startsAt'] },
+)
 
 export const UpdateEventSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(10000).nullish(),
-  location: z.string().max(500).nullish(),
+  location: z.string().max(2000).nullish(),
+  coordinates: z.string().max(500).nullish(),
+  dressCode: z.string().max(200).nullish(),
+  allowPlusOnes: z.boolean().optional(),
+  maxPlusOnes: z.number().int().min(1).max(3).nullish(),
   startsAt: z.string().datetime().optional(),
   endsAt: z.string().datetime().nullish(),
   timezone: z.string().min(1).max(100).optional(),
@@ -137,6 +148,11 @@ export const SubmitProfileSchema = z.object({
 export const BlockGuestSchema = z.object({
   reason:     z.string().min(1).max(1000),
   blockEmail: z.boolean().optional(),
+}).strict()
+
+// Invite contacts from directory to an event
+export const InviteContactsSchema = z.object({
+  contactIds: z.array(z.string().uuid()).min(1).max(100),
 }).strict()
 
 // Admin: permanently remove a session guest

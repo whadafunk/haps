@@ -6,6 +6,8 @@
   let loading = $state(false)
   let selectedTheme = $state('')
   let selectedType = $state<'open' | 'invite_only'>('open')
+  let allowPlusOnes = $state(false)
+  let dateError = $state('')
 
   const THEMES: Record<string, Record<string, string>> = {
     forest: {
@@ -33,11 +35,22 @@
     <a href="/dashboard" class="back">← Back to dashboard</a>
     <h1>New Event</h1>
 
-    {#if form?.error}
-      <div class="error-banner">{form.error}</div>
+    {#if form?.error || dateError}
+      <div class="error-banner">{dateError || form?.error}</div>
     {/if}
 
-    <form class="card" method="POST" style={themeStyle(selectedTheme)} use:enhance={() => { loading = true; return async ({ update }) => { loading = false; await update() } }}>
+    <form class="card" method="POST" style={themeStyle(selectedTheme)} use:enhance={({ cancel, formData }) => {
+      const d = formData.get('eventDate')?.toString() ?? ''
+      const t = formData.get('eventTime')?.toString() ?? ''
+      if (d && t && new Date(`${d}T${t}`) <= new Date()) {
+        dateError = 'Event start date must be in the future.'
+        cancel()
+        return
+      }
+      dateError = ''
+      loading = true
+      return async ({ update }) => { loading = false; await update() }
+    }}>
       <fieldset class="type-fieldset">
         <legend>Event type *</legend>
         <label class="type-option">
@@ -66,11 +79,19 @@
       </label>
       <label>
         Location
-        <input type="text" name="location" maxlength="500" placeholder="Address or venue name" />
+        <textarea name="location" rows="3" maxlength="2000" placeholder="Address, venue, parking info, transport options…"></textarea>
+      </label>
+      <label>
+        Coordinates / map link
+        <input type="text" name="coordinates" maxlength="500" placeholder="Google Maps, Waze link, or lat,lng…" />
+      </label>
+      <label>
+        Dress code
+        <input type="text" name="dressCode" maxlength="200" placeholder="Smart casual, black tie…" />
       </label>
       <label>
         Date *
-        <input type="date" name="eventDate" required />
+        <input type="date" name="eventDate" required min={new Date().toISOString().split('T')[0]} />
       </label>
       <label>
         Time *
@@ -97,6 +118,22 @@
           <input type="number" name="maxCapacity" min="1" placeholder="Unlimited" />
         </label>
       {/if}
+      <div class="plus-ones-section">
+        <label class="checkbox-label">
+          <input type="checkbox" name="allowPlusOnes" bind:checked={allowPlusOnes} />
+          Allow plus ones
+        </label>
+        {#if allowPlusOnes}
+          <label>
+            Max plus ones per guest
+            <select name="maxPlusOnes">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </label>
+        {/if}
+      </div>
       <label>
         Theme
         <select name="theme" bind:value={selectedTheme}>
@@ -128,6 +165,8 @@
   .btn-primary:hover:not(:disabled) { background: var(--accent-hover, #924418); }
   .btn-primary:disabled { opacity: 0.6; }
   .error-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
+  .plus-ones-section { display: flex; flex-direction: column; gap: 0.5rem; }
+  .checkbox-label { display: flex; flex-direction: row; align-items: center; gap: 0.5rem; font-weight: 400; }
   .type-fieldset { border: 1px solid #c8bdb0; border-radius: 8px; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
   .type-fieldset legend { font-size: 0.875rem; font-weight: 500; color: #3d352e; padding: 0 0.25rem; }
   .type-option { display: flex; align-items: flex-start; gap: 0.625rem; padding: 0.5rem 0.625rem; border: 1px solid transparent; border-radius: 6px; cursor: pointer; font-weight: normal; }

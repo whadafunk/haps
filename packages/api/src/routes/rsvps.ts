@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, rsvps, visitorSessions, emailBlocklist } from '../db/schema.js'
+import { events, rsvps, visitorSessions, emailBlocklist, contacts } from '../db/schema.js'
 import { eq, and, count } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { CreateRsvpSchema, UpdateRsvpSchema } from '@haps/shared'
@@ -113,6 +113,17 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
         .set({ eventAccess: updatedAccess })
         .where(eq(visitorSessions.id, session.id))
       session.eventAccess = updatedAccess as Record<string, 'attendee' | 'editor'>
+    }
+
+    // Auto-upsert contact from RSVP data when an email is known
+    const rsvpEmail = body.email ?? session.email
+    if (rsvpEmail) {
+      await db.insert(contacts)
+        .values({ name: body.displayName, email: rsvpEmail.toLowerCase() })
+        .onConflictDoUpdate({
+          target: contacts.email,
+          set: { name: body.displayName, updatedAt: new Date() },
+        })
     }
 
     return reply.code(201).send({ rsvp: serializeRsvp(rsvp) })

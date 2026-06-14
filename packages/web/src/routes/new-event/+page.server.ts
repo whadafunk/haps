@@ -13,6 +13,11 @@ export const actions: Actions = {
     const title = data.get('title')?.toString() ?? ''
     const description = data.get('description')?.toString() || undefined
     const location = data.get('location')?.toString() || undefined
+    const coordinates = data.get('coordinates')?.toString() || undefined
+    const dressCode = data.get('dressCode')?.toString() || undefined
+    const allowPlusOnes = data.get('allowPlusOnes') === 'on'
+    const maxPlusOnesRaw = data.get('maxPlusOnes')?.toString()
+    const maxPlusOnes = maxPlusOnesRaw ? parseInt(maxPlusOnesRaw, 10) : undefined
     const eventDate = data.get('eventDate')?.toString() ?? ''
     const eventTime = data.get('eventTime')?.toString() ?? ''
     const timezone = data.get('timezone')?.toString() ?? 'UTC'
@@ -28,7 +33,8 @@ export const actions: Actions = {
       const res = await serverPost<{ event: { slug: string }; editToken: string; editLink: string; inviteToken: string | null }>(
         '/events',
         {
-          title, description, location,
+          title, description, location, coordinates, dressCode, allowPlusOnes,
+          ...(allowPlusOnes && maxPlusOnes ? { maxPlusOnes } : {}),
           startsAt: new Date(`${eventDate}T${eventTime}`).toISOString(),
           timezone, theme, eventType,
           ...(maxCapacity ? { maxCapacity } : {}),

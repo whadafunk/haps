@@ -50,6 +50,10 @@ export const events = pgTable('events', {
   status:        text('status').notNull().default('draft'), // 'draft'|'published'|'cancelled'|'archived'
   showGuests:    boolean('show_guests').notNull().default(true),
   allowComments: boolean('allow_comments').notNull().default(true),
+  coordinates:   text('coordinates'),
+  dressCode:     text('dress_code'),
+  allowPlusOnes: boolean('allow_plus_ones').notNull().default(false),
+  maxPlusOnes:   integer('max_plus_ones'),
   maxCapacity:   integer('max_capacity'),
   rsvpDeadline:  timestamp('rsvp_deadline', { withTimezone: true }),
   expiresAt:     timestamp('expires_at', { withTimezone: true }),
@@ -63,6 +67,19 @@ export const events = pgTable('events', {
   expiresIdx:      index('events_expires_idx').on(t.expiresAt).where(sql`${t.expiresAt} is not null`),
 }))
 
+export const contacts = pgTable('contacts', {
+  id:              uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  name:            text('name').notNull(),
+  email:           text('email').unique(),
+  phone:           text('phone'),
+  instagramHandle: text('instagram_handle'),
+  notes:           text('notes'),
+  createdAt:       timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:       timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  emailIdx: index('contacts_email_idx').on(t.email).where(sql`${t.email} is not null`),
+}))
+
 export const eventTokens = pgTable('event_tokens', {
   id:                   uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   eventId:              uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
@@ -72,9 +89,11 @@ export const eventTokens = pgTable('event_tokens', {
   status:               text('status').notNull().default('active'), // 'active' | 'blocked' | 'blacklisted'
   singleUse:            boolean('single_use').notNull().default(false),
   claimedBySessionId:   uuid('claimed_by_session_id').references(() => visitorSessions.id, { onDelete: 'set null' }),
+  contactId:            uuid('contact_id').references(() => contacts.id, { onDelete: 'set null' }),
   createdAt:            timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
-  eventTypeIdx: index('event_tokens_event_type_idx').on(t.eventId, t.type).where(sql`${t.status} = 'active'`),
+  eventTypeIdx:  index('event_tokens_event_type_idx').on(t.eventId, t.type).where(sql`${t.status} = 'active'`),
+  contactIdx:    index('event_tokens_contact_idx').on(t.contactId).where(sql`${t.contactId} is not null`),
 }))
 
 export const rsvps = pgTable('rsvps', {
@@ -149,6 +168,21 @@ export const deliveryJobs = pgTable('delivery_jobs', {
   createdAt:      timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   pendingIdx: index('delivery_jobs_pending_idx').on(t.status, t.createdAt).where(sql`${t.status} = 'pending'`),
+}))
+
+export const notifications = pgTable('notifications', {
+  id:        uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: uuid('session_id').references(() => visitorSessions.id, { onDelete: 'cascade' }),
+  userId:    uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  eventId:   uuid('event_id').references(() => events.id, { onDelete: 'cascade' }),
+  type:      text('type').notNull(), // 'invitation' | 'event_update' | 'reminder' | 'waitlist_promotion' | 'event_cancelled'
+  body:      text('body').notNull(),
+  link:      text('link'),
+  read:      boolean('read').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  sessionIdx: index('notifications_session_idx').on(t.sessionId).where(sql`${t.sessionId} is not null`),
+  userIdx:    index('notifications_user_idx').on(t.userId).where(sql`${t.userId} is not null`),
 }))
 
 export const comments = pgTable('comments', {

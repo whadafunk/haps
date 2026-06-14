@@ -1,11 +1,11 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, eventTokens, rsvps, visitorSessions } from '../db/schema.js'
+import { events, eventTokens, rsvps, visitorSessions, notifications, contacts } from '../db/schema.js'
 import { eq, and, count, sql } from 'drizzle-orm'
 import { generateToken, hashToken, verifyToken } from '../lib/crypto.js'
 import { generateSlug } from '../lib/slug.js'
 import { createError } from '../lib/errors.js'
-import { CreateEventSchema, UpdateEventSchema, CreateTokenSchema } from '@haps/shared'
+import { CreateEventSchema, UpdateEventSchema, CreateTokenSchema, InviteContactsSchema } from '@haps/shared'
 import { ensureSession } from '../middleware/session.js'
 import { config } from '../lib/config.js'
 import { nanoid } from 'nanoid'
@@ -29,6 +29,10 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
         title: body.title,
         description: body.description ?? null,
         location: body.location ?? null,
+        coordinates: body.coordinates ?? null,
+        dressCode: body.dressCode ?? null,
+        allowPlusOnes: body.allowPlusOnes ?? false,
+        maxPlusOnes: body.maxPlusOnes ?? null,
         startsAt: new Date(body.startsAt),
         endsAt: body.endsAt ? new Date(body.endsAt) : null,
         timezone: body.timezone,
@@ -180,7 +184,14 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     if (body.title !== undefined) updates['title'] = body.title
     if (body.description !== undefined) updates['description'] = body.description ?? null
     if (body.location !== undefined) updates['location'] = body.location ?? null
-    if (body.startsAt !== undefined) updates['startsAt'] = new Date(body.startsAt)
+    if (body.coordinates !== undefined) updates['coordinates'] = body.coordinates ?? null
+    if (body.dressCode !== undefined) updates['dressCode'] = body.dressCode ?? null
+    if (body.allowPlusOnes !== undefined) updates['allowPlusOnes'] = body.allowPlusOnes
+    if (body.maxPlusOnes !== undefined) updates['maxPlusOnes'] = body.maxPlusOnes ?? null
+    if (body.startsAt !== undefined) {
+      if (new Date(body.startsAt) <= new Date()) throw createError(400, 'INVALID_DATE', 'Event start date must be in the future.')
+      updates['startsAt'] = new Date(body.startsAt)
+    }
     if (body.endsAt !== undefined) updates['endsAt'] = body.endsAt ? new Date(body.endsAt) : null
     if (body.timezone !== undefined) updates['timezone'] = body.timezone
     if (body.theme !== undefined) updates['theme'] = body.theme ?? null
@@ -333,6 +344,95 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     await db.update(eventTokens).set({ status: 'blacklisted' }).where(eq(eventTokens.id, tokenId))
     return reply.code(204).send()
   })
+
+  // Directory — contacts not yet invited to this event
+  fastify.get('/api/events/:slug/directory', {
+    preHandler: [fastify.requireEditToken],
+  }, async (request) => {
+    const { slug } = request.params as { slug: string }
+
+    const eventRows = await db.select({ id: events.id }).from(events).where(eq(events.slug, slug)).limit(1)
+    const event = eventRows[0]
+    if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
+
+    const contactList = await db
+      .select({
+        id: contacts.id,
+        name: contacts.name,
+        email: contacts.email,
+        phone: contacts.phone,
+        instagramHandle: contacts.instagramHandle,
+      })
+      .from(contacts)
+      .where(sql`not exists (
+        select 1 from event_tokens
+        where event_tokens.event_id = ${event.id}
+          and event_tokens.type = 'attendee'
+          and event_tokens.status = 'active'
+          and event_tokens.contact_id = contacts.id
+      )`)
+      .orderBy(contacts.name)
+
+    return { contacts: contactList }
+  })
+
+  // Invite contacts from the directory to this event
+  fastify.post('/api/events/:slug/invitations', {
+    preHandler: [fastify.requireEditToken],
+  }, async (request, reply) => {
+    const { slug } = request.params as { slug: string }
+    const body = InviteContactsSchema.parse(request.body)
+
+    const eventRows = await db
+      .select({ id: events.id, title: events.title })
+      .from(events).where(eq(events.slug, slug)).limit(1)
+    const event = eventRows[0]
+    if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
+
+    const invitations: Array<{ contactId: string; contactName: string; tokenId: string; inviteLink: string }> = []
+
+    for (const contactId of body.contactIds) {
+      const contactRows = await db
+        .select({ id: contacts.id, name: contacts.name })
+        .from(contacts)
+        .where(eq(contacts.id, contactId))
+        .limit(1)
+      const contact = contactRows[0]
+      if (!contact) continue
+
+      // Idempotent — skip if this contact already has an active token for this event
+      const existing = await db
+        .select({ id: eventTokens.id })
+        .from(eventTokens)
+        .where(and(
+          eq(eventTokens.eventId, event.id),
+          eq(eventTokens.type, 'attendee'),
+          eq(eventTokens.status, 'active'),
+          eq(eventTokens.contactId, contactId),
+        ))
+        .limit(1)
+      if (existing[0]) continue
+
+      const rawToken = generateToken()
+      const tokenHash = await hashToken(rawToken)
+
+      const [inserted] = await db.insert(eventTokens).values({
+        eventId: event.id,
+        type: 'attendee',
+        label: contact.name,
+        tokenHash,
+        singleUse: true,
+        contactId: contact.id,
+      }).returning({ id: eventTokens.id })
+
+      if (!inserted) continue
+
+      const inviteLink = `${config.APP_URL}/event/${slug}?t=${rawToken}`
+      invitations.push({ contactId: contact.id, contactName: contact.name, tokenId: inserted.id, inviteLink })
+    }
+
+    return reply.code(200).send({ invitations })
+  })
 }
 
 function serializeEvent(event: typeof events.$inferSelect) {
@@ -343,6 +443,10 @@ function serializeEvent(event: typeof events.$inferSelect) {
     title: event.title,
     description: event.description,
     location: event.location,
+    coordinates: event.coordinates,
+    dressCode: event.dressCode,
+    allowPlusOnes: event.allowPlusOnes,
+    maxPlusOnes: event.maxPlusOnes,
     startsAt: event.startsAt.toISOString(),
     endsAt: event.endsAt?.toISOString() ?? null,
     timezone: event.timezone,

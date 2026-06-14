@@ -8,6 +8,7 @@
   let { data } = $props<{ data: PageData }>()
 
   const event = $state({ ...data.event })
+  const originalStartsAt = data.event.startsAt
   let saving = $state(false)
   let saveError = $state('')
   let saveSuccess = $state(false)
@@ -180,6 +181,89 @@
     } catch { /**/ }
   }
 
+  // Directory invite
+  type DirectoryContact = { id: string; name: string; email: string | null; phone: string | null; instagramHandle: string | null }
+  type InvitedLink = { contactId: string; contactName: string; tokenId: string; inviteLink: string }
+  let showDirectoryModal = $state(false)
+  let directoryGuests = $state<DirectoryContact[]>([])
+  let directoryLoaded = $state(false)
+  let directorySearch = $state('')
+  let selectedGuestIds = $state(new Set<string>())
+  let inviting = $state(false)
+  let directoryError = $state('')
+  let invitedLinks = $state<InvitedLink[]>([])
+  let copiedInviteLinkContactId = $state<string | null>(null)
+
+  const filteredGuests = $derived(
+    directoryGuests.filter(g => {
+      const q = directorySearch.toLowerCase()
+      return !q || g.name.toLowerCase().includes(q) || (g.email?.toLowerCase().includes(q) ?? false)
+    })
+  )
+  const allFilteredSelected = $derived(filteredGuests.length > 0 && filteredGuests.every(g => selectedGuestIds.has(g.id)))
+
+  async function openDirectoryModal() {
+    showDirectoryModal = true
+    selectedGuestIds = new Set()
+    directorySearch = ''
+    directoryError = ''
+    invitedLinks = []
+    if (!directoryLoaded) {
+      try {
+        const res = await api.listDirectory(event.slug, data.editToken)
+        directoryGuests = res.contacts
+        directoryLoaded = true
+      } catch (e: unknown) {
+        directoryError = e instanceof ApiError ? e.message : 'Failed to load directory.'
+      }
+    }
+  }
+
+  function toggleGuest(id: string) {
+    const next = new Set(selectedGuestIds)
+    if (next.has(id)) { next.delete(id) } else { next.add(id) }
+    selectedGuestIds = next
+  }
+
+  function toggleAllFiltered() {
+    const next = new Set(selectedGuestIds)
+    if (allFilteredSelected) filteredGuests.forEach(g => next.delete(g.id))
+    else filteredGuests.forEach(g => next.add(g.id))
+    selectedGuestIds = next
+  }
+
+  async function refreshTokens() {
+    try {
+      const res = await api.listTokens(event.slug, data.editToken)
+      inviteTokens = res.tokens.filter(t => t.type === 'attendee')
+    } catch { /* non-critical */ }
+  }
+
+  async function copyInviteLink(contactId: string, link: string) {
+    try {
+      await navigator.clipboard.writeText(link)
+      copiedInviteLinkContactId = contactId
+      setTimeout(() => { copiedInviteLinkContactId = null }, 2000)
+    } catch { /**/ }
+  }
+
+  async function sendDirectoryInvites() {
+    if (selectedGuestIds.size === 0) return
+    inviting = true
+    directoryError = ''
+    try {
+      const res = await api.bulkInvite(event.slug, [...selectedGuestIds], data.editToken)
+      invitedLinks = res.invitations
+      directoryGuests = directoryGuests.filter(g => !selectedGuestIds.has(g.id))
+      selectedGuestIds = new Set()
+      await refreshTokens()
+    } catch (e: unknown) {
+      directoryError = e instanceof ApiError ? e.message : 'Failed to send invitations.'
+    } finally {
+      inviting = false
+    }
+  }
+
   let publishError = $state('')
 
   async function updateStatus(newStatus: string) {
@@ -212,11 +296,20 @@
     saving = true
     saveError = ''
     saveSuccess = false
+    if (event.startsAt !== originalStartsAt && new Date(event.startsAt) <= new Date()) {
+      saveError = 'Event start date must be in the future.'
+      saving = false
+      return
+    }
     try {
       await api.updateEvent(event.slug, {
         title: event.title,
         description: event.description,
         location: event.location,
+        coordinates: event.coordinates,
+        dressCode: event.dressCode,
+        allowPlusOnes: event.allowPlusOnes,
+        maxPlusOnes: event.allowPlusOnes ? (event.maxPlusOnes ?? 1) : null,
         startsAt: event.startsAt,
         endsAt: event.endsAt ?? undefined,
         theme: event.theme ?? undefined,
@@ -331,8 +424,26 @@
         <div class="form">
           <label>Title <input type="text" bind:value={event.title} /></label>
           <label>Description <textarea bind:value={event.description} rows="4"></textarea></label>
-          <label>Location <input type="text" bind:value={event.location} /></label>
-          <label>Starts at <input type="datetime-local" value={event.startsAt?.slice(0, 16)} oninput={(e) => { event.startsAt = (e.target as HTMLInputElement).value + ':00Z' }} /></label>
+          <label>Location <textarea bind:value={event.location} rows="3" placeholder="Address, venue, parking info, transport options…"></textarea></label>
+          <label>Coordinates / map link <input type="text" bind:value={event.coordinates} placeholder="Google Maps, Waze link, or lat,lng…" /></label>
+          <label>Dress code <input type="text" bind:value={event.dressCode} placeholder="Smart casual, black tie…" /></label>
+          <div class="plus-ones-section">
+            <label class="checkbox">
+              <input type="checkbox" bind:checked={event.allowPlusOnes}
+                onchange={() => { if (event.allowPlusOnes && !event.maxPlusOnes) event.maxPlusOnes = 1 }} />
+              Allow plus ones
+            </label>
+            {#if event.allowPlusOnes}
+              <label>Max plus ones per guest
+                <select bind:value={event.maxPlusOnes}>
+                  <option value={1}>1</option>
+                  <option value={2}>2</option>
+                  <option value={3}>3</option>
+                </select>
+              </label>
+            {/if}
+          </div>
+          <label>Starts at <input type="datetime-local" value={event.startsAt?.slice(0, 16)} min={new Date().toISOString().slice(0, 16)} oninput={(e) => { event.startsAt = (e.target as HTMLInputElement).value + ':00Z' }} /></label>
           <label>
             Theme
             <select bind:value={event.theme}>
@@ -363,26 +474,24 @@
       </section>
 
       <section class="card">
-        <h2>Invite links <span class="event-type-badge event-type-{event.eventType}">{event.eventType === 'invite_only' ? 'Invite-only' : 'Open'}</span></h2>
-        {#if event.status === 'draft'}
-          <p class="draft-lock">Publish the event to share invite links.</p>
-        {:else}
-          {#if inviteError}<div class="error-banner">{inviteError}</div>{/if}
+        <h2>Invitations <span class="event-type-badge event-type-{event.eventType}">{event.eventType === 'invite_only' ? 'Invite-only' : 'Open'}</span></h2>
+        {#if inviteError}<div class="error-banner">{inviteError}</div>{/if}
+        {#if event.eventType === 'invite_only'}
+          {#if event.status === 'draft'}
+            <p class="draft-lock">Event is in draft — guests will see it in their list after you publish.</p>
+          {/if}
           <div class="channel-list">
             <div class="channel-row">
               <div class="channel-info">
-                <span class="channel-name">Link</span>
-                <span class="channel-desc">{event.eventType === 'invite_only' ? 'Single-use per guest — generate and share anywhere' : 'Reusable — anyone with this link can RSVP'}</span>
+                <span class="channel-name">Guests</span>
+                <span class="channel-desc">Select from the directory or generate single-use links</span>
               </div>
               <div class="channel-actions">
-                {#if event.eventType === 'invite_only'}
-                  <span class="invite-counter-sm">{activeInviteTokens.length} active · {claimedInviteCount} claimed</span>
-                  <button class="btn-manage-invites" onclick={() => showInviteModal = true}>Manage →</button>
-                {:else if generalTokenRaw}
-                  <button class="copy-btn" onclick={copyGeneralLink}>{generalCopied ? 'Copied!' : 'Copy link'}</button>
-                {:else}
-                  <span class="channel-unavailable">Visit via edit link to restore</span>
-                {/if}
+                <span class="invite-counter-sm">{activeInviteTokens.length} invited · {claimedInviteCount} visited</span>
+                <div class="invite-btn-group">
+                  <button class="btn-manage-invites" onclick={openDirectoryModal}>Directory →</button>
+                  <button class="btn-manage-invites" onclick={() => showInviteModal = true}>Links →</button>
+                </div>
               </div>
             </div>
             <div class="channel-row channel-row-soon">
@@ -407,6 +516,47 @@
               <span class="phase-badge">Phase 2</span>
             </div>
           </div>
+        {:else}
+          {#if event.status === 'draft'}
+            <p class="draft-lock">Publish the event to share the invite link.</p>
+          {:else}
+            <div class="channel-list">
+              <div class="channel-row">
+                <div class="channel-info">
+                  <span class="channel-name">Link</span>
+                  <span class="channel-desc">Reusable — anyone with this link can RSVP</span>
+                </div>
+                <div class="channel-actions">
+                  {#if generalTokenRaw}
+                    <button class="copy-btn" onclick={copyGeneralLink}>{generalCopied ? 'Copied!' : 'Copy link'}</button>
+                  {:else}
+                    <span class="channel-unavailable">Visit via edit link to restore</span>
+                  {/if}
+                </div>
+              </div>
+              <div class="channel-row channel-row-soon">
+                <div class="channel-info">
+                  <span class="channel-name">Email</span>
+                  <span class="channel-desc">Send a personal invite to a guest's email address</span>
+                </div>
+                <span class="phase-badge">Phase 2</span>
+              </div>
+              <div class="channel-row channel-row-soon">
+                <div class="channel-info">
+                  <span class="channel-name">WhatsApp</span>
+                  <span class="channel-desc">Open WhatsApp with the invite link pre-filled</span>
+                </div>
+                <span class="phase-badge">Phase 2</span>
+              </div>
+              <div class="channel-row channel-row-soon">
+                <div class="channel-info">
+                  <span class="channel-name">In-app</span>
+                  <span class="channel-desc">Notify via the guest inbox</span>
+                </div>
+                <span class="phase-badge">Phase 2</span>
+              </div>
+            </div>
+          {/if}
         {/if}
       </section>
     </div>
@@ -518,7 +668,7 @@
         <button class="modal-close" onclick={() => showInviteModal = false} aria-label="Close">×</button>
       </div>
       <div class="modal-body">
-        <p class="invite-counter">{activeInviteTokens.length} invite{activeInviteTokens.length !== 1 ? 's' : ''} · {claimedInviteCount} claimed · {unclaimedInviteCount} unclaimed</p>
+        <p class="invite-counter">{activeInviteTokens.length} invited · {claimedInviteCount} visited · {unclaimedInviteCount} pending</p>
 
         {#if invitePersonalError}
           <div class="error-banner">{invitePersonalError}</div>
@@ -540,8 +690,8 @@
               <div class="invite-row">
                 <div class="invite-info">
                   <span class="invite-label">{token.label ?? 'Unnamed'}</span>
-                  <span class="invite-status {token.status !== 'active' ? 'revoked' : token.claimedBySessionId ? 'claimed' : 'available'}">
-                    {token.status !== 'active' ? 'Revoked' : token.claimedBySessionId ? 'Claimed' : 'Unclaimed'}
+                  <span class="invite-status {token.status !== 'active' ? 'revoked' : token.claimedBySessionId ? 'visited' : 'pending'}">
+                    {token.status !== 'active' ? 'Revoked' : token.claimedBySessionId ? 'Visited' : 'Pending'}
                   </span>
                 </div>
                 {#if gen}
@@ -638,6 +788,76 @@
   </div>
 {/if}
 
+{#if showDirectoryModal}
+  <div class="modal-backdrop" onclick={() => showDirectoryModal = false} role="presentation">
+    <div class="modal modal-wide" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Invite from directory">
+      <div class="modal-header">
+        <h3>Invite from directory</h3>
+        <button class="modal-close" onclick={() => showDirectoryModal = false} aria-label="Close">×</button>
+      </div>
+      <div class="modal-body dir-modal-body">
+        {#if directoryError}
+          <div class="error-banner">{directoryError}</div>
+        {/if}
+        {#if invitedLinks.length > 0}
+          <div class="success-banner">{invitedLinks.length} invitation{invitedLinks.length !== 1 ? 's' : ''} generated — copy each link to share.</div>
+          <div class="invited-links-list">
+            {#each invitedLinks as inv (inv.contactId)}
+              <div class="invited-link-row">
+                <span class="dir-name">{inv.contactName}</span>
+                <div class="invite-link-row">
+                  <code class="invite-url">{inv.inviteLink}</code>
+                  <button class="copy-btn" onclick={() => copyInviteLink(inv.contactId, inv.inviteLink)}>
+                    {copiedInviteLinkContactId === inv.contactId ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+          <div class="dir-footer">
+            <button class="btn-ghost" onclick={() => { invitedLinks = []; showDirectoryModal = false }}>Done</button>
+          </div>
+        {:else if !directoryLoaded}
+          <p class="muted">Loading…</p>
+        {:else if directoryGuests.length === 0}
+          <p class="muted">No contacts available — either the directory is empty, or everyone has already been invited.</p>
+        {:else}
+          <div class="dir-search-row">
+            <input type="text" bind:value={directorySearch} placeholder="Search by name or email…" class="dir-search" />
+            {#if filteredGuests.length > 0}
+              <label class="checkbox dir-select-all">
+                <input type="checkbox" checked={allFilteredSelected} onchange={toggleAllFiltered} />
+                {allFilteredSelected ? 'Deselect all' : 'Select all'}
+              </label>
+            {/if}
+          </div>
+          {#if filteredGuests.length === 0}
+            <p class="muted">No contacts match your search.</p>
+          {:else}
+            <div class="dir-list">
+              {#each filteredGuests as guest (guest.id)}
+                <label class="dir-row">
+                  <input type="checkbox" checked={selectedGuestIds.has(guest.id)} onchange={() => toggleGuest(guest.id)} />
+                  <div class="dir-info">
+                    <span class="dir-name">{guest.name}</span>
+                    {#if guest.email}<span class="dir-meta">{guest.email}</span>{/if}
+                  </div>
+                </label>
+              {/each}
+            </div>
+          {/if}
+          <div class="dir-footer">
+            <button class="btn-primary" onclick={sendDirectoryInvites} disabled={selectedGuestIds.size === 0 || inviting}>
+              {inviting ? 'Inviting…' : selectedGuestIds.size > 0 ? `Invite ${selectedGuestIds.size} selected` : 'Select contacts to invite'}
+            </button>
+            <button class="btn-ghost" onclick={() => showDirectoryModal = false}>Cancel</button>
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
+
 {#if showCancelModal}
   <div class="modal-backdrop" onclick={() => showCancelModal = false} role="presentation">
     <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Cancel event">
@@ -726,6 +946,24 @@
   label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; font-weight: 500; color: #3d352e; }
   label.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; font-weight: 400; }
   .checkboxes { display: flex; flex-direction: column; gap: 0.5rem; }
+  .plus-ones-section { display: flex; flex-direction: column; gap: 0.5rem; }
+  .invite-btn-group { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .modal-wide { max-width: 640px; }
+  .dir-modal-body { gap: 0; }
+  .success-banner { background: #e8f4e4; color: #2a5e28; border: 1px solid #9cbb9c; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
+  .dir-search-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+  .dir-search { flex: 1; min-width: 160px; padding: 0.5rem 0.75rem; border: 1px solid #c8bdb0; border-radius: 8px; font-size: 0.9rem; font-family: inherit; background: #fff; color: #1a1510; }
+  .dir-search:focus { outline: 2px solid #b05525; outline-offset: -1px; }
+  .dir-select-all { flex-direction: row; align-items: center; gap: 0.375rem; font-size: 0.8rem; font-weight: 400; white-space: nowrap; color: #3d352e; }
+  .dir-list { display: flex; flex-direction: column; gap: 0.375rem; max-height: 340px; overflow-y: auto; margin-bottom: 1rem; }
+  .dir-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 0.75rem; background: #ede8e0; border: 1px solid #cfc3b0; border-radius: 8px; cursor: pointer; font-weight: normal; }
+  .dir-row:has(input:checked) { background: #e4f0e0; border-color: #9cbb9c; }
+  .dir-row input[type="checkbox"] { flex-shrink: 0; }
+  .dir-info { flex: 1; display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+  .dir-name { font-size: 0.875rem; font-weight: 600; color: #1a1510; }
+  .dir-meta { font-size: 0.775rem; color: #6b6058; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dir-count { font-size: 0.75rem; color: #9a8f86; white-space: nowrap; flex-shrink: 0; }
+  .dir-footer { display: flex; gap: 0.75rem; align-items: center; border-top: 1px solid #e0d4c4; padding-top: 1rem; margin-top: 0.25rem; }
   input, textarea, select { padding: 0.5rem 0.75rem; border: 1px solid #c8bdb0; border-radius: 8px; font-size: 1rem; font-family: inherit; background: #fff; color: #1a1510; }
   textarea { resize: vertical; }
   input:focus, textarea:focus, select:focus { outline: 2px solid #b05525; outline-offset: -1px; }
@@ -804,4 +1042,7 @@
   .invite-actions { display: flex; gap: 0.5rem; }
   .btn-revoke { background: none; border: 1px solid #f0c8b8; color: #8b3016; padding: 0.25rem 0.625rem; border-radius: 6px; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
   .btn-revoke:hover { background: #fdf2ee; }
+
+  .invited-links-list { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.75rem; }
+  .invited-link-row { background: #ede8e0; border: 1px solid #cfc3b0; border-radius: 8px; padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.4rem; }
 </style>

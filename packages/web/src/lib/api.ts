@@ -137,6 +137,18 @@ export const api = {
       headers: editToken ? { 'x-edit-token': editToken } : {},
     }),
 
+  listDirectory: (slug: string, editToken: string) =>
+    apiFetch<{ contacts: Array<{ id: string; name: string; email: string | null; phone: string | null; instagramHandle: string | null }> }>(
+      `/events/${slug}/directory`, { headers: { 'x-edit-token': editToken } }),
+
+  bulkInvite: (slug: string, contactIds: string[], editToken: string) =>
+    apiFetch<{ invitations: Array<{ contactId: string; contactName: string; tokenId: string; inviteLink: string }> }>(
+      `/events/${slug}/invitations`, {
+        method: 'POST',
+        body: JSON.stringify({ contactIds }),
+        headers: { 'x-edit-token': editToken },
+      }),
+
   // RSVPs
   submitRsvp: (slug: string, body: Record<string, unknown>) =>
     apiFetch<{ rsvp: Rsvp }>(`/events/${slug}/rsvps`, { method: 'POST', body: JSON.stringify(body) }),
