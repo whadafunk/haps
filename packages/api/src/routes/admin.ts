@@ -3,7 +3,7 @@ import { db } from '../db/index.js'
 import { users, events, instanceConfig, visitorSessions, rsvps, eventTokens, emailBlocklist, contacts } from '../db/schema.js'
 import { eq, count, sql, and, isNull, isNotNull, or, desc, ne } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
-import { CreateUserSchema, BlockGuestSchema, RemoveGuestSchema, CreateContactSchema } from '@haps/shared'
+import { CreateUserSchema, BlockGuestSchema, RemoveGuestSchema, CreateContactSchema, UpdateContactSchema } from '@haps/shared'
 import { hashPassword } from '../lib/crypto.js'
 import { config } from '../lib/config.js'
 import { z } from 'zod'
@@ -210,6 +210,110 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     }).returning({ id: contacts.id, name: contacts.name, email: contacts.email })
     if (!contact) throw createError(500, 'INTERNAL_ERROR', 'Failed to create contact.')
     return reply.code(201).send({ contact })
+  })
+
+  fastify.patch('/api/contacts/:contactId', { preHandler: staffPreHandler }, async (request, reply) => {
+    const { contactId } = request.params as { contactId: string }
+    const body = UpdateContactSchema.parse(request.body)
+
+    const [existing] = await db.select({ id: contacts.id }).from(contacts).where(eq(contacts.id, contactId)).limit(1)
+    if (!existing) throw createError(404, 'CONTACT_NOT_FOUND', 'Contact not found.')
+
+    const updates: Record<string, unknown> = { updatedAt: new Date() }
+    if (body.name !== undefined) updates.name = body.name
+    if (body.email !== undefined) updates.email = body.email?.toLowerCase() ?? null
+    if (body.phone !== undefined) updates.phone = body.phone ?? null
+    if (body.instagramHandle !== undefined) updates.instagramHandle = body.instagramHandle ?? null
+    if (body.notes !== undefined) updates.notes = body.notes ?? null
+
+    const [updated] = await db.update(contacts)
+      .set(updates as Parameters<ReturnType<typeof db.update>['set']>[0])
+      .where(eq(contacts.id, contactId))
+      .returning({
+        id:              contacts.id,
+        name:            contacts.name,
+        email:           contacts.email,
+        phone:           contacts.phone,
+        instagramHandle: contacts.instagramHandle,
+        notes:           contacts.notes,
+      })
+    return reply.send({ contact: updated })
+  })
+
+  fastify.delete('/api/contacts/:contactId', { preHandler: staffPreHandler }, async (request, reply) => {
+    const { contactId } = request.params as { contactId: string }
+    const [existing] = await db.select({ id: contacts.id }).from(contacts).where(eq(contacts.id, contactId)).limit(1)
+    if (!existing) throw createError(404, 'CONTACT_NOT_FOUND', 'Contact not found.')
+    await db.delete(contacts).where(eq(contacts.id, contactId))
+    return reply.code(204).send()
+  })
+
+  fastify.get('/api/admin/guests/contact/:contactId', { preHandler: staffPreHandler }, async (request) => {
+    const { contactId } = request.params as { contactId: string }
+
+    const [contact] = await db
+      .select({
+        id:              contacts.id,
+        name:            contacts.name,
+        email:           contacts.email,
+        phone:           contacts.phone,
+        instagramHandle: contacts.instagramHandle,
+        notes:           contacts.notes,
+        createdAt:       contacts.createdAt,
+      })
+      .from(contacts)
+      .where(eq(contacts.id, contactId))
+      .limit(1)
+    if (!contact) throw createError(404, 'CONTACT_NOT_FOUND', 'Contact not found.')
+
+    const inviteRows = await db
+      .select({
+        tokenId:     eventTokens.id,
+        eventSlug:   events.slug,
+        eventTitle:  events.title,
+        startsAt:    events.startsAt,
+        timezone:    events.timezone,
+        tokenStatus: eventTokens.status,
+        visited:     sql<boolean>`${eventTokens.claimedBySessionId} is not null`,
+        rsvpStatus:  rsvps.status,
+        headCount:   rsvps.headCount,
+      })
+      .from(eventTokens)
+      .innerJoin(events, eq(events.id, eventTokens.eventId))
+      .leftJoin(rsvps, and(
+        eq(rsvps.sessionId, eventTokens.claimedBySessionId),
+        eq(rsvps.eventId, eventTokens.eventId),
+      ))
+      .where(eq(eventTokens.contactId, contactId))
+      .orderBy(desc(events.startsAt))
+
+    return {
+      guest: {
+        id:              contact.id,
+        shortId:         contact.id.slice(0, 8),
+        type:            'contact',
+        displayName:     contact.name,
+        email:           contact.email,
+        phone:           contact.phone,
+        instagramHandle: contact.instagramHandle,
+        notes:           contact.notes,
+        status:          'active',
+        statusReason:    null,
+        firstSeen:       contact.createdAt.toISOString(),
+        events:          [],
+        invites:         inviteRows.map((r) => ({
+          tokenId:     r.tokenId,
+          eventSlug:   r.eventSlug,
+          eventTitle:  r.eventTitle,
+          startsAt:    r.startsAt.toISOString(),
+          timezone:    r.timezone,
+          tokenStatus: r.tokenStatus,
+          visited:     r.visited,
+          rsvpStatus:  r.rsvpStatus ?? null,
+          headCount:   r.headCount ?? null,
+        })),
+      },
+    }
   })
 
   fastify.get('/api/admin/guests/user/:guestId', { preHandler: staffPreHandler }, async (request) => {

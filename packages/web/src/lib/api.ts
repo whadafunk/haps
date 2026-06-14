@@ -222,6 +222,13 @@ export const api = {
   createContact: (body: { name: string; email?: string; phone?: string; instagramHandle?: string; notes?: string }) =>
     apiFetch<{ contact: { id: string; name: string; email: string | null } }>('/contacts', { method: 'POST', body: JSON.stringify(body) }),
 
+  updateContact: (contactId: string, body: { name?: string; email?: string | null; phone?: string | null; instagramHandle?: string | null; notes?: string | null }) =>
+    apiFetch<{ contact: { id: string; name: string; email: string | null; phone: string | null; instagramHandle: string | null; notes: string | null } }>(
+      `/contacts/${contactId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  deleteContact: (contactId: string) =>
+    apiFetch<void>(`/contacts/${contactId}`, { method: 'DELETE' }),
+
   // Admin guests
   blockGuest: (sessionId: string, body: { reason: string; blockEmail?: boolean }) =>
     apiFetch<void>(`/admin/guests/session/${sessionId}/block`, { method: 'PATCH', body: JSON.stringify(body) }),

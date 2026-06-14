@@ -150,6 +150,15 @@ export const BlockGuestSchema = z.object({
   blockEmail: z.boolean().optional(),
 }).strict()
 
+// Update a contact in the People directory
+export const UpdateContactSchema = z.object({
+  name:            z.string().min(1).max(200).optional(),
+  email:           z.string().email().nullish(),
+  phone:           z.string().max(50).nullish(),
+  instagramHandle: z.string().max(100).nullish(),
+  notes:           z.string().max(1000).nullish(),
+}).strict()
+
 // Manually create a contact in the People directory
 export const CreateContactSchema = z.object({
   name:            z.string().min(1).max(200),
