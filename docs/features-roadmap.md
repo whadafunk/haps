@@ -132,14 +132,24 @@ Voluntary registration, cross-device persistence, pre-event features.
       or marketing pages. This keeps anonymous browsing truly anonymous.
 
 **Invitations**
-- [ ] Organizer composes an invitation: selects recipients from an address
-      book (name + email and/or phone), writes a personal message
-- [ ] System sends the event invite link + attendee token via email and/or
-      SMS to each recipient
+
+Four invitation channels, all sharing the same link type (single-use token for
+invite-only events, general token for open events). The Invite links card on the
+manage page already shows the UI skeleton for all four; backend delivery is Phase 2.
+
+- [ ] **Link** (manual): already works — generate/copy link, share outside the app.
+      Invite-only events get per-guest single-use tokens with a "Manage" modal.
+- [ ] **Email**: host enters recipient name + email → system generates a token,
+      sends a branded invite email via SMTP with the personalised link.
+- [ ] **WhatsApp**: host enters recipient phone → system generates a token, opens
+      `wa.me/?text=...` deep link with invite message pre-filled; host taps Send.
+      No Meta Business API needed — uses the consumer WhatsApp deep link.
+- [ ] **In-app**: drops a notification row in the guest's inbox (requires guest
+      inbox / notifications table from Phase 2 to exist first).
 - [ ] Delivery tracking per invitation per channel: sent, delivered, failed,
-      bounced — visible to the organizer on the event guest list
+      bounced — visible to the organizer on the event guest list.
 - [ ] Address book: stored per-organizer; auto-populated from past event
-      guest emails/phones (with guest opt-in)
+      guest emails/phones (with guest opt-in).
 
 ---
 

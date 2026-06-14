@@ -12,6 +12,10 @@
   let saveError = $state('')
   let saveSuccess = $state(false)
   let deleting = $state(false)
+  let showDeleteModal = $state(false)
+  let showCancelModal = $state(false)
+
+  let activeTab = $state('details')
 
   let editLink = $state('')
   let linkCopied = $state(false)
@@ -220,7 +224,6 @@
   }
 
   async function deleteEvent() {
-    if (!confirm('Delete this event? This cannot be undone.')) return
     deleting = true
     try {
       await api.deleteEvent(event.slug, data.editToken)
@@ -269,186 +272,205 @@
 </script>
 
 <main class="edit-page">
-  <div class="header">
-    <a href="/event/{event.slug}">← Back to event</a>
-    <h1>Manage: {event.title}</h1>
+  <div class="page-header">
+    <div class="header-title">
+      <h1>{event.title}</h1>
+      {#if event.status !== 'draft'}
+        <span class="status-badge status-{event.status}">{event.status}</span>
+      {/if}
+    </div>
+    <a href="/event/{event.slug}" target="_blank" rel="noopener" class="preview-link">Preview →</a>
   </div>
 
-  <div class="cover-card">
-    <h2>Cover image</h2>
-    {#if coverPreview}
-      <img src={coverPreview} alt="Event cover" class="cover-preview" />
-    {:else}
-      <div class="cover-placeholder">No cover image</div>
-    {/if}
-    {#if coverError}
-      <div class="error-banner">{coverError}</div>
-    {/if}
-    <label class="cover-upload-btn">
-      {coverUploading ? 'Uploading…' : coverPreview ? 'Change image' : 'Upload image'}
-      <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onchange={uploadCover} disabled={coverUploading} hidden />
-    </label>
+  <div class="tabs">
+    <button class="tab-btn" class:active={activeTab === 'details'} onclick={() => activeTab = 'details'}>Details</button>
+    <button class="tab-btn" class:active={activeTab === 'activity'} onclick={() => activeTab = 'activity'}>Activity</button>
   </div>
 
-  <div class="grid">
-    {#if editLink}
-      <section class="card wide">
-        <h2>Edit link</h2>
-        <p class="muted">Bookmark this page or share the link below with anyone who needs to co-manage this event.</p>
-        <div class="invite-url-row">
-          <code class="invite-url">{editLink}</code>
-          <button class="copy-btn" onclick={copyLink}>{linkCopied ? 'Copied!' : 'Copy'}</button>
-        </div>
+  {#if activeTab === 'details'}
+    <div class="cards">
+      <section class="card">
+        <h2>Cover image</h2>
+        {#if coverPreview}
+          <img src={coverPreview} alt="Event cover" class="cover-preview" />
+        {:else}
+          <div class="cover-placeholder">No cover image</div>
+        {/if}
+        {#if coverError}
+          <div class="error-banner">{coverError}</div>
+        {/if}
+        <label class="cover-upload-btn">
+          {coverUploading ? 'Uploading…' : coverPreview ? 'Change image' : 'Upload image'}
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onchange={uploadCover} disabled={coverUploading} hidden />
+        </label>
       </section>
-    {/if}
 
-    <section class="card wide">
-      <h2>Event details</h2>
-
-      {#if saveError}
-        <div class="error-banner">{saveError}</div>
+      {#if editLink}
+        <section class="card">
+          <h2>Edit link</h2>
+          <p class="muted">Bookmark this page or share the link below with anyone who needs to co-manage this event.</p>
+          <div class="invite-url-row">
+            <code class="invite-url">{editLink}</code>
+            <button class="copy-btn" onclick={copyLink}>{linkCopied ? 'Copied!' : 'Copy'}</button>
+          </div>
+        </section>
       {/if}
 
-      <div class="form">
-        <label>Title <input type="text" bind:value={event.title} /></label>
-        <label>Description <textarea bind:value={event.description} rows="4"></textarea></label>
-        <label>Location <input type="text" bind:value={event.location} /></label>
-        <label>Starts at <input type="datetime-local" value={event.startsAt?.slice(0, 16)} oninput={(e) => { event.startsAt = (e.target as HTMLInputElement).value + ':00Z' }} /></label>
-        <label>
-          Theme
-          <select bind:value={event.theme}>
-            <option value="">Default (warm)</option>
-            <option value="forest">Forest (green)</option>
-            <option value="ocean">Ocean (blue)</option>
-            <option value="sunset">Sunset (red)</option>
-          </select>
-        </label>
-        <div class="checkboxes">
-          <label class="checkbox"><input type="checkbox" bind:checked={event.showGuests} /> Show guest list publicly</label>
-          <label class="checkbox"><input type="checkbox" bind:checked={event.allowComments} /> Allow comments</label>
-        </div>
-        {#if event.status === 'published' && rsvps.length > 0}
-          <p class="delete-warning">This event is published and has {rsvps.length} RSVP{rsvps.length !== 1 ? 's' : ''}. You might want to cancel it first and notify the people.</p>
+      <section class="card">
+        <h2>Event details</h2>
+        {#if saveError}
+          <div class="error-banner">{saveError}</div>
         {/if}
-        {#if publishError}
-          <p class="publish-error">{publishError}</p>
-        {/if}
-        <div class="form-actions">
-          <button onclick={saveEvent} disabled={saving} class="btn-primary" class:btn-saved={saveSuccess}>
-            {saving ? 'Saving…' : saveSuccess ? 'Saved ✓' : 'Save changes'}
-          </button>
-          <button onclick={deleteEvent} disabled={deleting} class="btn-danger">
-            {deleting ? 'Deleting…' : 'Delete'}
-          </button>
-          {#if event.status === 'draft'}
-            <button class="btn-publish" onclick={() => updateStatus('published')} disabled={saving}>
-              Publish
-            </button>
-          {:else if event.status === 'published'}
-            <span class="status-badge status-published">Published</span>
-            <button class="btn-cancel-event" onclick={() => { if (confirm('Cancel this event? Guests will see a cancellation notice.')) updateStatus('cancelled') }} disabled={saving}>
-              Cancel
-            </button>
-          {:else if event.status === 'cancelled'}
-            <span class="status-badge status-cancelled">Cancelled</span>
+        <div class="form">
+          <label>Title <input type="text" bind:value={event.title} /></label>
+          <label>Description <textarea bind:value={event.description} rows="4"></textarea></label>
+          <label>Location <input type="text" bind:value={event.location} /></label>
+          <label>Starts at <input type="datetime-local" value={event.startsAt?.slice(0, 16)} oninput={(e) => { event.startsAt = (e.target as HTMLInputElement).value + ':00Z' }} /></label>
+          <label>
+            Theme
+            <select bind:value={event.theme}>
+              <option value="">Default (warm)</option>
+              <option value="forest">Forest (green)</option>
+              <option value="ocean">Ocean (blue)</option>
+              <option value="sunset">Sunset (red)</option>
+            </select>
+          </label>
+          <div class="checkboxes">
+            <label class="checkbox"><input type="checkbox" bind:checked={event.showGuests} /> Show guest list publicly</label>
+            <label class="checkbox"><input type="checkbox" bind:checked={event.allowComments} /> Allow comments</label>
+          </div>
+          {#if publishError}
+            <p class="publish-error">{publishError}</p>
           {/if}
+          <div class="form-actions">
+            <button onclick={saveEvent} disabled={saving} class="btn-primary" class:btn-saved={saveSuccess}>
+              {saving ? 'Saving…' : saveSuccess ? 'Saved ✓' : 'Save changes'}
+            </button>
+            <button onclick={() => showDeleteModal = true} disabled={deleting} class="btn-danger">Delete</button>
+            <button class="btn-publish" onclick={() => updateStatus('published')} disabled={saving || event.status !== 'draft'}>Publish</button>
+            {#if event.status === 'published'}
+              <button class="btn-cancel-event" onclick={() => showCancelModal = true} disabled={saving}>Cancel event</button>
+            {/if}
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="card wide">
-      <div class="invite-summary">
-        <span class="invite-counter">
+      <section class="card">
+        <h2>Invite links <span class="event-type-badge event-type-{event.eventType}">{event.eventType === 'invite_only' ? 'Invite-only' : 'Open'}</span></h2>
+        {#if event.status === 'draft'}
+          <p class="draft-lock">Publish the event to share invite links.</p>
+        {:else}
+          {#if inviteError}<div class="error-banner">{inviteError}</div>{/if}
+          <div class="channel-list">
+            <div class="channel-row">
+              <div class="channel-info">
+                <span class="channel-name">Link</span>
+                <span class="channel-desc">{event.eventType === 'invite_only' ? 'Single-use per guest — generate and share anywhere' : 'Reusable — anyone with this link can RSVP'}</span>
+              </div>
+              <div class="channel-actions">
+                {#if event.eventType === 'invite_only'}
+                  <span class="invite-counter-sm">{activeInviteTokens.length} active · {claimedInviteCount} claimed</span>
+                  <button class="btn-manage-invites" onclick={() => showInviteModal = true}>Manage →</button>
+                {:else if generalTokenRaw}
+                  <button class="copy-btn" onclick={copyGeneralLink}>{generalCopied ? 'Copied!' : 'Copy link'}</button>
+                {:else}
+                  <span class="channel-unavailable">Visit via edit link to restore</span>
+                {/if}
+              </div>
+            </div>
+            <div class="channel-row channel-row-soon">
+              <div class="channel-info">
+                <span class="channel-name">Email</span>
+                <span class="channel-desc">Send a personal invite to a guest's email address</span>
+              </div>
+              <span class="phase-badge">Phase 2</span>
+            </div>
+            <div class="channel-row channel-row-soon">
+              <div class="channel-info">
+                <span class="channel-name">WhatsApp</span>
+                <span class="channel-desc">Open WhatsApp with the invite link pre-filled</span>
+              </div>
+              <span class="phase-badge">Phase 2</span>
+            </div>
+            <div class="channel-row channel-row-soon">
+              <div class="channel-info">
+                <span class="channel-name">In-app</span>
+                <span class="channel-desc">Notify via the guest inbox</span>
+              </div>
+              <span class="phase-badge">Phase 2</span>
+            </div>
+          </div>
+        {/if}
+      </section>
+    </div>
+  {/if}
+
+  {#if activeTab === 'activity'}
+    <div class="cards">
+      <section class="card">
+        <div class="card-header">
+          <h2>Guests</h2>
+          <button class="btn-manage-invites" onclick={() => showGuestModal = true}>Manage →</button>
+        </div>
+        <p class="invite-counter">
           {#if rsvps.length === 0}
             No RSVPs yet
           {:else}
             {rsvps.length} RSVP{rsvps.length !== 1 ? 's' : ''} · {yesCount} going{maybeCount > 0 ? ` · ${maybeCount} maybe` : ''}
           {/if}
-        </span>
-        <button class="btn-manage-invites" onclick={() => showGuestModal = true}>Manage guests →</button>
-      </div>
-    </section>
+        </p>
+      </section>
 
-    <section class="card wide">
-      <h2>Invite links <span class="event-type-badge event-type-{event.eventType}">{event.eventType === 'invite_only' ? 'Invite-only' : 'Open'}</span></h2>
-
-      {#if event.status === 'draft'}
-        <p class="draft-lock">Publish the event to share invite links.</p>
-      {:else if event.eventType === 'invite_only'}
-        <div class="invite-summary">
-          <span class="invite-counter">{activeInviteTokens.length} invite{activeInviteTokens.length !== 1 ? 's' : ''} · {claimedInviteCount} claimed · {unclaimedInviteCount} unclaimed</span>
-          <button class="btn-manage-invites" onclick={() => showInviteModal = true}>Manage invitations →</button>
-        </div>
-      {:else}
-        {#if inviteError}
-          <div class="error-banner">{inviteError}</div>
-        {/if}
-        <div class="invite-type-rows">
-          <div class="invite-type-row">
-            <div class="invite-type-info">
-              <span class="invite-type-label">General invite link</span>
-              <span class="invite-type-desc">Reusable — anyone with this link can RSVP</span>
-            </div>
-            {#if generalTokenRaw}
-              <button class="copy-btn" onclick={copyGeneralLink}>{generalCopied ? 'Copied!' : 'Copy'}</button>
-            {:else}
-              <span class="muted" style="font-size:0.8rem">Not available (visit via edit link to restore)</span>
-            {/if}
-          </div>
-        </div>
-      {/if}
-    </section>
-
-    <section class="card wide">
-      <h2>Comments ({comments.length})</h2>
-      {#if event.status === 'draft'}
-        <p class="draft-lock">Comments are available once the event is published.</p>
-      {:else if !commentsLoaded}
-        <p class="muted">Loading…</p>
-      {:else if comments.length === 0}
-        <p class="muted">No comments yet.</p>
-      {:else}
-        <div class="comment-list">
-          {#each comments as comment (comment.id)}
-            <div class="comment-row">
-              <div class="comment-meta">
-                <strong>{comment.displayName}</strong>
-                <span class="comment-time">{new Date(comment.createdAt).toLocaleDateString()}</span>
+      <section class="card">
+        <h2>Comments ({comments.length})</h2>
+        {#if event.status === 'draft'}
+          <p class="draft-lock">Comments are available once the event is published.</p>
+        {:else if !commentsLoaded}
+          <p class="muted">Loading…</p>
+        {:else if comments.length === 0}
+          <p class="muted">No comments yet.</p>
+        {:else}
+          <div class="comment-list">
+            {#each comments as comment (comment.id)}
+              <div class="comment-row">
+                <div class="comment-meta">
+                  <strong>{comment.displayName}</strong>
+                  <span class="comment-time">{new Date(comment.createdAt).toLocaleDateString()}</span>
+                </div>
+                <p class="comment-body">{comment.body}</p>
+                <button class="btn-remove" onclick={() => deleteComment(comment.id)}>Delete</button>
               </div>
-              <p class="comment-body">{comment.body}</p>
-              <button class="btn-remove" onclick={() => deleteComment(comment.id)}>Delete</button>
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </section>
-
-    <section class="card wide">
-      <div class="blast-card-header">
-        <h2>Updates</h2>
-        {#if event.status !== 'draft'}
-          <button class="btn-manage-invites" onclick={() => { blastError = ''; showBlastModal = true }}>Send update →</button>
+            {/each}
+          </div>
         {/if}
-      </div>
+      </section>
 
-      {#if event.status === 'draft'}
-        <p class="draft-lock">Publish the event before sending updates to guests.</p>
-      {:else if !blastsLoaded}
-        <p class="muted">Loading…</p>
-      {:else if blasts.length === 0}
-        <p class="muted">No updates sent yet.</p>
-      {:else}
-        <div class="blast-list">
-          {#each blasts as blast (blast.id)}
-            <button class="blast-row" onclick={() => viewingBlast = blast}>
-              <span class="blast-subject">{blast.subject ?? blast.body.slice(0, 80)}</span>
-              <span class="blast-date">{new Date(blast.createdAt).toLocaleDateString()}</span>
-            </button>
-          {/each}
+      <section class="card">
+        <div class="blast-card-header">
+          <h2>Updates</h2>
+          {#if event.status !== 'draft'}
+            <button class="btn-manage-invites" onclick={() => { blastError = ''; showBlastModal = true }}>Send update →</button>
+          {/if}
         </div>
-      {/if}
-    </section>
-  </div>
+        {#if event.status === 'draft'}
+          <p class="draft-lock">Publish the event before sending updates to guests.</p>
+        {:else if !blastsLoaded}
+          <p class="muted">Loading…</p>
+        {:else if blasts.length === 0}
+          <p class="muted">No updates sent yet.</p>
+        {:else}
+          <div class="blast-list">
+            {#each blasts as blast (blast.id)}
+              <button class="blast-row" onclick={() => viewingBlast = blast}>
+                <span class="blast-subject">{blast.subject ?? blast.body.slice(0, 80)}</span>
+                <span class="blast-date">{new Date(blast.createdAt).toLocaleDateString()}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </section>
+    </div>
+  {/if}
 </main>
 
 {#if showGuestModal}
@@ -585,41 +607,114 @@
   </div>
 {/if}
 
+{#if showDeleteModal}
+  <div class="modal-backdrop" onclick={() => showDeleteModal = false} role="presentation">
+    <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Delete event">
+      <div class="modal-header">
+        <h3>Delete event</h3>
+        <button class="modal-close" onclick={() => showDeleteModal = false} aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        {#if event.status === 'published' && rsvps.length > 0}
+          <p class="modal-warning">This event is published and has {rsvps.length} RSVP{rsvps.length !== 1 ? 's' : ''}. Consider cancelling it first so guests are notified.</p>
+        {:else}
+          <p class="modal-text">This cannot be undone.</p>
+        {/if}
+        <div class="modal-actions">
+          <button onclick={() => { showDeleteModal = false; deleteEvent() }} disabled={deleting} class="btn-danger-solid">
+            {deleting ? 'Deleting…' : 'Delete event'}
+          </button>
+          <button onclick={() => showDeleteModal = false} class="btn-ghost">Keep event</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if showCancelModal}
+  <div class="modal-backdrop" onclick={() => showCancelModal = false} role="presentation">
+    <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Cancel event">
+      <div class="modal-header">
+        <h3>Cancel event</h3>
+        <button class="modal-close" onclick={() => showCancelModal = false} aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-text">Guests will see a cancellation notice on the event page.</p>
+        <div class="modal-actions">
+          <button onclick={() => { showCancelModal = false; updateStatus('cancelled') }} disabled={saving} class="btn-cancel-confirm">
+            Yes, cancel event
+          </button>
+          <button onclick={() => showCancelModal = false} class="btn-ghost">Keep published</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
-  .edit-page { max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
-  .header { margin-bottom: 1rem; }
-  .header a { font-size: 0.875rem; color: #6b6058; text-decoration: none; }
-  .header a:hover { color: #b05525; }
-  h1 { margin: 0.5rem 0 0; font-size: 1.5rem; color: #1a1510; }
-  .copy-btn { flex-shrink: 0; background: #c4962d; color: #fff; border: none; padding: 0.4rem 0.875rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
-  .copy-btn:hover { background: #a87c22; }
-  .cover-card { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
-  .cover-card h2 { margin: 0 0 0.75rem; font-size: 1.1rem; color: #1a1510; }
+  .edit-page { max-width: 800px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+
+  .page-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+  .header-title { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 1.5rem; color: #1a1510; }
+  .preview-link { font-size: 0.875rem; color: #b05525; text-decoration: none; white-space: nowrap; }
+  .preview-link:hover { text-decoration: underline; }
+
+  .tabs { display: flex; border-bottom: 2px solid #cfc3b0; margin-bottom: 1.25rem; }
+  .tab-btn { background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; padding: 0.625rem 1.25rem; font-size: 0.9rem; font-weight: 600; color: #6b6058; cursor: pointer; font-family: inherit; }
+  .tab-btn:hover { color: #1a1510; }
+  .tab-btn.active { color: #b05525; border-bottom-color: #b05525; }
+
+  .cards { display: flex; flex-direction: column; gap: 1rem; }
+  .card { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1.25rem; }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+  .card-header h2 { margin: 0; }
+
+  h2 { margin: 0 0 1rem; font-size: 1.1rem; color: #1a1510; }
+
   .cover-preview { width: 100%; max-height: 240px; object-fit: cover; border-radius: 8px; display: block; margin-bottom: 0.75rem; }
   .cover-placeholder { background: #e8ddd0; border: 1px dashed #c8bdb0; border-radius: 8px; height: 120px; display: flex; align-items: center; justify-content: center; color: #9a8f86; font-size: 0.875rem; margin-bottom: 0.75rem; }
   .cover-upload-btn { display: inline-block; background: #b05525; color: #fff; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
   .cover-upload-btn:hover { background: #924418; }
-  .grid { display: grid; grid-template-columns: 1fr; gap: 1rem; }
-  @media (min-width: 768px) { .grid { grid-template-columns: 1fr 1fr; } }
-  .card { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1.25rem; }
-  .card.wide { grid-column: 1 / -1; }
-  h2 { margin: 0 0 1rem; font-size: 1.1rem; color: #1a1510; }
+
+  .copy-btn { flex-shrink: 0; background: #c4962d; color: #fff; border: none; padding: 0.4rem 0.875rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+  .copy-btn:hover { background: #a87c22; }
+
   .status-badge { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.25rem 0.625rem; border-radius: 4px; background: #ede8e0; color: #4e453e; align-self: center; }
   .status-badge.status-published { background: #e8f4e4; color: #2a5e28; }
   .status-badge.status-cancelled { background: #f8e8e2; color: #7a2a1a; }
   .publish-error { margin: 0; font-size: 0.8rem; color: #8b3016; }
-  .delete-warning { margin: 0; font-size: 0.8rem; color: #8b3016; background: #fdf2ee; border: 1px solid #f0c8b8; border-radius: 6px; padding: 0.5rem 0.75rem; }
+  .modal-warning { margin: 0 0 0.75rem; font-size: 0.875rem; color: #8b3016; background: #fdf2ee; border: 1px solid #f0c8b8; border-radius: 6px; padding: 0.625rem 0.875rem; }
+  .modal-text { margin: 0 0 0.75rem; font-size: 0.875rem; color: #3d352e; }
+  .modal-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.25rem; }
+  .btn-danger-solid { background: #8b3016; color: #fff; border: none; padding: 0.625rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+  .btn-danger-solid:hover:not(:disabled) { background: #6e2510; }
+  .btn-danger-solid:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-cancel-confirm { background: none; border: 1px solid #f0c8b8; color: #8b3016; padding: 0.625rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+  .btn-cancel-confirm:hover:not(:disabled) { background: #fdf2ee; }
+  .btn-cancel-confirm:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-ghost { background: none; border: none; color: #6b6058; font-size: 0.9rem; font-weight: 500; cursor: pointer; padding: 0.625rem 0.75rem; }
+  .btn-ghost:hover { color: #1a1510; }
   .btn-publish { background: #2a5e28; color: #fff; border: none; padding: 0.5rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
   .btn-publish:hover:not(:disabled) { background: #1f4a1e; }
   .btn-publish:disabled { opacity: 0.6; }
   .btn-cancel-event { background: none; border: 1px solid #f0c8b8; color: #8b3016; padding: 0.5rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
   .btn-cancel-event:hover:not(:disabled) { background: #fdf2ee; }
   .draft-lock { margin: 0; font-size: 0.875rem; color: #9a8f86; font-style: italic; }
-  .invite-type-rows { display: flex; flex-direction: column; gap: 0.75rem; }
-  .invite-type-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 1rem; background: #e8ddd0; border: 1px solid #cfc3b0; border-radius: 8px; }
-  .invite-type-info { display: flex; flex-direction: column; gap: 0.2rem; }
-  .invite-type-label { font-size: 0.875rem; font-weight: 600; color: #1a1510; }
-  .invite-type-desc { font-size: 0.8rem; color: #6b6058; }
+
+  .channel-list { display: flex; flex-direction: column; }
+  .channel-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid #e8ddd0; flex-wrap: wrap; }
+  .channel-row:first-child { padding-top: 0; }
+  .channel-row:last-child { border-bottom: none; padding-bottom: 0; }
+  .channel-row-soon { opacity: 0.55; }
+  .channel-info { display: flex; flex-direction: column; gap: 0.15rem; }
+  .channel-name { font-size: 0.875rem; font-weight: 600; color: #1a1510; }
+  .channel-desc { font-size: 0.8rem; color: #6b6058; }
+  .channel-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+  .channel-unavailable { font-size: 0.78rem; color: #9a8f86; font-style: italic; }
+  .invite-counter-sm { font-size: 0.78rem; color: #6b6058; }
+  .phase-badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; background: #ede8e0; color: #9a8f86; border: 1px solid #d8d0c8; white-space: nowrap; }
+
   .form { display: flex; flex-direction: column; gap: 0.75rem; }
   label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; font-weight: 500; color: #3d352e; }
   label.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; font-weight: 400; }
@@ -636,7 +731,12 @@
   .btn-danger:hover:not(:disabled) { background: #fdf2ee; }
   .btn-danger:disabled { opacity: 0.6; }
   .error-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
-  .success-banner { background: #edf4ec; color: #2d5a2a; border: 1px solid #b8d9b4; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
+
+  .invite-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .invite-counter { font-size: 0.875rem; color: #6b6058; margin: 0; }
+  .btn-manage-invites { background: none; border: 1px solid #cfc3b0; color: #b05525; padding: 0.375rem 0.875rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
+  .btn-manage-invites:hover { border-color: #b05525; background: #fdf2ee; }
+
   .rsvp-list { display: flex; flex-direction: column; gap: 0.5rem; }
   .rsvp-row { display: flex; align-items: flex-start; justify-content: space-between; padding: 0.75rem; background: #e8ddd0; border-radius: 8px; border: 1px solid #cfc3b0; gap: 0.5rem; }
   .rsvp-info { display: flex; align-items: center; gap: 0.375rem; flex-wrap: wrap; }
@@ -645,6 +745,7 @@
   .badge-maybe { background: #fef4e0; color: #7a5a1a; }
   .badge-no { background: #ede8e0; color: #4e453e; }
   .note { margin: 0.25rem 0 0; font-size: 0.8rem; color: #6b6058; }
+
   .comment-list { display: flex; flex-direction: column; gap: 0.5rem; }
   .comment-row { display: flex; flex-direction: column; padding: 0.75rem; background: #e8ddd0; border-radius: 8px; border: 1px solid #cfc3b0; gap: 0.25rem; }
   .comment-meta { display: flex; align-items: baseline; gap: 0.5rem; }
@@ -653,16 +754,7 @@
   .comment-body { margin: 0; font-size: 0.875rem; color: #3d352e; }
   .btn-remove { background: none; border: none; color: #9a8f86; font-size: 0.75rem; cursor: pointer; padding: 0; align-self: flex-end; margin-top: 0.25rem; }
   .btn-remove:hover { color: #8b3016; }
-  .invite-url-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-  .invite-url { font-size: 0.75rem; color: #3d2c08; background: #fff8e8; padding: 0.3rem 0.5rem; border-radius: 6px; border: 1px solid #e0c870; word-break: break-all; flex: 1; min-width: 0; }
-  .muted { color: #6b6058; font-size: 0.875rem; }
-  .event-type-badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.15rem 0.5rem; border-radius: 4px; vertical-align: middle; margin-left: 0.5rem; }
-  .event-type-open { background: #e8f4e4; color: #2a5e28; }
-  .event-type-invite_only { background: #eee8f8; color: #5a2a8a; }
-  .invite-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-  .invite-counter { font-size: 0.875rem; color: #6b6058; }
-  .btn-manage-invites { background: none; border: 1px solid #cfc3b0; color: #b05525; padding: 0.375rem 0.875rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
-  .btn-manage-invites:hover { border-color: #b05525; background: #fdf2ee; }
+
   .blast-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
   .blast-card-header h2 { margin: 0; }
   .blast-list { display: flex; flex-direction: column; gap: 0.375rem; }
@@ -672,6 +764,14 @@
   .blast-date { font-size: 0.75rem; color: #9a8f86; flex-shrink: 0; }
   .blast-full-body { white-space: pre-wrap; font-size: 0.9rem; color: #3d352e; line-height: 1.6; margin: 0 0 1rem; }
   .blast-full-meta { font-size: 0.8rem; color: #9a8f86; margin: 0; }
+
+  .invite-url-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+  .invite-url { font-size: 0.75rem; color: #3d2c08; background: #fff8e8; padding: 0.3rem 0.5rem; border-radius: 6px; border: 1px solid #e0c870; word-break: break-all; flex: 1; min-width: 0; }
+  .muted { color: #6b6058; font-size: 0.875rem; }
+  .event-type-badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.15rem 0.5rem; border-radius: 4px; vertical-align: middle; margin-left: 0.5rem; }
+  .event-type-open { background: #e8f4e4; color: #2a5e28; }
+  .event-type-invite_only { background: #eee8f8; color: #5a2a8a; }
+
   .modal-backdrop { position: fixed; inset: 0; background: rgba(26, 21, 16, 0.45); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 1rem; }
   .modal { background: #f8f2e8; border: 1px solid #cfc3b0; border-radius: 16px; width: 100%; max-width: 560px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
   .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 1.25rem 1.5rem 1rem; border-bottom: 1px solid #e0d4c4; flex-shrink: 0; }

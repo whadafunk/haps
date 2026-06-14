@@ -63,6 +63,7 @@ docker compose up db              # Postgres only (for local dev without docker)
 @docs/data-model.md          Full DB schema with annotations
 @docs/api-spec.md            REST endpoint reference with request/response shapes
 @docs/features-roadmap.md    Phased feature list — check phase before starting
+@docs/messaging.md           Messaging channels, guest inbox, SSE, invitations, phase map
 
 ## Rules — coding conventions per layer
 
