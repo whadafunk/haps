@@ -218,6 +218,10 @@ export const api = {
   createUser: (body: { email: string; password: string; displayName: string; role: string }) =>
     apiFetch<{ user: { id: string; email: string; displayName: string; role: string } }>('/admin/users', { method: 'POST', body: JSON.stringify(body) }),
 
+  // People directory
+  createContact: (body: { name: string; email?: string; phone?: string; instagramHandle?: string; notes?: string }) =>
+    apiFetch<{ contact: { id: string; name: string; email: string | null } }>('/contacts', { method: 'POST', body: JSON.stringify(body) }),
+
   // Admin guests
   blockGuest: (sessionId: string, body: { reason: string; blockEmail?: boolean }) =>
     apiFetch<void>(`/admin/guests/session/${sessionId}/block`, { method: 'PATCH', body: JSON.stringify(body) }),

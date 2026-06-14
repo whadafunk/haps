@@ -3,7 +3,7 @@ import { serverGet } from '$lib/serverFetch'
 
 export interface GuestRow {
   id: string
-  type: 'user' | 'session'
+  type: 'user' | 'session' | 'contact'
   displayName: string | null
   email: string | null
   firstSeen: string

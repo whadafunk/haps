@@ -1,9 +1,9 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { users, events, instanceConfig, visitorSessions, rsvps, eventTokens, emailBlocklist } from '../db/schema.js'
-import { eq, count, sql, and, isNull, desc, ne } from 'drizzle-orm'
+import { users, events, instanceConfig, visitorSessions, rsvps, eventTokens, emailBlocklist, contacts } from '../db/schema.js'
+import { eq, count, sql, and, isNull, isNotNull, or, desc, ne } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
-import { CreateUserSchema, BlockGuestSchema, RemoveGuestSchema } from '@haps/shared'
+import { CreateUserSchema, BlockGuestSchema, RemoveGuestSchema, CreateContactSchema } from '@haps/shared'
 import { hashPassword } from '../lib/crypto.js'
 import { config } from '../lib/config.js'
 import { z } from 'zod'
@@ -172,10 +172,44 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
         .groupBy(visitorSessions.id),
     ])
 
-    const all = [...userRows, ...sessionRows].sort(
+    // Contacts that are not yet represented by a session or user (directory-only people)
+    const contactRows = await db
+      .select({
+        id:          contacts.id,
+        type:        sql<string>`'contact'`,
+        displayName: contacts.name,
+        email:       contacts.email,
+        status:      sql<string>`'active'`,
+        firstSeen:   contacts.createdAt,
+        eventCount:  sql<number>`0`,
+      })
+      .from(contacts)
+      .where(or(
+        isNull(contacts.email),
+        and(
+          isNotNull(contacts.email),
+          sql`not exists (select 1 from visitor_sessions vs where vs.email = contacts.email)`,
+          sql`not exists (select 1 from users u where u.email = contacts.email)`,
+        ),
+      ))
+
+    const all = [...userRows, ...sessionRows, ...contactRows].sort(
       (a, b) => new Date(b.firstSeen).getTime() - new Date(a.firstSeen).getTime()
     )
     return { guests: all.map((g) => ({ ...g, firstSeen: new Date(g.firstSeen).toISOString() })) }
+  })
+
+  fastify.post('/api/contacts', { preHandler: staffPreHandler }, async (request, reply) => {
+    const body = CreateContactSchema.parse(request.body)
+    const [contact] = await db.insert(contacts).values({
+      name:            body.name,
+      email:           body.email?.toLowerCase() ?? null,
+      phone:           body.phone ?? null,
+      instagramHandle: body.instagramHandle ?? null,
+      notes:           body.notes ?? null,
+    }).returning({ id: contacts.id, name: contacts.name, email: contacts.email })
+    if (!contact) throw createError(500, 'INTERNAL_ERROR', 'Failed to create contact.')
+    return reply.code(201).send({ contact })
   })
 
   fastify.get('/api/admin/guests/user/:guestId', { preHandler: staffPreHandler }, async (request) => {

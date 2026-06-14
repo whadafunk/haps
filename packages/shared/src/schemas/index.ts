@@ -150,6 +150,15 @@ export const BlockGuestSchema = z.object({
   blockEmail: z.boolean().optional(),
 }).strict()
 
+// Manually create a contact in the People directory
+export const CreateContactSchema = z.object({
+  name:            z.string().min(1).max(200),
+  email:           z.string().email().optional(),
+  phone:           z.string().max(50).optional(),
+  instagramHandle: z.string().max(100).optional(),
+  notes:           z.string().max(1000).optional(),
+}).strict()
+
 // Invite contacts from directory to an event
 export const InviteContactsSchema = z.object({
   contactIds: z.array(z.string().uuid()).min(1).max(100),
