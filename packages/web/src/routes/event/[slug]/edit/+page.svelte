@@ -49,6 +49,7 @@
   let revokeTargetTokenId = $state<string | null>(null)
   let revokeError = $state('')
   let revoking = $state(false)
+  let regeneratingInviteTokenId = $state<string | null>(null)
   const activeInviteTokens = $derived(inviteTokens.filter((t: TokenRow) => t.status === 'active'))
   const claimedInviteCount = $derived(activeInviteTokens.filter((t: TokenRow) => t.claimedBySessionId !== null).length)
   const unclaimedInviteCount = $derived(activeInviteTokens.filter((t: TokenRow) => t.claimedBySessionId === null).length)
@@ -204,6 +205,24 @@
       revokeError = e instanceof ApiError ? e.message : 'Failed to revoke invite.'
     } finally {
       revoking = false
+    }
+  }
+
+  async function regenerateInviteLink(token: TokenRow) {
+    regeneratingInviteTokenId = token.id
+    try {
+      await api.deleteToken(event.slug, token.id, data.editToken)
+      const res = await api.createToken(event.slug, { type: 'attendee', singleUse: true, label: token.label || undefined }, data.editToken)
+      try { localStorage.setItem(`haps:inviteLink:${event.slug}:${res.token.id}`, inviteUrl(res.rawToken)) } catch { /* storage unavailable */ }
+      inviteTokens = inviteTokens
+        .map(t => t.id === token.id ? { ...t, status: 'blacklisted' } : t)
+        .concat([{ id: res.token.id, type: 'attendee', label: res.token.label, status: 'active', singleUse: true, claimedBySessionId: null, createdAt: new Date().toISOString() }])
+      newlyGenerated = [...newlyGenerated.filter(g => g.tokenId !== token.id), { tokenId: res.token.id, rawToken: res.rawToken }]
+      directoryLoaded = false
+    } catch (e: unknown) {
+      invitePersonalError = e instanceof ApiError ? e.message : 'Failed to regenerate invite.'
+    } finally {
+      regeneratingInviteTokenId = null
     }
   }
 
@@ -686,7 +705,9 @@
                       </button>
                     </div>
                   {:else}
-                    <p class="invite-lost">Link unavailable — re-invite via "Invite people"</p>
+                    <button class="btn-regenerate" onclick={() => regenerateInviteLink(token)} disabled={regeneratingInviteTokenId === token.id}>
+                      {regeneratingInviteTokenId === token.id ? 'Regenerating…' : 'Regenerate link'}
+                    </button>
                   {/if}
                 {/if}
                 {#if token.status === 'active' && !token.claimedBySessionId}
@@ -1082,7 +1103,9 @@
   .invite-status.claimed { background: #dde4dd; color: #4e453e; }
   .invite-status.revoked { background: #f8e8e2; color: #7a2a1a; }
   .invite-link-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-  .invite-lost { margin: 0; font-size: 0.78rem; color: #9a8f86; font-style: italic; }
+  .btn-regenerate { background: none; border: 1px solid #c8b8a8; color: #6b5c4c; padding: 0.25rem 0.625rem; border-radius: 6px; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
+  .btn-regenerate:hover:not(:disabled) { background: #f5ede4; }
+  .btn-regenerate:disabled { opacity: 0.6; cursor: default; }
   .invite-actions { display: flex; gap: 0.5rem; }
   .btn-revoke { background: none; border: 1px solid #f0c8b8; color: #8b3016; padding: 0.25rem 0.625rem; border-radius: 6px; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
   .btn-revoke:hover { background: #fdf2ee; }
