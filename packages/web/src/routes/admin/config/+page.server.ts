@@ -11,6 +11,7 @@ interface AdminConfig {
   smtpConfigured: boolean
   storageType: string
   defaultTheme: string | null
+  requireRsvpBeforeRegister: boolean
 }
 
 export const load: PageServerLoad = async ({ cookies, parent }) => {

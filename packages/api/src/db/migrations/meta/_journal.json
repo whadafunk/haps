@@ -99,6 +99,13 @@
       "when": 1781760000000,
       "tag": "0013_magic_links",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1781820000000,
+      "tag": "0014_registration_guard",
+      "breakpoints": true
     }
   ]
 }

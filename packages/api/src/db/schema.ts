@@ -137,8 +137,9 @@ export const instanceConfig = pgTable('instance_config', {
   smtpUser:     text('smtp_user'),
   smtpPass:     text('smtp_pass'),
   smtpFrom:     text('smtp_from'),
-  defaultTheme: text('default_theme'),
-  updatedAt:    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  defaultTheme:                 text('default_theme'),
+  requireRsvpBeforeRegister:    boolean('require_rsvp_before_register').notNull().default(true),
+  updatedAt:                    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 export const eventMessages = pgTable('event_messages', {

@@ -15,12 +15,13 @@
     saveSuccess = false
     try {
       const body: Record<string, unknown> = {
-        instanceName: cfg.instanceName,
-        smtpHost:     cfg.smtpHost || null,
-        smtpPort:     cfg.smtpPort,
-        smtpUser:     cfg.smtpUser || null,
-        smtpFrom:     cfg.smtpFrom || null,
-        defaultTheme: cfg.defaultTheme || null,
+        instanceName:              cfg.instanceName,
+        smtpHost:                  cfg.smtpHost || null,
+        smtpPort:                  cfg.smtpPort,
+        smtpUser:                  cfg.smtpUser || null,
+        smtpFrom:                  cfg.smtpFrom || null,
+        defaultTheme:              cfg.defaultTheme || null,
+        requireRsvpBeforeRegister: cfg.requireRsvpBeforeRegister,
       }
       if (smtpPass) body['smtpPass'] = smtpPass
 
@@ -68,6 +69,13 @@
           <option value="ocean">Ocean (blue)</option>
           <option value="sunset">Sunset (red)</option>
         </select>
+      </label>
+      <label class="toggle-row">
+        <span class="toggle-label">
+          Require event RSVP before registration
+          <span class="toggle-hint">When enabled, guests must RSVP to at least one event before creating an account.</span>
+        </span>
+        <input type="checkbox" bind:checked={cfg.requireRsvpBeforeRegister} />
       </label>
     </div>
   </section>
@@ -140,6 +148,9 @@
   .badge-ok  { background: #e8f4e4; color: #2a5e28; }
   .badge-off { background: #ede8e0; color: #6b6058; }
   code { background: #e8ddd0; padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.8rem; }
+  .toggle-row { flex-direction: row; align-items: center; justify-content: space-between; gap: 1rem; }
+  .toggle-label { display: flex; flex-direction: column; gap: 0.2rem; }
+  .toggle-hint { font-size: 0.775rem; font-weight: 400; color: #6b6058; }
   .btn-primary { background: #b05525; color: #fff; border: none; padding: 0.625rem 1.5rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
   .btn-primary:hover:not(:disabled) { background: #924418; }
   .btn-primary:disabled { opacity: 0.6; }

@@ -77,11 +77,12 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
   const UpdateConfigSchema = z.object({
     instanceName: z.string().min(1).max(100).optional(),
     smtpHost:     z.string().max(200).nullable().optional(),
-    smtpPort:     z.coerce.number().int().min(1).max(65535).optional(),
-    smtpUser:     z.string().max(200).nullable().optional(),
-    smtpPass:     z.string().max(200).nullable().optional(),
-    smtpFrom:     z.string().max(200).nullable().optional(),
-    defaultTheme: z.string().max(50).nullable().optional(),
+    smtpPort:                    z.coerce.number().int().min(1).max(65535).optional(),
+    smtpUser:                    z.string().max(200).nullable().optional(),
+    smtpPass:                    z.string().max(200).nullable().optional(),
+    smtpFrom:                    z.string().max(200).nullable().optional(),
+    defaultTheme:                z.string().max(50).nullable().optional(),
+    requireRsvpBeforeRegister:   z.boolean().optional(),
   }).strict()
 
   fastify.get('/api/admin/config', { preHandler: adminPreHandler }, async () => {
@@ -89,14 +90,15 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
     return {
       config: {
-        instanceName:   row?.instanceName ?? config.INSTANCE_NAME,
-        smtpHost:       row?.smtpHost ?? config.SMTP_HOST ?? null,
-        smtpPort:       row?.smtpPort ?? config.SMTP_PORT,
-        smtpUser:       row?.smtpUser ?? config.SMTP_USER ?? null,
-        smtpFrom:       row?.smtpFrom ?? config.SMTP_FROM ?? null,
-        smtpConfigured: !!(row?.smtpHost ?? config.SMTP_HOST),
-        storageType:    config.STORAGE_TYPE,
-        defaultTheme:   row?.defaultTheme ?? null,
+        instanceName:              row?.instanceName ?? config.INSTANCE_NAME,
+        smtpHost:                  row?.smtpHost ?? config.SMTP_HOST ?? null,
+        smtpPort:                  row?.smtpPort ?? config.SMTP_PORT,
+        smtpUser:                  row?.smtpUser ?? config.SMTP_USER ?? null,
+        smtpFrom:                  row?.smtpFrom ?? config.SMTP_FROM ?? null,
+        smtpConfigured:            !!(row?.smtpHost ?? config.SMTP_HOST),
+        storageType:               config.STORAGE_TYPE,
+        defaultTheme:              row?.defaultTheme ?? null,
+        requireRsvpBeforeRegister: row?.requireRsvpBeforeRegister ?? true,
       },
     }
   })
@@ -112,6 +114,7 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     if (body.smtpPass !== undefined) updates['smtpPass'] = body.smtpPass
     if (body.smtpFrom !== undefined) updates['smtpFrom'] = body.smtpFrom
     if (body.defaultTheme !== undefined) updates['defaultTheme'] = body.defaultTheme
+    if (body.requireRsvpBeforeRegister !== undefined) updates['requireRsvpBeforeRegister'] = body.requireRsvpBeforeRegister
 
     await db.insert(instanceConfig)
       .values({ id: 'singleton', ...updates })
@@ -120,14 +123,15 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     const [row] = await db.select().from(instanceConfig).limit(1)
     return {
       config: {
-        instanceName:   row?.instanceName ?? config.INSTANCE_NAME,
-        smtpHost:       row?.smtpHost ?? null,
-        smtpPort:       row?.smtpPort ?? config.SMTP_PORT,
-        smtpUser:       row?.smtpUser ?? null,
-        smtpFrom:       row?.smtpFrom ?? null,
-        smtpConfigured: !!(row?.smtpHost),
-        storageType:    config.STORAGE_TYPE,
-        defaultTheme:   row?.defaultTheme ?? null,
+        instanceName:              row?.instanceName ?? config.INSTANCE_NAME,
+        smtpHost:                  row?.smtpHost ?? null,
+        smtpPort:                  row?.smtpPort ?? config.SMTP_PORT,
+        smtpUser:                  row?.smtpUser ?? null,
+        smtpFrom:                  row?.smtpFrom ?? null,
+        smtpConfigured:            !!(row?.smtpHost),
+        storageType:               config.STORAGE_TYPE,
+        defaultTheme:              row?.defaultTheme ?? null,
+        requireRsvpBeforeRegister: row?.requireRsvpBeforeRegister ?? true,
       },
     }
   })
