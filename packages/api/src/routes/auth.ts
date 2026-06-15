@@ -92,10 +92,11 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     if (request.session) {
       if (body.skipMerge) {
         // Discard the anonymous session — create a fresh one linked to this user
-        const [freshSession] = await db.insert(visitorSessions)
+        const freshSessions = await db.insert(visitorSessions)
           .values({ userId: user.id })
           .returning({ id: visitorSessions.id })
-        reply.setCookie('vsid', freshSession.id, {
+        if (!freshSessions[0]) throw createError(500, 'INTERNAL_ERROR', 'Failed to create session.')
+        reply.setCookie('vsid', freshSessions[0].id, {
           httpOnly: true,
           secure: config.NODE_ENV === 'production',
           sameSite: 'lax',
