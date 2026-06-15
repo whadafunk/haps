@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { LayoutData } from './$types'
+  import { api } from '$lib/api'
+  import { invalidateAll } from '$app/navigation'
 
   let { data, children } = $props<{ data: LayoutData; children: any }>()
 
@@ -8,6 +10,12 @@
   function handleWindowClick(e: MouseEvent) {
     const menu = document.querySelector('.user-menu')
     if (menu && !menu.contains(e.target as Node)) menuOpen = false
+  }
+
+  async function clearIdentity() {
+    menuOpen = false
+    await api.clearIdentity()
+    await invalidateAll()
   }
 </script>
 
@@ -59,6 +67,7 @@
             <a href="/my-events" class="menu-item" onclick={() => (menuOpen = false)}>My events</a>
             <a href="/register" class="menu-item" onclick={() => (menuOpen = false)}>Create account</a>
             <a href="/login" class="menu-item" onclick={() => (menuOpen = false)}>Log in</a>
+            <button class="menu-item menu-item-clear" onclick={clearIdentity}>Clear identity</button>
           </div>
         {/if}
       </div>
@@ -162,4 +171,6 @@
   .menu-item:hover { background: #e8ddd0; color: #1a1510; }
   .menu-item-logout { color: #924418; margin-top: 0.25rem; border-top: 1px solid #cfc3b0; padding-top: 0.625rem; }
   .menu-item-logout:hover { background: #f8e8e2; color: #7a2a1a; }
+  .menu-item-clear { width: 100%; text-align: left; background: none; border: none; font-family: inherit; color: #924418; margin-top: 0.25rem; border-top: 1px solid #cfc3b0; padding: 0.625rem 0.75rem 0.5rem; }
+  .menu-item-clear:hover { background: #f8e8e2; color: #7a2a1a; }
 </style>

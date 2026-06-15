@@ -97,6 +97,12 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
     return { session: { displayName: body.displayName ?? session.displayName, email: body.email ?? session.email } }
   })
 
+  // Clear the visitor session cookie — anonymous guests only (logged-in users use /auth/logout)
+  fastify.post('/api/session/clear', async (request, reply) => {
+    reply.clearCookie('vsid', { path: '/' })
+    return reply.code(204).send()
+  })
+
   // Profile gate: guest submits required details before their first RSVP
   fastify.post('/api/session/profile', async (request, reply) => {
     if (!request.session) throw createError(404, 'SESSION_NOT_FOUND', 'No active session.')

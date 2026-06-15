@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
 import { users, visitorSessions, rsvps, comments, magicLinks } from '../db/schema.js'
-import { eq, and, lt } from 'drizzle-orm'
+import { eq, and, lt, count } from 'drizzle-orm'
 import { verifyPassword, hashPassword, generateToken, sha256hex } from '../lib/crypto.js'
 import { signJwt, signRefreshToken, verifyRefreshToken } from '../middleware/auth.js'
 import { createError } from '../lib/errors.js'
@@ -127,6 +127,14 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     },
   }, async (request, reply) => {
     const body = RegisterSchema.parse(request.body)
+
+    // Must have RSVPed to at least one event — registration is an upgrade, not a cold signup
+    if (!request.session) throw createError(403, 'NO_EVENT_HISTORY', 'RSVP to at least one event before creating an account.')
+    const countRows = await db
+      .select({ rsvpCount: count() })
+      .from(rsvps)
+      .where(eq(rsvps.sessionId, request.session.id))
+    if ((countRows[0]?.rsvpCount ?? 0) === 0) throw createError(403, 'NO_EVENT_HISTORY', 'RSVP to at least one event before creating an account.')
 
     const [existing] = await db
       .select({ id: users.id })

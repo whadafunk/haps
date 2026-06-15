@@ -270,6 +270,9 @@
                 <span class="type-badge type-{guest.type}">
                   {guest.type === 'user' ? 'Registered' : guest.type === 'contact' ? 'Contact' : 'Guest'}
                 </span>
+                {#if guest.type !== 'user'}
+                  <span class="no-account-badge">no account</span>
+                {/if}
               </div>
             </a>
           </div>
@@ -518,6 +521,7 @@
   .type-user { background: #e8f0fc; color: #2a4a7a; }
   .type-session { background: #ede8e0; color: #4e453e; }
   .type-contact { background: #f4eddc; color: #6e4e1a; }
+  .no-account-badge { font-size: 0.65rem; font-weight: 500; color: #7a5a1a; background: #fef4e0; border: 1px solid #e0c870; border-radius: 4px; padding: 0.15rem 0.4rem; white-space: nowrap; }
 
   .status-badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; white-space: nowrap; }
   .status-blocked { background: #fef3cd; color: #7a5a10; }

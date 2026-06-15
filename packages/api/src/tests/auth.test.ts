@@ -83,9 +83,18 @@ describe('POST /api/auth/logout', () => {
 
 describe('POST /api/auth/register', () => {
   it('creates a member account and returns auth cookies', async () => {
+    const orgCookies = await createOrganizer(app, adminCookies)
+    const { event } = await createEvent(app, orgCookies, { status: 'published' })
+    const sessionCookie = await getSessionWithProfile(app)
+    await app.inject({
+      method: 'POST', url: `/api/events/${event.slug}/rsvps`,
+      headers: { Cookie: sessionCookie },
+      payload: { displayName: 'Alice', status: 'yes' },
+    })
+
     const res = await app.inject({
-      method: 'POST',
-      url: '/api/auth/register',
+      method: 'POST', url: '/api/auth/register',
+      headers: { Cookie: sessionCookie },
       payload: { email: 'alice@test.com', password: 'Password123!', displayName: 'Alice' },
     })
     expect(res.statusCode).toBe(201)
@@ -96,13 +105,44 @@ describe('POST /api/auth/register', () => {
     expect(setCookie.some((c) => c.startsWith('auth_token='))).toBe(true)
   })
 
+  it('returns 403 NO_EVENT_HISTORY when session has no RSVPs', async () => {
+    const sessionCookie = await getSessionCookie(app)
+    const res = await app.inject({
+      method: 'POST', url: '/api/auth/register',
+      headers: { Cookie: sessionCookie },
+      payload: { email: 'alice@test.com', password: 'Password123!', displayName: 'Alice' },
+    })
+    expect(res.statusCode).toBe(403)
+    expect(res.json().error.code).toBe('NO_EVENT_HISTORY')
+  })
+
   it('returns 409 when email already exists', async () => {
+    const orgCookies = await createOrganizer(app, adminCookies)
+    const { event } = await createEvent(app, orgCookies, { status: 'published' })
+
+    // Session A registers
+    const sessionA = await getSessionWithProfile(app)
+    await app.inject({
+      method: 'POST', url: `/api/events/${event.slug}/rsvps`,
+      headers: { Cookie: sessionA },
+      payload: { displayName: 'Alice', status: 'yes' },
+    })
     await app.inject({
       method: 'POST', url: '/api/auth/register',
+      headers: { Cookie: sessionA },
       payload: { email: 'alice@test.com', password: 'Password123!', displayName: 'Alice' },
+    })
+
+    // Session B tries to register with the same email
+    const sessionB = await getSessionWithProfile(app, { email: 'bob@test.com' })
+    await app.inject({
+      method: 'POST', url: `/api/events/${event.slug}/rsvps`,
+      headers: { Cookie: sessionB },
+      payload: { displayName: 'Bob', status: 'yes' },
     })
     const res = await app.inject({
       method: 'POST', url: '/api/auth/register',
+      headers: { Cookie: sessionB },
       payload: { email: 'alice@test.com', password: 'OtherPass1!', displayName: 'Alice2' },
     })
     expect(res.statusCode).toBe(409)
@@ -155,31 +195,30 @@ describe('POST /api/auth/register', () => {
     const orgCookies = await createOrganizer(app, adminCookies)
     const { event } = await createEvent(app, orgCookies, { status: 'published' })
 
-    // Register first on device A (no session activity)
-    const regRes = await app.inject({
-      method: 'POST', url: '/api/auth/register',
-      payload: { email: 'alice@test.com', password: 'Password123!', displayName: 'Alice' },
-    })
-    const authCookies = extractCookies(regRes.headers)
-
-    // RSVP as logged-in user from device A
+    // Device A: register after RSVPing (guard requires at least one RSVP)
+    const sessionA = await getSessionWithProfile(app)
     await app.inject({
-      method: 'POST',
-      url: `/api/events/${event.slug}/rsvps`,
-      headers: { Cookie: authCookies },
+      method: 'POST', url: `/api/events/${event.slug}/rsvps`,
+      headers: { Cookie: sessionA },
       payload: { displayName: 'Alice', status: 'yes' },
     })
+    const regRes = await app.inject({
+      method: 'POST', url: '/api/auth/register',
+      headers: { Cookie: sessionA },
+      payload: { email: 'alice@test.com', password: 'Password123!', displayName: 'Alice' },
+    })
+    expect(regRes.statusCode).toBe(201)
+    const authCookies = mergeCookies(sessionA, extractCookies(regRes.headers))
 
-    // Login on device B which has an independent session RSVP for the same event
+    // Device B: independent session RSVPs to the same event
     const sessionB = await getSessionWithProfile(app, { email: 'alice-b@test.com' })
     await app.inject({
-      method: 'POST',
-      url: `/api/events/${event.slug}/rsvps`,
+      method: 'POST', url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: sessionB },
       payload: { displayName: 'Alice', status: 'maybe' },
     })
 
-    // Login on device B — merge should discard the session RSVP (user already has one)
+    // Login on device B — merge should discard the session RSVP (user already has 'yes')
     const loginRes = await app.inject({
       method: 'POST', url: '/api/auth/login',
       headers: { Cookie: sessionB },
@@ -188,11 +227,10 @@ describe('POST /api/auth/register', () => {
     expect(loginRes.statusCode).toBe(200)
 
     const rsvpsRes = await app.inject({
-      method: 'GET',
-      url: `/api/events/${event.slug}/rsvps`,
+      method: 'GET', url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: authCookies },
     })
-    // Only one RSVP should exist (the original 'yes', not the session 'maybe')
+    // Only one RSVP should exist (the original 'yes', not the session B 'maybe')
     expect(rsvpsRes.json().rsvps.length).toBe(1)
     expect(rsvpsRes.json().rsvps[0].status).toBe('yes')
   })

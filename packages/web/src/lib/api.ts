@@ -215,6 +215,9 @@ export const api = {
   submitProfile: (body: { displayName: string; email: string; phone?: string; instagramHandle?: string }) =>
     apiFetch<{ ok: boolean }>('/session/profile', { method: 'POST', body: JSON.stringify(body) }),
 
+  clearIdentity: () =>
+    apiFetch<void>('/session/clear', { method: 'POST' }),
+
   // Admin
   listAdminEvents: () =>
     apiFetch<{ events: Array<{ slug: string; title: string; status: string; startsAt: string }> }>('/admin/events'),

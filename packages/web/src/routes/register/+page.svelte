@@ -1,16 +1,21 @@
 <script lang="ts">
+  import type { PageData } from './$types'
   import { api, ApiError } from '$lib/api'
   import { goto } from '$app/navigation'
 
-  let email = $state('')
+  let { data } = $props<{ data: PageData }>()
+
+  let email = $state(data.session?.email ?? '')
   let password = $state('')
   let confirmPassword = $state('')
-  let displayName = $state('')
+  let displayName = $state(data.session?.displayName ?? '')
   let loading = $state(false)
   let error = $state('')
+  let noHistory = $state(false)
 
   async function submit() {
     error = ''
+    noHistory = false
     if (!email || !password || !displayName) { error = 'All fields are required.'; return }
     if (password !== confirmPassword) { error = 'Passwords do not match.'; return }
     if (password.length < 8) { error = 'Password must be at least 8 characters.'; return }
@@ -19,6 +24,7 @@
       await api.register({ email, password, displayName })
       goto('/my-events', { invalidateAll: true })
     } catch (e: unknown) {
+      if (e instanceof ApiError && e.code === 'NO_EVENT_HISTORY') { noHistory = true; return }
       error = e instanceof ApiError ? e.message : 'Registration failed. Please try again.'
     } finally {
       loading = false
@@ -31,7 +37,12 @@
     <h1>Create account</h1>
     <p class="subtitle">Keep your event history across devices.</p>
 
-    {#if error}
+    {#if noHistory}
+      <div class="no-history-banner">
+        <strong>No event history yet.</strong>
+        <p>RSVP to at least one event first — then come back here to lock in your account.</p>
+      </div>
+    {:else if error}
       <div class="error-banner">{error}</div>
     {/if}
 
@@ -68,6 +79,9 @@
   h1 { margin: 0 0 0.25rem; color: #1a1510; font-size: 1.5rem; }
   .subtitle { margin: 0 0 1.5rem; color: #6b6058; font-size: 0.9rem; }
   .error-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.875rem; }
+  .no-history-banner { background: #fef4e0; color: #7a5a1a; border: 1px solid #e0c870; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.25rem; font-size: 0.875rem; line-height: 1.5; }
+  .no-history-banner strong { display: block; margin-bottom: 0.25rem; }
+  .no-history-banner p { margin: 0; }
   .form { display: flex; flex-direction: column; gap: 0.875rem; }
   label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; font-weight: 500; color: #3d352e; }
   .hint { font-size: 0.775rem; font-weight: 400; color: #6b6058; }
