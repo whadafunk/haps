@@ -1,6 +1,6 @@
 # Implementation State
 
-Current as of: June 2026, after Phase 1 completion and partial Phase 2.
+Current as of: June 2026, after Phase 1 completion and partial Phase 2 (identity & registration work).
 
 This is a snapshot of what is actually built — routes, tables, pages, patterns.
 Refer to the design docs (`architecture.md`, `auth-identity.md`, etc.) for
@@ -13,7 +13,7 @@ the intent; refer to this doc to know what exists right now.
 | Phase | Status |
 |-------|--------|
 | Phase 0 — Skeleton | Complete |
-| Phase 1 — Core MVP | Complete (82/82 tests passing, Lighthouse 99/100/100/100) |
+| Phase 1 — Core MVP | Complete (83/83 tests passing, Lighthouse 99/100/100/100) |
 | Phase 2 — Auth & Engagement | Partially complete (see below) |
 | Phase 3+ | Not started |
 
@@ -23,14 +23,21 @@ the intent; refer to this doc to know what exists right now.
 - Account management (`PATCH /api/auth/me`, `POST /api/auth/change-password`, `/account` page)
 - Magic links — cross-device sign-in without password (`POST /api/auth/magic-link`, `/magic-link` page)
 - Identity merge — on login/register, prior session RSVPs and event access carry over
+- Login merge warning — amber notice when logging in with an anonymous session that has history; two-button choice: merge or discard
+- Identity lock — once a session has a display name, all future RSVPs from that session show name + email as read-only locked fields
+- Registration guard — guests must RSVP to at least one event before creating an account (upgrade path, not cold signup); toggle in admin config
+- Register page inherits identity — display name and email pre-filled from the visitor session
+- Clear identity — anonymous nav dropdown includes a "Clear identity" action that wipes the vsid cookie (`POST /api/session/clear`)
 - Contacts directory — CRUD contacts, used as address book for invitations
 - Event invitations — send invite links to contacts by email or WhatsApp
 - Single-use attendee tokens — per-contact tokens that are claimed on first visit
 - Per-token QR codes on the manage page
 - Guest blocking / removal — soft ban or hard delete from an event
-- Admin guests panel — view all guests across all events with per-guest history
+- Admin guests panel — view all guests across all events with per-guest history; "no account" badge on unregistered rows
 - `event_type` column — `open` (one shared token, notify-only invites) vs `invite_only` (per-contact single-use tokens)
 - Profile gate — anonymous guests must submit `displayName + email` before first RSVP (428 `PROFILE_REQUIRED`)
+- Capacity + waitlist — auto-waitlist when event is full; auto-promote on cancellation
+- RSVP email mandatory — email field required in RSVP form (not optional)
 
 ### Phase 2 — What's still to do
 
@@ -39,7 +46,6 @@ the intent; refer to this doc to know what exists right now.
 - SMS reminders via Twilio
 - Date polling
 - RSVP deadline enforcement
-- Capacity + waitlist promotion
 - Custom RSVP questions
 - Event duplication / templates
 - Check-in QR codes
@@ -49,7 +55,7 @@ the intent; refer to this doc to know what exists right now.
 
 ## Database — Tables in Use
 
-13 migrations applied (0000 → 0013).
+14 migrations applied (0000 → 0014).
 
 | Table | Purpose |
 |-------|---------|
@@ -62,7 +68,7 @@ the intent; refer to this doc to know what exists right now.
 | `event_messages` | In-app messages and host blasts; soft-deleted |
 | `delivery_jobs` | Queued email/SMS sends per message |
 | `notifications` | Per-session/user notification inbox (created, UI pending) |
-| `instance_config` | Singleton row: instance name, SMTP, default theme |
+| `instance_config` | Singleton row: instance name, SMTP, default theme, registration guard toggle |
 | `email_blocklist` | Blocked email addresses, used when removing guests |
 | `contacts` | Organizer address book, linked to `event_tokens.contact_id` |
 | `magic_links` | Single-use sign-in tokens, 15-min TTL, SHA-256 hash |
@@ -75,6 +81,7 @@ Notable schema details:
 - `visitor_sessions.event_access` — JSONB map `{slug: 'attendee' | 'editor'}`
 - `events.event_type` — `open | invite_only`
 - `events.coordinates`, `dress_code`, `allow_plus_ones`, `max_plus_ones`
+- `instance_config.require_rsvp_before_register` — boolean, default true; controls registration guard
 
 ---
 
@@ -144,6 +151,7 @@ Notable schema details:
 | GET | `/api/session/me` | vsid cookie |
 | PATCH | `/api/session/me` | vsid cookie |
 | POST | `/api/session/profile` | vsid cookie — profile gate submission |
+| POST | `/api/session/clear` | vsid cookie — wipes the session cookie (clear identity) |
 
 ### Admin (`/api/admin/*`)
 
@@ -248,7 +256,19 @@ Every error response is `{ error: { code: string, message: string, details: {} }
 All queries go through Drizzle's query builder in `services/`. Route handlers call services, never query the DB directly. Never `select *` — always list columns explicitly.
 
 ### Profile gate (428 PROFILE_REQUIRED)
-Anonymous guests are shown a profile collection form before their first RSVP. The API returns 428 when a guest attempts an action without having submitted `displayName + email`. The web client intercepts 428 and shows the profile form inline.
+Anonymous guests are shown a profile collection form before their first RSVP. The API returns 428 when a guest attempts an action without having submitted `displayName + email`. The web client intercepts 428 and shows the profile form inline. Email is mandatory.
+
+### Identity lock
+Once a visitor session has a `display_name` (set via profile gate or first RSVP), subsequent RSVPs from that session inherit the stored name and email as read-only locked fields. The locked identity is derived server-side in the event page load and passed as `lockedIdentity` to the page.
+
+### Login merge warning
+When logging in from a browser that already has an anonymous visitor session with history (display name set), the login page shows an amber notice. Two buttons: "Log in and merge" (default — claims the session's RSVPs and comments to the account) or "Log in without merging" (creates a fresh session linked to the user, discards anonymous history). Controlled by `skipMerge` boolean in the login request body.
+
+### Registration guard
+`POST /api/auth/register` returns `403 NO_EVENT_HISTORY` when the visitor session has no RSVPs and is not already linked to a user. The guard is skipped when `instance_config.require_rsvp_before_register = false` (toggled in Admin → Config). The `/register` page shows an explanatory banner on 403 and pre-fills name + email from the session.
+
+### Clear identity
+Anonymous nav dropdown includes a "Clear identity" button. `POST /api/session/clear` clears the `vsid` cookie and returns 204. The page then invalidates all SvelteKit load functions, resetting the session state. Only visible to unauthenticated visitors.
 
 ### Event type semantics
 - `open` event: one general attendee token, shared via QR or link. Invite-by-contact sends notification only (no token gating).
@@ -274,13 +294,13 @@ When a host invites a contact (`POST /api/events/:slug/invitations`), the API ge
 
 ## Test Coverage
 
-8 test suites, 82 tests, all passing.
+8 test suites, 83 tests, all passing.
 
 | File | Covers |
 |------|--------|
-| `auth.test.ts` | Login, register, magic link, refresh, password change |
+| `auth.test.ts` | Login, register (guard + NO_EVENT_HISTORY), magic link, refresh, password change, skipMerge |
 | `events.test.ts` | Event CRUD, tokens, invitations, directory, cover upload |
-| `rsvps.test.ts` | RSVP creation, updates, profile gate, capacity/waitlist |
+| `rsvps.test.ts` | RSVP creation, updates, profile gate, capacity/waitlist, identity lock |
 | `comments.test.ts` | Comment creation, deletion, permissions |
 | `session.test.ts` | Session creation, profile submission, my-events |
 | `messages.test.ts` | Message posting, blasts, delivery job queuing |
