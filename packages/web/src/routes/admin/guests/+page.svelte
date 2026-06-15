@@ -299,12 +299,14 @@
                   <span class="dir-name">{inv.contactName}</span>
                   {#if inv.emailSent}<span class="delivery-badge">Email sent</span>{/if}
                 </div>
-                <div class="invite-link-row">
-                  <code class="invite-url">{inv.inviteLink}</code>
-                  <button class="copy-btn" onclick={() => copyInviteResult(idx, inv.inviteLink)}>
-                    {copiedInviteIdx === idx ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
+                {#if inv.inviteLink}
+                  <div class="invite-link-row">
+                    <code class="invite-url">{inv.inviteLink}</code>
+                    <button class="copy-btn" onclick={() => copyInviteResult(idx, inv.inviteLink)}>
+                      {copiedInviteIdx === idx ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                {/if}
                 {#if inv.whatsappUrl}
                   <a href={inv.whatsappUrl} target="_blank" rel="noopener noreferrer" class="btn-whatsapp">Open WhatsApp</a>
                 {/if}
@@ -356,7 +358,7 @@
               In-app <span class="phase-badge-sm">Phase 2</span>
             </label>
             {#if !inviteSendEmail && !inviteSendWhatsapp && selectedEventSlug}
-              <p class="channel-hint">No channel selected — links will be generated but not delivered.</p>
+              <p class="channel-hint">No delivery channel selected — for invite-only events, personal links are still generated.</p>
             {/if}
           </div>
         </div>

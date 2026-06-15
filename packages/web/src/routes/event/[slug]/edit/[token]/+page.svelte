@@ -332,7 +332,12 @@
 
   async function sendDirectoryInvites() {
     if (selectedGuestIds.size === 0) return
-    noChannelWarning = !sendEmail && !sendWhatsapp
+    // Open events are notification-only — a delivery channel must be selected
+    if (event.eventType !== 'invite_only' && !sendEmail && !sendWhatsapp) {
+      directoryError = 'Select at least one delivery channel.'
+      return
+    }
+    noChannelWarning = event.eventType === 'invite_only' && !sendEmail && !sendWhatsapp
     inviting = true
     directoryError = ''
     try {
@@ -341,12 +346,15 @@
       if (sendWhatsapp) channels.push('whatsapp')
       const res = await api.bulkInvite(event.slug, [...selectedGuestIds], channels, data.editToken)
       for (const inv of res.invitations) {
-        try { localStorage.setItem(`haps:inviteLink:${event.slug}:${inv.tokenId}`, inv.inviteLink) } catch { /* */ }
+        if (inv.tokenId && inv.inviteLink) {
+          try { localStorage.setItem(`haps:inviteLink:${event.slug}:${inv.tokenId}`, inv.inviteLink) } catch { /* */ }
+        }
       }
       invitedLinks = res.invitations
       directoryGuests = directoryGuests.filter(g => !selectedGuestIds.has(g.id))
       selectedGuestIds = new Set()
-      await refreshTokens()
+      // Only refresh token list for invite-only events (open events create no tokens)
+      if (event.eventType === 'invite_only') await refreshTokens()
     } catch (e: unknown) {
       directoryError = e instanceof ApiError ? e.message : 'Failed to send invitations.'
     } finally {
@@ -856,12 +864,14 @@
                   <span class="dir-name">{inv.contactName}</span>
                   {#if inv.emailSent}<span class="delivery-badge">Email sent</span>{/if}
                 </div>
-                <div class="invite-link-row">
-                  <code class="invite-url">{inv.inviteLink}</code>
-                  <button class="copy-btn" onclick={() => copyInviteLink(inv.contactId, inv.inviteLink)}>
-                    {copiedInviteLinkContactId === inv.contactId ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
+                {#if inv.inviteLink}
+                  <div class="invite-link-row">
+                    <code class="invite-url">{inv.inviteLink}</code>
+                    <button class="copy-btn" onclick={() => copyInviteLink(inv.contactId, inv.inviteLink)}>
+                      {copiedInviteLinkContactId === inv.contactId ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                {/if}
                 {#if inv.whatsappUrl}
                   <a href={inv.whatsappUrl} target="_blank" rel="noopener noreferrer" class="btn-whatsapp">Open WhatsApp</a>
                 {/if}
@@ -920,6 +930,13 @@
               <input type="checkbox" disabled />
               In-app <span class="phase-badge-sm">Phase 2</span>
             </label>
+            {#if !sendEmail && !sendWhatsapp}
+              {#if event.eventType === 'invite_only'}
+                <p class="channel-hint">No channel selected — links will be generated but not delivered.</p>
+              {:else}
+                <p class="channel-hint">Select a delivery channel — no link is generated for open events.</p>
+              {/if}
+            {/if}
           </div>
           <div class="dir-footer">
             <button class="btn-primary" onclick={sendDirectoryInvites} disabled={selectedGuestIds.size === 0 || inviting}>
@@ -1034,6 +1051,7 @@
   .btn-secondary-sm:hover { background: #e8ddd0; }
   .channel-section { border-top: 1px solid #e8ddd0; margin-top: 1rem; padding-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
   .channel-section-label { margin: 0 0 0.25rem; font-size: 0.8rem; font-weight: 600; color: #6b6058; text-transform: uppercase; letter-spacing: 0.04em; }
+  .channel-hint { margin: 0; font-size: 0.8rem; color: #8a6020; background: #faf0d8; border: 1px solid #e0c880; border-radius: 6px; padding: 0.4rem 0.625rem; }
   .channel-count { font-size: 0.8rem; color: #9a8f86; margin-left: 0.25rem; }
   .checkbox-disabled { opacity: 0.5; cursor: not-allowed; }
   .phase-badge-sm { font-size: 0.7rem; font-weight: 700; background: #e8ddd0; color: #9a8f86; padding: 0.1rem 0.4rem; border-radius: 3px; margin-left: 0.25rem; }

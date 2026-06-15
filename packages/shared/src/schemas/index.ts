@@ -43,7 +43,6 @@ export const UpdateEventSchema = z.object({
   timezone: z.string().min(1).max(100).optional(),
   theme: z.string().max(50).nullish(),
   status: z.enum(['draft', 'published', 'cancelled', 'archived']).optional(),
-  eventType: z.enum(['open', 'invite_only']).optional(),
   showGuests: z.boolean().optional(),
   allowComments: z.boolean().optional(),
   maxCapacity: z.number().int().positive().nullish(),

@@ -202,7 +202,6 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     if (body.maxCapacity !== undefined) updates['maxCapacity'] = body.maxCapacity ?? null
     if (body.rsvpDeadline !== undefined) updates['rsvpDeadline'] = body.rsvpDeadline ? new Date(body.rsvpDeadline) : null
     if (body.expiresAt !== undefined) updates['expiresAt'] = body.expiresAt ? new Date(body.expiresAt) : null
-    if (body.eventType !== undefined) updates['eventType'] = body.eventType
 
     const updated = await db.update(events).set(updates as Parameters<ReturnType<typeof db.update>['set']>[0]).where(eq(events.slug, slug)).returning()
     const event = updated[0]
@@ -385,69 +384,101 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     const body = InviteContactsSchema.parse(request.body)
 
     const eventRows = await db
-      .select({ id: events.id, title: events.title })
+      .select({ id: events.id, title: events.title, eventType: events.eventType })
       .from(events).where(eq(events.slug, slug)).limit(1)
     const event = eventRows[0]
     if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
 
-    const invitations: Array<{ contactId: string; contactName: string; tokenId: string; inviteLink: string; emailSent: boolean; whatsappUrl: string | null }> = []
+    const invitations: Array<{ contactId: string; contactName: string; tokenId: string | null; inviteLink: string | null; emailSent: boolean; whatsappUrl: string | null }> = []
 
-    for (const contactId of body.contactIds) {
-      const contactRows = await db
-        .select({ id: contacts.id, name: contacts.name, email: contacts.email, phone: contacts.phone })
-        .from(contacts)
-        .where(eq(contacts.id, contactId))
-        .limit(1)
-      const contact = contactRows[0]
-      if (!contact) continue
+    if (event.eventType === 'open') {
+      // Open events: notify only — share the plain event URL, no token generated
+      const eventUrl = `${config.APP_URL}/event/${slug}`
+      for (const contactId of body.contactIds) {
+        const contactRows = await db
+          .select({ id: contacts.id, name: contacts.name, email: contacts.email, phone: contacts.phone })
+          .from(contacts).where(eq(contacts.id, contactId)).limit(1)
+        const contact = contactRows[0]
+        if (!contact) continue
 
-      // Idempotent — skip if this contact already has an active token for this event
-      const existing = await db
-        .select({ id: eventTokens.id })
-        .from(eventTokens)
-        .where(and(
-          eq(eventTokens.eventId, event.id),
-          eq(eventTokens.type, 'attendee'),
-          eq(eventTokens.status, 'active'),
-          eq(eventTokens.contactId, contactId),
-        ))
-        .limit(1)
-      if (existing[0]) continue
+        let emailSent = false
+        if (body.channels.includes('email') && contact.email) {
+          try {
+            await sendEmail({
+              to: contact.email,
+              subject: `You're invited to ${event.title}`,
+              text: `Hi ${contact.name},\n\nYou've been invited to ${event.title}.\n\nView the event and RSVP here:\n${eventUrl}`,
+              html: `<p>Hi ${contact.name},</p><p>You've been invited to <strong>${event.title}</strong>.</p><p><a href="${eventUrl}">View event and RSVP →</a></p>`,
+            })
+            emailSent = true
+          } catch { /* SMTP not configured or failed — degrade gracefully */ }
+        }
 
-      const rawToken = generateToken()
-      const tokenHash = await hashToken(rawToken)
+        const whatsappUrl = (body.channels.includes('whatsapp') && contact.phone)
+          ? `https://wa.me/${contact.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${contact.name}! You're invited to ${event.title}. RSVP here: ${eventUrl}`)}`
+          : null
 
-      const [inserted] = await db.insert(eventTokens).values({
-        eventId: event.id,
-        type: 'attendee',
-        label: contact.name,
-        tokenHash,
-        singleUse: true,
-        contactId: contact.id,
-      }).returning({ id: eventTokens.id })
-
-      if (!inserted) continue
-
-      const inviteLink = `${config.APP_URL}/event/${slug}?t=${rawToken}`
-
-      let emailSent = false
-      if (body.channels.includes('email') && contact.email) {
-        try {
-          await sendEmail({
-            to: contact.email,
-            subject: `You're invited to ${event.title}`,
-            text: `Hi ${contact.name},\n\nYou've been invited to ${event.title}.\n\nView the event and RSVP here:\n${inviteLink}`,
-            html: `<p>Hi ${contact.name},</p><p>You've been invited to <strong>${event.title}</strong>.</p><p><a href="${inviteLink}">View event and RSVP →</a></p>`,
-          })
-          emailSent = true
-        } catch { /* SMTP not configured or failed — degrade gracefully */ }
+        invitations.push({ contactId: contact.id, contactName: contact.name, tokenId: null, inviteLink: null, emailSent, whatsappUrl })
       }
+    } else {
+      // Invite-only events: create a single-use token per contact
+      for (const contactId of body.contactIds) {
+        const contactRows = await db
+          .select({ id: contacts.id, name: contacts.name, email: contacts.email, phone: contacts.phone })
+          .from(contacts)
+          .where(eq(contacts.id, contactId))
+          .limit(1)
+        const contact = contactRows[0]
+        if (!contact) continue
 
-      const whatsappUrl = (body.channels.includes('whatsapp') && contact.phone)
-        ? `https://wa.me/${contact.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${contact.name}! You're invited to ${event.title}. Here's your personal invite link: ${inviteLink}`)}`
-        : null
+        // Idempotent — skip if this contact already has an active token for this event
+        const existing = await db
+          .select({ id: eventTokens.id })
+          .from(eventTokens)
+          .where(and(
+            eq(eventTokens.eventId, event.id),
+            eq(eventTokens.type, 'attendee'),
+            eq(eventTokens.status, 'active'),
+            eq(eventTokens.contactId, contactId),
+          ))
+          .limit(1)
+        if (existing[0]) continue
 
-      invitations.push({ contactId: contact.id, contactName: contact.name, tokenId: inserted.id, inviteLink, emailSent, whatsappUrl })
+        const rawToken = generateToken()
+        const tokenHash = await hashToken(rawToken)
+
+        const [inserted] = await db.insert(eventTokens).values({
+          eventId: event.id,
+          type: 'attendee',
+          label: contact.name,
+          tokenHash,
+          singleUse: true,
+          contactId: contact.id,
+        }).returning({ id: eventTokens.id })
+
+        if (!inserted) continue
+
+        const inviteLink = `${config.APP_URL}/event/${slug}?t=${rawToken}`
+
+        let emailSent = false
+        if (body.channels.includes('email') && contact.email) {
+          try {
+            await sendEmail({
+              to: contact.email,
+              subject: `You're invited to ${event.title}`,
+              text: `Hi ${contact.name},\n\nYou've been invited to ${event.title}.\n\nView the event and RSVP here:\n${inviteLink}`,
+              html: `<p>Hi ${contact.name},</p><p>You've been invited to <strong>${event.title}</strong>.</p><p><a href="${inviteLink}">View event and RSVP →</a></p>`,
+            })
+            emailSent = true
+          } catch { /* SMTP not configured or failed — degrade gracefully */ }
+        }
+
+        const whatsappUrl = (body.channels.includes('whatsapp') && contact.phone)
+          ? `https://wa.me/${contact.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${contact.name}! You're invited to ${event.title}. Here's your personal invite link: ${inviteLink}`)}`
+          : null
+
+        invitations.push({ contactId: contact.id, contactName: contact.name, tokenId: inserted.id, inviteLink, emailSent, whatsappUrl })
+      }
     }
 
     return reply.code(200).send({ invitations })
