@@ -30,3 +30,6 @@ coverage/
 
 # Archive files
 *.zip
+
+# Screenshots
+*.png
