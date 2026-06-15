@@ -58,12 +58,13 @@ docker compose up db              # Postgres only (for local dev without docker)
 
 ## Docs — read the relevant doc before coding a feature
 
-@docs/architecture.md        System design, deployment model, key decisions
-@docs/auth-identity.md       Auth tiers, cookie identity, registration, identity merge
-@docs/data-model.md          Full DB schema with annotations
-@docs/api-spec.md            REST endpoint reference with request/response shapes
-@docs/features-roadmap.md    Phased feature list — check phase before starting
-@docs/messaging.md           Messaging channels, guest inbox, SSE, invitations, phase map
+@docs/architecture.md           System design, deployment model, key decisions
+@docs/auth-identity.md          Auth tiers, cookie identity, registration, identity merge
+@docs/data-model.md             Full DB schema with annotations
+@docs/api-spec.md               REST endpoint reference with request/response shapes
+@docs/features-roadmap.md       Phased feature list — check phase before starting
+@docs/messaging.md              Messaging channels, guest inbox, SSE, invitations, phase map
+@docs/implementation-state.md   Current build state: what's actually implemented, routes, tables, patterns
 
 ## Rules — coding conventions per layer
 

@@ -85,6 +85,20 @@
       "when": 1781640000000,
       "tag": "0011_contacts",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1781700000000,
+      "tag": "0012_invite_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1781760000000,
+      "tag": "0013_magic_links",
+      "breakpoints": true
     }
   ]
 }

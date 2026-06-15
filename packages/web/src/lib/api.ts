@@ -62,9 +62,9 @@ export function createServerApi(fetchFn: typeof fetch, cookie?: string) {
 // Client-side API (called from Svelte components)
 export const api = {
   // Auth
-  login: (email: string, password: string) =>
+  login: (email: string, password: string, skipMerge?: boolean) =>
     apiFetch<{ user: { id: string; email: string; displayName: string; role: string } }>(
-      '/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+      '/auth/login', { method: 'POST', body: JSON.stringify({ email, password, ...(skipMerge ? { skipMerge: true } : {}) }) }),
 
   logout: () =>
     apiFetch<void>('/auth/logout', { method: 'POST' }),

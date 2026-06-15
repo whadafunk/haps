@@ -7,8 +7,8 @@
 
   let editingRsvp = $state(!data.myRsvp)
   let rsvpStatus = $state(data.myRsvp?.status ?? '')
-  let rsvpName = $state(data.myRsvp?.displayName ?? '')
-  let rsvpEmail = $state('')
+  let rsvpName = $state(data.lockedIdentity?.displayName ?? data.myRsvp?.displayName ?? '')
+  let rsvpEmail = $state(data.lockedIdentity?.email ?? '')
   let rsvpNote = $state(data.myRsvp?.note ?? '')
   let rsvpHeadCount = $state(data.myRsvp?.headCount ?? 1)
   let rsvpLoading = $state(false)
@@ -113,6 +113,7 @@
 
   async function submitRsvp() {
     if (!rsvpStatus || !rsvpName) { rsvpError = 'Name and RSVP status are required.'; return }
+    if (!rsvpEmail) { rsvpError = 'Email is required.'; return }
     rsvpLoading = true
     rsvpError = ''
     try {
@@ -121,7 +122,7 @@
         status: rsvpStatus,
         headCount: rsvpHeadCount,
         note: rsvpNote || undefined,
-        email: rsvpEmail || undefined,
+        email: rsvpEmail,
       })
       await invalidateAll()
       editingRsvp = false
@@ -367,10 +368,17 @@
           {/if}
 
           <div class="rsvp-form">
-            <label>
-              Your name
-              <input type="text" bind:value={rsvpName} placeholder="Name" />
-            </label>
+            {#if data.lockedIdentity?.displayName}
+              <div class="locked-field">
+                <span class="locked-label">Your name</span>
+                <span class="locked-value">{data.lockedIdentity.displayName}</span>
+              </div>
+            {:else}
+              <label>
+                Your name <span class="req">*</span>
+                <input type="text" bind:value={rsvpName} placeholder="Name" required />
+              </label>
+            {/if}
             <div class="rsvp-buttons">
               {#each ['yes', 'maybe', 'no'] as status}
                 <button
@@ -390,10 +398,17 @@
               Note (optional)
               <input type="text" bind:value={rsvpNote} placeholder="Any notes…" />
             </label>
-            <label>
-              Email (optional, for reminders)
-              <input type="email" bind:value={rsvpEmail} placeholder="you@example.com" />
-            </label>
+            {#if data.lockedIdentity?.email}
+              <div class="locked-field">
+                <span class="locked-label">Email</span>
+                <span class="locked-value">{data.lockedIdentity.email}</span>
+              </div>
+            {:else}
+              <label>
+                Email <span class="req">*</span>
+                <input type="email" bind:value={rsvpEmail} placeholder="you@example.com" required />
+              </label>
+            {/if}
             <div class="rsvp-actions">
               <button class="submit-btn" onclick={submitRsvp} disabled={rsvpLoading}>
                 {rsvpLoading ? 'Saving…' : data.myRsvp ? 'Update RSVP' : 'Submit RSVP'}
@@ -561,6 +576,9 @@
   .waitlist-banner strong { display: block; margin-bottom: 0.25rem; }
   .waitlist-banner p { margin: 0; font-size: 0.875rem; }
   .rsvp-summary-waitlist { background: #edf3fb; color: #1a4070; border-color: #b0cce8; }
+  .locked-field { display: flex; flex-direction: column; gap: 0.25rem; }
+  .locked-label { font-size: 0.875rem; font-weight: 500; color: #3d352e; }
+  .locked-value { font-size: 1rem; color: #1a1510; background: var(--card-inner, #e8ddd0); border: 1px solid var(--border, #cfc3b0); border-radius: 8px; padding: 0.5rem 0.75rem; }
   .rsvp-form { display: flex; flex-direction: column; gap: 0.75rem; }
   .rsvp-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .rsvp-btn { padding: 0.5rem 1rem; border-radius: 8px; border: 2px solid var(--border, #cfc3b0); background: var(--card-bg, #f0e8da); font-size: 0.875rem; font-weight: 500; color: #3d352e; cursor: pointer; }

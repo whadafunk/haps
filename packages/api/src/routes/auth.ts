@@ -89,10 +89,25 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       maxAge: 60 * 60 * 24 * 7,
     })
 
-    // Merge any visitor session activity into the account (synchronous — user sees merged state immediately)
     if (request.session) {
-      request.session.userId = user.id
-      await mergeSessionIntoUser(request.session.id, user.id)
+      if (body.skipMerge) {
+        // Discard the anonymous session — create a fresh one linked to this user
+        const [freshSession] = await db.insert(visitorSessions)
+          .values({ userId: user.id })
+          .returning({ id: visitorSessions.id })
+        reply.setCookie('vsid', freshSession.id, {
+          httpOnly: true,
+          secure: config.NODE_ENV === 'production',
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 60 * 60 * 24 * 365,
+          signed: true,
+        })
+      } else {
+        // Merge anonymous session history into the account
+        request.session.userId = user.id
+        await mergeSessionIntoUser(request.session.id, user.id)
+      }
     }
 
     return { user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role } }
