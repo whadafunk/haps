@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { LayoutData } from './$types'
   import { api } from '$lib/api'
-  import { invalidateAll } from '$app/navigation'
+  import { goto } from '$app/navigation'
 
   let { data, children } = $props<{ data: LayoutData; children: any }>()
 
@@ -15,7 +15,7 @@
   async function clearIdentity() {
     menuOpen = false
     await api.clearIdentity()
-    await invalidateAll()
+    await goto('/', { replaceState: true, invalidateAll: true })
   }
 </script>
 

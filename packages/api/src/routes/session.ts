@@ -99,7 +99,12 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
 
   // Clear the visitor session cookie — anonymous guests only (logged-in users use /auth/logout)
   fastify.post('/api/session/clear', async (request, reply) => {
-    reply.clearCookie('vsid', { path: '/' })
+    reply.clearCookie('vsid', {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env['NODE_ENV'] === 'production',
+    })
     return reply.code(204).send()
   })
 
