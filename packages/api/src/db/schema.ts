@@ -186,6 +186,15 @@ export const notifications = pgTable('notifications', {
   userIdx:    index('notifications_user_idx').on(t.userId).where(sql`${t.userId} is not null`),
 }))
 
+export const magicLinks = pgTable('magic_links', {
+  id:        uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  userId:    uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull(), // SHA-256 hex
+  used:      boolean('used').notNull().default(false),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const comments = pgTable('comments', {
   id:          uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   eventId:     uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),

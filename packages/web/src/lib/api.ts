@@ -86,6 +86,13 @@ export const api = {
     apiFetch<{ user: { id: string; email: string; displayName: string; role: string } }>(
       '/auth/register', { method: 'POST', body: JSON.stringify(body) }),
 
+  requestMagicLink: (email: string) =>
+    apiFetch<void>('/auth/magic-link', { method: 'POST', body: JSON.stringify({ email }) }),
+
+  verifyMagicLink: (token: string) =>
+    apiFetch<{ user: { id: string; email: string; displayName: string; role: string } }>(
+      '/auth/magic-link/verify', { method: 'POST', body: JSON.stringify({ token }) }),
+
   // Events
   getEvent: (slug: string, token?: string) => {
     const q = token ? `?t=${encodeURIComponent(token)}` : ''

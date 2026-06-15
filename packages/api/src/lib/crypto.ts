@@ -1,4 +1,8 @@
-import { randomBytes, timingSafeEqual } from 'crypto'
+import { randomBytes, timingSafeEqual, createHash } from 'crypto'
+
+export function sha256hex(input: string): string {
+  return createHash('sha256').update(input).digest('hex')
+}
 import argon2 from 'argon2'
 
 export function generateToken(): string {

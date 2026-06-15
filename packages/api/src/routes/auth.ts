@@ -1,12 +1,13 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { users, visitorSessions, rsvps, comments } from '../db/schema.js'
-import { eq, and } from 'drizzle-orm'
-import { verifyPassword, hashPassword } from '../lib/crypto.js'
+import { users, visitorSessions, rsvps, comments, magicLinks } from '../db/schema.js'
+import { eq, and, lt } from 'drizzle-orm'
+import { verifyPassword, hashPassword, generateToken, sha256hex } from '../lib/crypto.js'
 import { signJwt, signRefreshToken, verifyRefreshToken } from '../middleware/auth.js'
 import { createError } from '../lib/errors.js'
-import { LoginSchema, CreateUserSchema, UpdateProfileSchema, ChangePasswordSchema, RegisterSchema } from '@haps/shared'
+import { LoginSchema, CreateUserSchema, UpdateProfileSchema, ChangePasswordSchema, RegisterSchema, MagicLinkRequestSchema, MagicLinkVerifySchema } from '@haps/shared'
 import { config } from '../lib/config.js'
+import { sendEmail } from '../services/email.js'
 
 /** Atomically claim a visitor session's RSVPs, comments, and event_access into a user account. */
 async function mergeSessionIntoUser(sessionId: string, userId: string): Promise<void> {
@@ -255,6 +256,100 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     reply.clearCookie('auth_token', { path: '/' })
     reply.clearCookie('refresh_token', { path: '/api/auth' })
     return reply.code(204).send()
+  })
+
+  fastify.post('/api/auth/magic-link', {
+    config: { rateLimit: { max: 5, timeWindow: '1 hour' } },
+  }, async (request, reply) => {
+    const body = MagicLinkRequestSchema.parse(request.body)
+
+    const [user] = await db
+      .select({ id: users.id, email: users.email, displayName: users.displayName })
+      .from(users)
+      .where(eq(users.email, body.email))
+      .limit(1)
+
+    // Always 204 — never reveal whether the email exists
+    if (!user) return reply.code(204).send()
+
+    // Clean up expired tokens for this user before inserting a new one
+    await db.delete(magicLinks)
+      .where(and(eq(magicLinks.userId, user.id), lt(magicLinks.expiresAt, new Date())))
+
+    const rawToken = generateToken()
+    const tokenHash = sha256hex(rawToken)
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000)
+
+    await db.insert(magicLinks).values({ userId: user.id, tokenHash, expiresAt })
+
+    const magicLinkUrl = `${config.APP_URL}/magic-link/verify?token=${rawToken}`
+
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: 'Your sign-in link',
+        text: `Hi ${user.displayName},\n\nClick the link below to sign in to your account:\n\n${magicLinkUrl}\n\nThis link expires in 15 minutes and can only be used once.\n\nIf you didn't request this, you can safely ignore this email.`,
+        html: `<p>Hi ${user.displayName},</p><p>Click the link below to sign in to your account:</p><p><a href="${magicLinkUrl}">${magicLinkUrl}</a></p><p>This link expires in 15 minutes and can only be used once.</p><p>If you didn't request this, you can safely ignore this email.</p>`,
+      })
+    } catch {
+      // SMTP not configured or failed — log server-side, return 204 anyway
+      fastify.log.warn({ email: '[redacted]' }, 'Magic link email could not be sent (SMTP not configured or failed)')
+    }
+
+    return reply.code(204).send()
+  })
+
+  fastify.post('/api/auth/magic-link/verify', async (request, reply) => {
+    const body = MagicLinkVerifySchema.parse(request.body)
+    const tokenHash = sha256hex(body.token)
+
+    const [link] = await db
+      .select({ id: magicLinks.id, userId: magicLinks.userId, used: magicLinks.used, expiresAt: magicLinks.expiresAt })
+      .from(magicLinks)
+      .where(eq(magicLinks.tokenHash, tokenHash))
+      .limit(1)
+
+    if (!link || link.used || link.expiresAt < new Date()) {
+      throw createError(401, 'INVALID_OR_EXPIRED_TOKEN', 'This link is invalid or has expired.')
+    }
+
+    // Mark as used immediately to prevent replay
+    await db.update(magicLinks).set({ used: true }).where(eq(magicLinks.id, link.id))
+
+    const [user] = await db
+      .select({ id: users.id, email: users.email, displayName: users.displayName, role: users.role })
+      .from(users)
+      .where(eq(users.id, link.userId))
+      .limit(1)
+
+    if (!user) throw createError(401, 'INVALID_OR_EXPIRED_TOKEN', 'This link is invalid or has expired.')
+
+    // Merge visitor session into the account
+    if (request.session) {
+      request.session.userId = user.id
+      await mergeSessionIntoUser(request.session.id, user.id)
+    }
+
+    const payload = { sub: user.id, email: user.email, role: user.role as 'admin' | 'organizer' | 'member' }
+    const accessToken = signJwt(payload)
+    const refreshToken = signRefreshToken(user.id)
+
+    reply.setCookie('auth_token', accessToken, {
+      httpOnly: true,
+      secure: config.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+      maxAge: 60 * 60,
+    })
+    reply.setCookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: config.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/api/auth',
+      maxAge: 60 * 60 * 24 * 7,
+    })
+
+    return { user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role } }
   })
 }
 

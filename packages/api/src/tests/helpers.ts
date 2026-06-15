@@ -22,7 +22,7 @@ export async function closeApp(): Promise<void> {
 
 export async function truncateAll(): Promise<void> {
   await db.execute(sql`
-    TRUNCATE delivery_jobs, event_messages, comments, rsvps, event_tokens, events, visitor_sessions, users, email_blocklist
+    TRUNCATE delivery_jobs, event_messages, comments, rsvps, event_tokens, events, magic_links, visitor_sessions, users, email_blocklist
     RESTART IDENTITY CASCADE
   `)
 }

@@ -177,3 +177,12 @@ export const InviteContactsSchema = z.object({
 export const RemoveGuestSchema = z.object({
   blockEmail: z.boolean().optional(),
 }).strict()
+
+// Magic link (cross-device recovery)
+export const MagicLinkRequestSchema = z.object({
+  email: z.string().email(),
+}).strict()
+
+export const MagicLinkVerifySchema = z.object({
+  token: z.string().min(1),
+}).strict()

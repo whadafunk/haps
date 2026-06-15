@@ -21,6 +21,7 @@
         <div class="nudge-actions">
           <a href="/register" class="nudge-btn-primary">Create account</a>
           <a href="/login" class="nudge-btn-secondary">Log in</a>
+          <a href="/magic-link" class="nudge-btn-secondary">Sign in by email</a>
         </div>
       </div>
     {/if}

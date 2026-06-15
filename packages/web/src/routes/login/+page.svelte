@@ -46,6 +46,7 @@
     </form>
 
     <p class="footer-link">No account yet? <a href="/register">Create one</a></p>
+    <p class="footer-link">Forgot your password? <a href="/magic-link">Sign in with email link</a></p>
   </div>
 </main>
 
