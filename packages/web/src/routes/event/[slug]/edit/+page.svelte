@@ -1022,7 +1022,6 @@
   .btn-danger:disabled { opacity: 0.6; }
   .error-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
 
-  .invite-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
   .invite-counter { font-size: 0.875rem; color: #6b6058; margin: 0; }
   .btn-manage-invites { background: none; border: 1px solid #cfc3b0; color: #b05525; padding: 0.375rem 0.875rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
   .btn-manage-invites:hover { border-color: #b05525; background: #fdf2ee; }
