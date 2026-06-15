@@ -171,6 +171,7 @@ export const CreateContactSchema = z.object({
 // Invite contacts from directory to an event
 export const InviteContactsSchema = z.object({
   contactIds: z.array(z.string().uuid()).min(1).max(100),
+  channels: z.array(z.enum(['email', 'whatsapp'])).optional().default([]),
 }).strict()
 
 // Admin: permanently remove a session guest

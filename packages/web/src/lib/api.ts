@@ -141,12 +141,12 @@ export const api = {
     apiFetch<{ contacts: Array<{ id: string; name: string; email: string | null; phone: string | null; instagramHandle: string | null }> }>(
       `/events/${slug}/directory`, { headers: { 'x-edit-token': editToken } }),
 
-  bulkInvite: (slug: string, contactIds: string[], editToken: string) =>
-    apiFetch<{ invitations: Array<{ contactId: string; contactName: string; tokenId: string; inviteLink: string }> }>(
+  bulkInvite: (slug: string, contactIds: string[], channels: string[], editToken?: string) =>
+    apiFetch<{ invitations: Array<{ contactId: string; contactName: string; tokenId: string; inviteLink: string; emailSent: boolean; whatsappUrl: string | null }> }>(
       `/events/${slug}/invitations`, {
         method: 'POST',
-        body: JSON.stringify({ contactIds }),
-        headers: { 'x-edit-token': editToken },
+        body: JSON.stringify({ contactIds, channels }),
+        headers: editToken ? { 'x-edit-token': editToken } : {},
       }),
 
   // RSVPs

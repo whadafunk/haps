@@ -6,6 +6,7 @@ export interface GuestRow {
   type: 'user' | 'session' | 'contact'
   displayName: string | null
   email: string | null
+  phone: string | null
   firstSeen: string
   eventCount: number
 }

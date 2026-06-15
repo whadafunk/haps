@@ -10,6 +10,7 @@ import { ensureSession } from '../middleware/session.js'
 import { config } from '../lib/config.js'
 import { nanoid } from 'nanoid'
 import { detectMimeType, getAllowedExtension, saveLocalFile } from '../services/storage.js'
+import { sendEmail } from '../services/email.js'
 
 const eventsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/api/events', {
@@ -389,11 +390,11 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     const event = eventRows[0]
     if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
 
-    const invitations: Array<{ contactId: string; contactName: string; tokenId: string; inviteLink: string }> = []
+    const invitations: Array<{ contactId: string; contactName: string; tokenId: string; inviteLink: string; emailSent: boolean; whatsappUrl: string | null }> = []
 
     for (const contactId of body.contactIds) {
       const contactRows = await db
-        .select({ id: contacts.id, name: contacts.name })
+        .select({ id: contacts.id, name: contacts.name, email: contacts.email, phone: contacts.phone })
         .from(contacts)
         .where(eq(contacts.id, contactId))
         .limit(1)
@@ -428,7 +429,25 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
       if (!inserted) continue
 
       const inviteLink = `${config.APP_URL}/event/${slug}?t=${rawToken}`
-      invitations.push({ contactId: contact.id, contactName: contact.name, tokenId: inserted.id, inviteLink })
+
+      let emailSent = false
+      if (body.channels.includes('email') && contact.email) {
+        try {
+          await sendEmail({
+            to: contact.email,
+            subject: `You're invited to ${event.title}`,
+            text: `Hi ${contact.name},\n\nYou've been invited to ${event.title}.\n\nView the event and RSVP here:\n${inviteLink}`,
+            html: `<p>Hi ${contact.name},</p><p>You've been invited to <strong>${event.title}</strong>.</p><p><a href="${inviteLink}">View event and RSVP →</a></p>`,
+          })
+          emailSent = true
+        } catch { /* SMTP not configured or failed — degrade gracefully */ }
+      }
+
+      const whatsappUrl = (body.channels.includes('whatsapp') && contact.phone)
+        ? `https://wa.me/${contact.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${contact.name}! You're invited to ${event.title}. Here's your personal invite link: ${inviteLink}`)}`
+        : null
+
+      invitations.push({ contactId: contact.id, contactName: contact.name, tokenId: inserted.id, inviteLink, emailSent, whatsappUrl })
     }
 
     return reply.code(200).send({ invitations })

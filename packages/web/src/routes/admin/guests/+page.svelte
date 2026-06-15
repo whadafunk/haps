@@ -12,11 +12,15 @@
   const filtered = $derived(
     search.trim() === ''
       ? data.guests
-      : data.guests.filter((g: GuestRow) =>
-          (g.displayName ?? '').toLowerCase().includes(search.toLowerCase()) ||
-          (g.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
-          g.id.slice(0, 8).includes(search.toLowerCase())
-        )
+      : data.guests.filter((g: GuestRow) => {
+          const q = search.toLowerCase()
+          return (
+            (g.displayName ?? '').toLowerCase().includes(q) ||
+            (g.email ?? '').toLowerCase().includes(q) ||
+            (g.phone ?? '').toLowerCase().includes(q) ||
+            g.id.slice(0, 8).includes(q)
+          )
+        })
   )
 
   function formatDate(iso: string) {
@@ -69,6 +73,73 @@
     } finally { bulkDeleting = false }
   }
 
+  // ── Bulk invite to event ─────────────────────────────────────────────────────
+  let showBulkInviteModal = $state(false)
+  let inviteEvents = $state<Array<{ slug: string; title: string; status: string; startsAt: string }>>([])
+  let inviteEventsLoading = $state(false)
+  let selectedEventSlug = $state('')
+  let inviteSendEmail = $state(false)
+  let inviteSendWhatsapp = $state(false)
+  let inviting = $state(false)
+  let inviteError = $state('')
+  let inviteResults = $state<Array<{ contactName: string; inviteLink: string; emailSent: boolean; whatsappUrl: string | null }> | null>(null)
+
+  const inviteSelectedEmailCount = $derived(
+    selectedContacts.filter((g: GuestRow) => g.email).length
+  )
+  const inviteSelectedPhoneCount = $derived(
+    selectedContacts.filter((g: GuestRow) => g.phone).length
+  )
+
+  async function openBulkInviteModal() {
+    showBulkInviteModal = true
+    inviteResults = null
+    inviteError = ''
+    selectedEventSlug = ''
+    inviteSendEmail = false
+    inviteSendWhatsapp = false
+    if (inviteEvents.length === 0) {
+      inviteEventsLoading = true
+      try {
+        const res = await api.listAdminEvents()
+        inviteEvents = res.events.filter(e => e.status === 'published')
+      } catch { inviteError = 'Failed to load events.' }
+      finally { inviteEventsLoading = false }
+    }
+  }
+
+  async function doBulkInvite() {
+    if (!selectedEventSlug || selectedContacts.length === 0) return
+    inviting = true
+    inviteError = ''
+    try {
+      const channels: string[] = []
+      if (inviteSendEmail) channels.push('email')
+      if (inviteSendWhatsapp) channels.push('whatsapp')
+      const res = await api.bulkInvite(selectedEventSlug, selectedContacts.map((g: GuestRow) => g.id), channels)
+      for (const inv of res.invitations) {
+        try { localStorage.setItem(`haps:inviteLink:${selectedEventSlug}:${inv.tokenId}`, inv.inviteLink) } catch { /* */ }
+      }
+      inviteResults = res.invitations.map(inv => ({
+        contactName: inv.contactName,
+        inviteLink: inv.inviteLink,
+        emailSent: inv.emailSent,
+        whatsappUrl: inv.whatsappUrl,
+      }))
+    } catch (e: unknown) {
+      inviteError = e instanceof ApiError ? e.message : 'Failed to send invitations.'
+    } finally { inviting = false }
+  }
+
+  let copiedInviteIdx = $state<number | null>(null)
+  async function copyInviteResult(idx: number, link: string) {
+    try {
+      await navigator.clipboard.writeText(link)
+      copiedInviteIdx = idx
+      setTimeout(() => { copiedInviteIdx = null }, 2000)
+    } catch { /* */ }
+  }
+
   // ── Add person modal ────────────────────────────────────────────────────────
   let showAddModal = $state(false)
   let addName = $state('')
@@ -112,7 +183,7 @@
     </div>
 
     <div class="toolbar">
-      <input type="search" bind:value={search} placeholder="Search by name or email…" class="search-input" />
+      <input type="search" bind:value={search} placeholder="Search by name, email or phone…" class="search-input" />
       <label class="select-all-wrap">
         <input
           type="checkbox"
@@ -134,6 +205,13 @@
           {/if}
         </span>
         <button class="btn-ghost-sm" onclick={clearSelection}>Clear</button>
+        <button
+          class="btn-invite-sm"
+          disabled={selectedContacts.length === 0}
+          onclick={openBulkInviteModal}
+        >
+          Invite to event
+        </button>
         <button
           class="btn-danger-sm"
           disabled={selectedContacts.length === 0}
@@ -173,6 +251,9 @@
                 {#if guest.email}
                   <span class="guest-email">{guest.email}</span>
                 {/if}
+                {#if guest.phone}
+                  <span class="guest-phone">{guest.phone}</span>
+                {/if}
               </div>
               <div class="guest-meta">
                 {#if guest.type === 'contact'}
@@ -197,6 +278,102 @@
     {/if}
   </div>
 </main>
+
+<!-- Bulk invite to event -->
+{#if showBulkInviteModal}
+  <div class="modal-backdrop" role="presentation" onclick={() => { if (!inviting) showBulkInviteModal = false }}>
+    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-label="Invite to event" onclick={(e) => e.stopPropagation()}>
+      <div class="modal-header">
+        <h3>Invite {selectedContacts.length} contact{selectedContacts.length !== 1 ? 's' : ''} to event</h3>
+        <button class="modal-close" onclick={() => showBulkInviteModal = false} aria-label="Close" disabled={inviting}>×</button>
+      </div>
+
+      {#if inviteResults}
+        <!-- Results view -->
+        <div class="modal-body">
+          <div class="success-banner">{inviteResults.length} invitation{inviteResults.length !== 1 ? 's' : ''} generated.</div>
+          <div class="invited-results-list">
+            {#each inviteResults as inv, idx (idx)}
+              <div class="invited-result-row">
+                <div class="invited-result-header">
+                  <span class="dir-name">{inv.contactName}</span>
+                  {#if inv.emailSent}<span class="delivery-badge">Email sent</span>{/if}
+                </div>
+                <div class="invite-link-row">
+                  <code class="invite-url">{inv.inviteLink}</code>
+                  <button class="copy-btn" onclick={() => copyInviteResult(idx, inv.inviteLink)}>
+                    {copiedInviteIdx === idx ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+                {#if inv.whatsappUrl}
+                  <a href={inv.whatsappUrl} target="_blank" rel="noopener noreferrer" class="btn-whatsapp">Open WhatsApp</a>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-primary" onclick={() => { inviteResults = null; showBulkInviteModal = false; clearSelection() }}>Done</button>
+        </div>
+
+      {:else}
+        <!-- Selection view -->
+        <div class="modal-body">
+          {#if inviteError}
+            <div class="error-banner">{inviteError}</div>
+          {/if}
+
+          <div class="field">
+            <span class="field-label">Event <span class="req">*</span></span>
+            {#if inviteEventsLoading}
+              <p class="loading-text">Loading events…</p>
+            {:else if inviteEvents.length === 0}
+              <p class="field-hint">No published events found.</p>
+            {:else}
+              <select bind:value={selectedEventSlug} class="field-select">
+                <option value="">Select an event…</option>
+                {#each inviteEvents as ev (ev.slug)}
+                  <option value={ev.slug}>{ev.title}</option>
+                {/each}
+              </select>
+            {/if}
+          </div>
+
+          <div class="channel-section">
+            <p class="channel-section-label">Delivery channels</p>
+            <label class="checkbox">
+              <input type="checkbox" bind:checked={inviteSendEmail} />
+              Email
+              <span class="channel-count">({inviteSelectedEmailCount} of {selectedContacts.length} have email)</span>
+            </label>
+            <label class="checkbox">
+              <input type="checkbox" bind:checked={inviteSendWhatsapp} />
+              WhatsApp
+              <span class="channel-count">({inviteSelectedPhoneCount} of {selectedContacts.length} have phone)</span>
+            </label>
+            <label class="checkbox checkbox-disabled">
+              <input type="checkbox" disabled />
+              In-app <span class="phase-badge-sm">Phase 2</span>
+            </label>
+            {#if !inviteSendEmail && !inviteSendWhatsapp && selectedEventSlug}
+              <p class="channel-hint">No channel selected — links will be generated but not delivered.</p>
+            {/if}
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-secondary" onclick={() => showBulkInviteModal = false} disabled={inviting}>Cancel</button>
+          <button
+            class="btn-primary"
+            onclick={doBulkInvite}
+            disabled={inviting || !selectedEventSlug || selectedContacts.length === 0}
+          >
+            {inviting ? 'Sending…' : `Invite ${selectedContacts.length}`}
+          </button>
+        </div>
+      {/if}
+    </div>
+  </div>
+{/if}
 
 <!-- Bulk delete confirmation -->
 {#if showBulkDeleteModal}
@@ -290,6 +467,9 @@
   .bulk-hint { color: #6b6058; font-size: 0.8rem; }
   .btn-ghost-sm { background: none; border: none; color: #6b6058; font-size: 0.825rem; cursor: pointer; padding: 0.25rem 0.5rem; border-radius: 6px; }
   .btn-ghost-sm:hover { background: #ede8e0; color: #1a1510; }
+  .btn-invite-sm { background: #b05525; color: #fff; border: none; padding: 0.3rem 0.75rem; border-radius: 6px; font-size: 0.825rem; font-weight: 600; cursor: pointer; }
+  .btn-invite-sm:hover:not(:disabled) { background: #924418; }
+  .btn-invite-sm:disabled { opacity: 0.4; cursor: default; }
   .btn-danger-sm { background: #b03016; color: #fff; border: none; padding: 0.3rem 0.75rem; border-radius: 6px; font-size: 0.825rem; font-weight: 600; cursor: pointer; }
   .btn-danger-sm:hover:not(:disabled) { background: #8a2412; }
   .btn-danger-sm:disabled { opacity: 0.4; cursor: default; }
@@ -326,6 +506,7 @@
   .guest-info { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
   .guest-name { font-weight: 600; color: #1a1510; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .guest-email { font-size: 0.8rem; color: #6b6058; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .guest-phone { font-size: 0.8rem; color: #8a7a6e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   .guest-meta { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
   .event-count { font-size: 0.8rem; color: #6b6058; white-space: nowrap; }
@@ -370,5 +551,30 @@
   .field input:focus { outline: 2px solid #b05525; outline-offset: -1px; }
   .field-hint { font-size: .775rem; color: #9a8f86; margin: 0; }
   .error-banner { background: #fdf2ee; border: 1px solid #f0c8b8; color: #7a2a1a; border-radius: 8px; padding: .625rem .875rem; font-size: .875rem; margin: 0; }
+  .success-banner { background: #e8f4e4; border: 1px solid #a8d8a0; color: #2a5e28; border-radius: 8px; padding: .625rem .875rem; font-size: .875rem; margin: 0; }
   .req { color: #c03828; }
+  .modal-wide { max-width: 560px; }
+  .field-select { padding: .5rem .75rem; border: 1px solid #c8bdb0; border-radius: 8px; font-size: .9rem; font-family: inherit; background: #fff; color: #1a1510; width: 100%; }
+  .field-select:focus { outline: 2px solid #b05525; outline-offset: -1px; }
+  .loading-text { margin: 0; font-size: 0.875rem; color: #6b6058; }
+  .channel-section { display: flex; flex-direction: column; gap: 0.5rem; border-top: 1px solid #e0d4c4; padding-top: 0.75rem; }
+  .channel-section-label { margin: 0 0 0.125rem; font-size: 0.8rem; font-weight: 600; color: #6b6058; text-transform: uppercase; letter-spacing: 0.04em; }
+  .checkbox { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; color: #1a1510; cursor: pointer; }
+  .checkbox input { accent-color: #b05525; cursor: pointer; }
+  .checkbox-disabled { opacity: 0.5; cursor: not-allowed; }
+  .checkbox-disabled input { cursor: not-allowed; }
+  .channel-count { font-size: 0.8rem; color: #9a8f86; }
+  .channel-hint { margin: 0; font-size: 0.8rem; color: #8a6020; background: #faf0d8; border: 1px solid #e0c880; border-radius: 6px; padding: 0.4rem 0.625rem; }
+  .phase-badge-sm { font-size: 0.7rem; font-weight: 700; background: #e8ddd0; color: #9a8f86; padding: 0.1rem 0.4rem; border-radius: 3px; }
+  .invited-results-list { display: flex; flex-direction: column; gap: 0.75rem; max-height: 320px; overflow-y: auto; }
+  .invited-result-row { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.625rem; background: #fff; border: 1px solid #e0d4c4; border-radius: 8px; }
+  .invited-result-header { display: flex; align-items: center; gap: 0.5rem; }
+  .dir-name { font-size: 0.875rem; font-weight: 600; color: #1a1510; }
+  .delivery-badge { font-size: 0.75rem; font-weight: 600; background: #e8f4e4; color: #2a5e28; padding: 0.15rem 0.5rem; border-radius: 4px; }
+  .invite-link-row { display: flex; align-items: center; gap: 0.5rem; }
+  .invite-url { font-size: 0.75rem; color: #4e453e; background: #f0e8da; border-radius: 4px; padding: 0.2rem 0.4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .copy-btn { background: #ede8e0; border: 1px solid #c8bdb0; color: #4e453e; font-size: 0.775rem; font-weight: 600; padding: 0.25rem 0.625rem; border-radius: 6px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+  .copy-btn:hover { background: #e0d8cc; }
+  .btn-whatsapp { display: inline-block; background: #25d366; color: #fff; text-decoration: none; font-size: 0.8rem; font-weight: 600; padding: 0.3rem 0.625rem; border-radius: 6px; width: fit-content; }
+  .btn-whatsapp:hover { background: #1dae53; }
 </style>

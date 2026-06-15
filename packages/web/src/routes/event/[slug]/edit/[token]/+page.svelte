@@ -4,6 +4,7 @@
   import { invalidateAll } from '$app/navigation'
   import { goto } from '$app/navigation'
   import { onMount } from 'svelte'
+  import QRCode from 'qrcode'
 
   let { data } = $props<{ data: PageData }>()
 
@@ -45,6 +46,10 @@
   let invitePersonalError = $state('')
   let copiedInviteTokenId = $state<string | null>(null)
   let showInviteModal = $state(false)
+  let showRevokeModal = $state(false)
+  let revokeTargetTokenId = $state<string | null>(null)
+  let revokeError = $state('')
+  let revoking = $state(false)
   const activeInviteTokens = $derived(inviteTokens.filter((t: TokenRow) => t.status === 'active'))
   const claimedInviteCount = $derived(activeInviteTokens.filter((t: TokenRow) => t.claimedBySessionId !== null).length)
   const unclaimedInviteCount = $derived(activeInviteTokens.filter((t: TokenRow) => t.claimedBySessionId === null).length)
@@ -132,6 +137,30 @@
     } catch { /* clipboard unavailable */ }
   }
 
+  let qrDataUrl = $state<string | null>(null)
+  let qrCopied = $state(false)
+
+  $effect(() => {
+    if (generalTokenRaw) {
+      QRCode.toDataURL(inviteUrl(generalTokenRaw), { width: 240, margin: 2, color: { dark: '#1a1510', light: '#f8f2e8' } })
+        .then(url => { qrDataUrl = url })
+        .catch(() => {})
+    } else {
+      qrDataUrl = null
+    }
+  })
+
+  async function copyQrCode() {
+    if (!qrDataUrl) return
+    try {
+      const res = await fetch(qrDataUrl)
+      const blob = await res.blob()
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+      qrCopied = true
+      setTimeout(() => { qrCopied = false }, 2000)
+    } catch { /* clipboard unavailable */ }
+  }
+
   async function copySingleUseLink() {
     generatingInvite = true
     inviteError = ''
@@ -152,6 +181,7 @@
     invitePersonalError = ''
     try {
       const res = await api.createToken(event.slug, { type: 'attendee', singleUse: true, label: newLinkLabel || undefined }, data.editToken)
+      try { localStorage.setItem(`haps:inviteLink:${event.slug}:${res.token.id}`, inviteUrl(res.rawToken)) } catch { /* storage unavailable */ }
       inviteTokens = [...inviteTokens, { id: res.token.id, type: 'attendee', label: res.token.label, status: 'active', singleUse: true, claimedBySessionId: null, createdAt: new Date().toISOString() }]
       newlyGenerated = [...newlyGenerated, { tokenId: res.token.id, rawToken: res.rawToken }]
       newLinkLabel = ''
@@ -162,20 +192,36 @@
     }
   }
 
-  async function revokeInviteToken(tokenId: string) {
-    if (!confirm('Revoke this invite link? It will no longer work.')) return
+  function openRevokeModal(tokenId: string) {
+    revokeTargetTokenId = tokenId
+    revokeError = ''
+    showRevokeModal = true
+  }
+
+  async function confirmRevoke() {
+    const tokenId = revokeTargetTokenId
+    if (!tokenId) return
+    revoking = true
+    revokeError = ''
     try {
       await api.deleteToken(event.slug, tokenId, data.editToken)
       inviteTokens = inviteTokens.map(t => t.id === tokenId ? { ...t, status: 'blacklisted' } : t)
       newlyGenerated = newlyGenerated.filter(g => g.tokenId !== tokenId)
-    } catch { /**/ }
+      directoryLoaded = false
+      showRevokeModal = false
+      revokeTargetTokenId = null
+    } catch (e: unknown) {
+      revokeError = e instanceof ApiError ? e.message : 'Failed to revoke invite.'
+    } finally {
+      revoking = false
+    }
   }
 
   async function copyPersonalInviteLink(tokenId: string) {
-    const gen = newlyGenerated.find(g => g.tokenId === tokenId)
-    if (!gen) return
+    const link = getInviteLink(tokenId)
+    if (!link) return
     try {
-      await navigator.clipboard.writeText(inviteUrl(gen.rawToken))
+      await navigator.clipboard.writeText(link)
       copiedInviteTokenId = tokenId
       setTimeout(() => { copiedInviteTokenId = null }, 2000)
     } catch { /**/ }
@@ -183,7 +229,7 @@
 
   // Directory invite
   type DirectoryContact = { id: string; name: string; email: string | null; phone: string | null; instagramHandle: string | null }
-  type InvitedLink = { contactId: string; contactName: string; tokenId: string; inviteLink: string }
+  type InvitedLink = { contactId: string; contactName: string; tokenId: string; inviteLink: string; emailSent: boolean; whatsappUrl: string | null }
   let showDirectoryModal = $state(false)
   let directoryGuests = $state<DirectoryContact[]>([])
   let directoryLoaded = $state(false)
@@ -193,6 +239,23 @@
   let directoryError = $state('')
   let invitedLinks = $state<InvitedLink[]>([])
   let copiedInviteLinkContactId = $state<string | null>(null)
+
+  let sendEmail = $state(false)
+  let sendWhatsapp = $state(false)
+  let noChannelWarning = $state(false)
+
+  const selectedEmailCount = $derived(
+    [...selectedGuestIds].filter(id => directoryGuests.find(g => g.id === id)?.email).length
+  )
+  const selectedPhoneCount = $derived(
+    [...selectedGuestIds].filter(id => directoryGuests.find(g => g.id === id)?.phone).length
+  )
+
+  function getInviteLink(tokenId: string): string | null {
+    const gen = newlyGenerated.find(g => g.tokenId === tokenId)
+    if (gen) return inviteUrl(gen.rawToken)
+    try { return localStorage.getItem(`haps:inviteLink:${event.slug}:${tokenId}`) ?? null } catch { return null }
+  }
 
   const filteredGuests = $derived(
     directoryGuests.filter(g => {
@@ -208,6 +271,7 @@
     directorySearch = ''
     directoryError = ''
     invitedLinks = []
+    noChannelWarning = false
     if (!directoryLoaded) {
       try {
         const res = await api.listDirectory(event.slug, data.editToken)
@@ -249,10 +313,17 @@
 
   async function sendDirectoryInvites() {
     if (selectedGuestIds.size === 0) return
+    noChannelWarning = !sendEmail && !sendWhatsapp
     inviting = true
     directoryError = ''
     try {
-      const res = await api.bulkInvite(event.slug, [...selectedGuestIds], data.editToken)
+      const channels: string[] = []
+      if (sendEmail) channels.push('email')
+      if (sendWhatsapp) channels.push('whatsapp')
+      const res = await api.bulkInvite(event.slug, [...selectedGuestIds], channels, data.editToken)
+      for (const inv of res.invitations) {
+        try { localStorage.setItem(`haps:inviteLink:${event.slug}:${inv.tokenId}`, inv.inviteLink) } catch { /* */ }
+      }
       invitedLinks = res.invitations
       directoryGuests = directoryGuests.filter(g => !selectedGuestIds.has(g.id))
       selectedGuestIds = new Set()
@@ -478,83 +549,33 @@
         {#if inviteError}<div class="error-banner">{inviteError}</div>{/if}
         {#if event.eventType === 'invite_only'}
           {#if event.status === 'draft'}
-            <p class="draft-lock">Event is in draft — guests will see it in their list after you publish.</p>
+            <p class="draft-lock">Event is in draft — guests will see it after you publish.</p>
           {/if}
-          <div class="channel-list">
-            <div class="channel-row">
-              <div class="channel-info">
-                <span class="channel-name">Guests</span>
-                <span class="channel-desc">Select from the directory or generate single-use links</span>
-              </div>
-              <div class="channel-actions">
-                <span class="invite-counter-sm">{activeInviteTokens.length} invited · {claimedInviteCount} visited</span>
-                <div class="invite-btn-group">
-                  <button class="btn-manage-invites" onclick={openDirectoryModal}>Directory →</button>
-                  <button class="btn-manage-invites" onclick={() => showInviteModal = true}>Links →</button>
-                </div>
-              </div>
-            </div>
-            <div class="channel-row channel-row-soon">
-              <div class="channel-info">
-                <span class="channel-name">Email</span>
-                <span class="channel-desc">Send a personal invite to a guest's email address</span>
-              </div>
-              <span class="phase-badge">Phase 2</span>
-            </div>
-            <div class="channel-row channel-row-soon">
-              <div class="channel-info">
-                <span class="channel-name">WhatsApp</span>
-                <span class="channel-desc">Open WhatsApp with the invite link pre-filled</span>
-              </div>
-              <span class="phase-badge">Phase 2</span>
-            </div>
-            <div class="channel-row channel-row-soon">
-              <div class="channel-info">
-                <span class="channel-name">In-app</span>
-                <span class="channel-desc">Notify via the guest inbox</span>
-              </div>
-              <span class="phase-badge">Phase 2</span>
-            </div>
+          <p class="invite-summary">{activeInviteTokens.length} active · {claimedInviteCount} claimed · {inviteTokens.filter(t => t.status !== 'active').length} revoked</p>
+          <div class="invite-btn-group">
+            <button class="btn-primary-sm" onclick={openDirectoryModal}>Invite people</button>
+            <button class="btn-secondary-sm" onclick={() => showInviteModal = true}>Links →</button>
           </div>
         {:else}
           {#if event.status === 'draft'}
             <p class="draft-lock">Publish the event to share the invite link.</p>
           {:else}
-            <div class="channel-list">
-              <div class="channel-row">
-                <div class="channel-info">
-                  <span class="channel-name">Link</span>
-                  <span class="channel-desc">Reusable — anyone with this link can RSVP</span>
-                </div>
-                <div class="channel-actions">
-                  {#if generalTokenRaw}
-                    <button class="copy-btn" onclick={copyGeneralLink}>{generalCopied ? 'Copied!' : 'Copy link'}</button>
-                  {:else}
-                    <span class="channel-unavailable">Visit via edit link to restore</span>
-                  {/if}
-                </div>
+            <div class="open-invite-row">
+              <p class="open-invite-desc">Open event — anyone with the link can RSVP.</p>
+              {#if generalTokenRaw}
+                <button class="copy-btn-sm" onclick={copyGeneralLink}>{generalCopied ? 'Copied!' : 'Copy link'}</button>
+              {:else}
+                <span class="channel-unavailable">Link unavailable — visit via edit link</span>
+              {/if}
+            </div>
+            {#if qrDataUrl}
+              <div class="qr-row">
+                <img src={qrDataUrl} alt="QR code for invite link" class="qr-img" />
+                <button class="btn-secondary-sm" onclick={copyQrCode}>{qrCopied ? 'Copied!' : 'Copy QR code'}</button>
               </div>
-              <div class="channel-row channel-row-soon">
-                <div class="channel-info">
-                  <span class="channel-name">Email</span>
-                  <span class="channel-desc">Send a personal invite to a guest's email address</span>
-                </div>
-                <span class="phase-badge">Phase 2</span>
-              </div>
-              <div class="channel-row channel-row-soon">
-                <div class="channel-info">
-                  <span class="channel-name">WhatsApp</span>
-                  <span class="channel-desc">Open WhatsApp with the invite link pre-filled</span>
-                </div>
-                <span class="phase-badge">Phase 2</span>
-              </div>
-              <div class="channel-row channel-row-soon">
-                <div class="channel-info">
-                  <span class="channel-name">In-app</span>
-                  <span class="channel-desc">Notify via the guest inbox</span>
-                </div>
-                <span class="phase-badge">Phase 2</span>
-              </div>
+            {/if}
+            <div class="open-invite-footer">
+              <button class="btn-secondary-sm" onclick={openDirectoryModal}>Invite people</button>
             </div>
           {/if}
         {/if}
@@ -686,7 +707,7 @@
         {:else}
           <div class="invite-list">
             {#each inviteTokens as token (token.id)}
-              {@const gen = newlyGenerated.find(g => g.tokenId === token.id)}
+              {@const inviteLink = getInviteLink(token.id)}
               <div class="invite-row">
                 <div class="invite-info">
                   <span class="invite-label">{token.label ?? 'Unnamed'}</span>
@@ -694,19 +715,21 @@
                     {token.status !== 'active' ? 'Revoked' : token.claimedBySessionId ? 'Visited' : 'Pending'}
                   </span>
                 </div>
-                {#if gen}
-                  <div class="invite-link-row">
-                    <code class="invite-url">{inviteUrl(gen.rawToken)}</code>
-                    <button class="copy-btn" onclick={() => copyPersonalInviteLink(token.id)}>
+                {#if token.status === 'active' && !token.claimedBySessionId}
+                  {#if inviteLink}
+                    <div class="invite-link-row">
+                      <code class="invite-url">{inviteLink}</code>
+                      <button class="copy-btn" onclick={() => copyPersonalInviteLink(token.id)}>
                       {copiedInviteTokenId === token.id ? 'Copied!' : 'Copy'}
                     </button>
                   </div>
-                {:else if token.status === 'active' && !token.claimedBySessionId}
-                  <p class="invite-lost">Link not shown — generated in a previous session</p>
+                  {:else}
+                    <p class="invite-lost">Link unavailable — re-invite via "Invite people"</p>
+                  {/if}
                 {/if}
                 {#if token.status === 'active' && !token.claimedBySessionId}
                   <div class="invite-actions">
-                    <button class="btn-revoke" onclick={() => revokeInviteToken(token.id)}>Revoke</button>
+                    <button class="btn-revoke" onclick={() => openRevokeModal(token.id)}>Revoke</button>
                   </div>
                 {/if}
               </div>
@@ -790,9 +813,9 @@
 
 {#if showDirectoryModal}
   <div class="modal-backdrop" onclick={() => showDirectoryModal = false} role="presentation">
-    <div class="modal modal-wide" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Invite from directory">
+    <div class="modal modal-wide" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Invite people">
       <div class="modal-header">
-        <h3>Invite from directory</h3>
+        <h3>Invite people</h3>
         <button class="modal-close" onclick={() => showDirectoryModal = false} aria-label="Close">×</button>
       </div>
       <div class="modal-body dir-modal-body">
@@ -800,17 +823,27 @@
           <div class="error-banner">{directoryError}</div>
         {/if}
         {#if invitedLinks.length > 0}
-          <div class="success-banner">{invitedLinks.length} invitation{invitedLinks.length !== 1 ? 's' : ''} generated — copy each link to share.</div>
+          {#if noChannelWarning}
+            <div class="info-banner">{invitedLinks.length} link{invitedLinks.length !== 1 ? 's' : ''} generated. No delivery channel selected — copy links below.</div>
+          {:else}
+            <div class="success-banner">{invitedLinks.length} invitation{invitedLinks.length !== 1 ? 's' : ''} sent.</div>
+          {/if}
           <div class="invited-links-list">
             {#each invitedLinks as inv (inv.contactId)}
               <div class="invited-link-row">
-                <span class="dir-name">{inv.contactName}</span>
+                <div class="invited-link-header">
+                  <span class="dir-name">{inv.contactName}</span>
+                  {#if inv.emailSent}<span class="delivery-badge">Email sent</span>{/if}
+                </div>
                 <div class="invite-link-row">
                   <code class="invite-url">{inv.inviteLink}</code>
                   <button class="copy-btn" onclick={() => copyInviteLink(inv.contactId, inv.inviteLink)}>
                     {copiedInviteLinkContactId === inv.contactId ? 'Copied!' : 'Copy'}
                   </button>
                 </div>
+                {#if inv.whatsappUrl}
+                  <a href={inv.whatsappUrl} target="_blank" rel="noopener noreferrer" class="btn-whatsapp">Open WhatsApp</a>
+                {/if}
               </div>
             {/each}
           </div>
@@ -846,9 +879,30 @@
               {/each}
             </div>
           {/if}
+          <div class="channel-section">
+            <p class="channel-section-label">Delivery channels</p>
+            <label class="checkbox">
+              <input type="checkbox" bind:checked={sendEmail} />
+              Email
+              {#if selectedGuestIds.size > 0}
+                <span class="channel-count">({selectedEmailCount} of {selectedGuestIds.size} have email)</span>
+              {/if}
+            </label>
+            <label class="checkbox">
+              <input type="checkbox" bind:checked={sendWhatsapp} />
+              WhatsApp
+              {#if selectedGuestIds.size > 0}
+                <span class="channel-count">({selectedPhoneCount} of {selectedGuestIds.size} have phone)</span>
+              {/if}
+            </label>
+            <label class="checkbox checkbox-disabled">
+              <input type="checkbox" disabled />
+              In-app <span class="phase-badge-sm">Phase 2</span>
+            </label>
+          </div>
           <div class="dir-footer">
             <button class="btn-primary" onclick={sendDirectoryInvites} disabled={selectedGuestIds.size === 0 || inviting}>
-              {inviting ? 'Inviting…' : selectedGuestIds.size > 0 ? `Invite ${selectedGuestIds.size} selected` : 'Select contacts to invite'}
+              {inviting ? 'Sending…' : selectedGuestIds.size > 0 ? `Invite ${selectedGuestIds.size}` : 'Select contacts'}
             </button>
             <button class="btn-ghost" onclick={() => showDirectoryModal = false}>Cancel</button>
           </div>
@@ -872,6 +926,30 @@
             Yes, cancel event
           </button>
           <button onclick={() => showCancelModal = false} class="btn-ghost">Keep published</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if showRevokeModal}
+  {@const revokeTargetLabel = inviteTokens.find(t => t.id === revokeTargetTokenId)?.label ?? null}
+  <div class="modal-backdrop" onclick={() => showRevokeModal = false} role="presentation">
+    <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Revoke invite link">
+      <div class="modal-header">
+        <h3>Revoke invite link</h3>
+        <button class="modal-close" onclick={() => showRevokeModal = false} aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        {#if revokeError}
+          <div class="error-banner">{revokeError}</div>
+        {/if}
+        <p class="modal-text">The invite link{revokeTargetLabel ? ` for "${revokeTargetLabel}"` : ''} will no longer work. This cannot be undone.</p>
+        <div class="modal-actions">
+          <button onclick={confirmRevoke} disabled={revoking} class="btn-danger-solid">
+            {revoking ? 'Revoking…' : 'Revoke link'}
+          </button>
+          <button onclick={() => showRevokeModal = false} class="btn-ghost">Keep active</button>
         </div>
       </div>
     </div>
@@ -928,6 +1006,21 @@
   .btn-cancel-event { background: none; border: 1px solid #f0c8b8; color: #8b3016; padding: 0.5rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
   .btn-cancel-event:hover:not(:disabled) { background: #fdf2ee; }
   .draft-lock { margin: 0; font-size: 0.875rem; color: #9a8f86; font-style: italic; }
+  .invite-summary { margin: 0 0 0.75rem; font-size: 0.875rem; color: #6b6058; }
+  .btn-primary-sm { background: #b05525; color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
+  .btn-primary-sm:hover { background: #924418; }
+  .btn-secondary-sm { background: none; border: 1px solid #c8bdb0; color: #4e453e; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
+  .btn-secondary-sm:hover { background: #e8ddd0; }
+  .channel-section { border-top: 1px solid #e8ddd0; margin-top: 1rem; padding-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+  .channel-section-label { margin: 0 0 0.25rem; font-size: 0.8rem; font-weight: 600; color: #6b6058; text-transform: uppercase; letter-spacing: 0.04em; }
+  .channel-count { font-size: 0.8rem; color: #9a8f86; margin-left: 0.25rem; }
+  .checkbox-disabled { opacity: 0.5; cursor: not-allowed; }
+  .phase-badge-sm { font-size: 0.7rem; font-weight: 700; background: #e8ddd0; color: #9a8f86; padding: 0.1rem 0.4rem; border-radius: 3px; margin-left: 0.25rem; }
+  .info-banner { background: #f0e8da; border: 1px solid #c8bdb0; border-radius: 6px; padding: 0.625rem 0.875rem; font-size: 0.875rem; color: #4e453e; margin-bottom: 0.75rem; }
+  .invited-link-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
+  .delivery-badge { font-size: 0.75rem; font-weight: 600; background: #e8f4e4; color: #2a5e28; padding: 0.15rem 0.5rem; border-radius: 4px; }
+  .btn-whatsapp { display: inline-block; background: #25d366; color: #fff; text-decoration: none; font-size: 0.8rem; font-weight: 600; padding: 0.35rem 0.75rem; border-radius: 6px; margin-top: 0.25rem; }
+  .btn-whatsapp:hover { background: #1dae53; }
 
   .channel-list { display: flex; flex-direction: column; }
   .channel-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid #e8ddd0; flex-wrap: wrap; }
@@ -939,6 +1032,13 @@
   .channel-desc { font-size: 0.8rem; color: #6b6058; }
   .channel-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
   .channel-unavailable { font-size: 0.78rem; color: #9a8f86; font-style: italic; }
+  .open-invite-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+  .open-invite-desc { margin: 0; font-size: 0.875rem; color: #4e453e; }
+  .copy-btn-sm { flex-shrink: 0; background: #c4962d; color: #fff; border: none; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .copy-btn-sm:hover { background: #a87c22; }
+  .qr-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-top: 0.875rem; }
+  .qr-img { width: 120px; height: 120px; border-radius: 8px; border: 1px solid #e0d4c4; flex-shrink: 0; }
+  .open-invite-footer { margin-top: 0.875rem; display: flex; justify-content: flex-end; }
   .invite-counter-sm { font-size: 0.78rem; color: #6b6058; }
   .phase-badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; background: #ede8e0; color: #9a8f86; border: 1px solid #d8d0c8; white-space: nowrap; }
 
@@ -947,7 +1047,7 @@
   label.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; font-weight: 400; }
   .checkboxes { display: flex; flex-direction: column; gap: 0.5rem; }
   .plus-ones-section { display: flex; flex-direction: column; gap: 0.5rem; }
-  .invite-btn-group { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .invite-btn-group { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
   .modal-wide { max-width: 640px; }
   .dir-modal-body { gap: 0; }
   .success-banner { background: #e8f4e4; color: #2a5e28; border: 1px solid #9cbb9c; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
