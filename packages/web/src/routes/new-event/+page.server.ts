@@ -30,7 +30,7 @@ export const actions: Actions = {
     if (!title || !eventDate || !eventTime) return fail(400, { error: 'Title, date, and time are required.' })
 
     try {
-      const res = await serverPost<{ event: { slug: string }; editToken: string; editLink: string; inviteToken: string | null }>(
+      const res = await serverPost<{ event: { slug: string }; editToken: string; editLink: string }>(
         '/events',
         {
           title, description, location, coordinates, dressCode, allowPlusOnes,
@@ -41,8 +41,7 @@ export const actions: Actions = {
         },
         cookies,
       )
-      const itParam = res.inviteToken ? `&it=${encodeURIComponent(res.inviteToken)}` : ''
-      redirect(302, `/event/${res.event.slug}/edit/${res.editToken}?created=1${itParam}`)
+      redirect(302, `/event/${res.event.slug}/edit/${res.editToken}?created=1`)
     } catch (e: unknown) {
       if (e instanceof ServerApiError) return fail(e.statusCode, { error: e.message })
       throw e

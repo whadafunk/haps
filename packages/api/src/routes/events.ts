@@ -54,7 +54,8 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
       ]
       // Open events get a general reusable invite token; invite-only events use per-person tokens
       if (body.eventType !== 'invite_only') {
-        tokenValues.push({ eventId: evt.id, type: 'attendee', tokenHash: inviteTokenHash, label: 'general', singleUse: false })
+        const generalInviteUrl = `${config.APP_URL}/event/${slug}?t=${rawInviteToken}`
+        tokenValues.push({ eventId: evt.id, type: 'attendee', tokenHash: inviteTokenHash, label: 'general', singleUse: false, inviteUrl: generalInviteUrl })
       }
       await tx.insert(eventTokens).values(tokenValues)
 
@@ -265,7 +266,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
 
     const tokens = await db
-      .select({ id: eventTokens.id, type: eventTokens.type, label: eventTokens.label, status: eventTokens.status, singleUse: eventTokens.singleUse, claimedBySessionId: eventTokens.claimedBySessionId, createdAt: eventTokens.createdAt })
+      .select({ id: eventTokens.id, type: eventTokens.type, label: eventTokens.label, status: eventTokens.status, singleUse: eventTokens.singleUse, inviteUrl: eventTokens.inviteUrl, claimedBySessionId: eventTokens.claimedBySessionId, createdAt: eventTokens.createdAt })
       .from(eventTokens)
       .where(eq(eventTokens.eventId, event.id))
 
@@ -284,18 +285,20 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
 
     const rawToken = generateToken()
     const tokenHash = await hashToken(rawToken)
+    const inviteUrl = `${config.APP_URL}/event/${slug}?t=${rawToken}`
     const inserted = await db.insert(eventTokens).values({
       eventId: event.id,
       type: 'attendee',
       tokenHash,
       label: body.label ?? null,
       singleUse: body.singleUse ?? false,
-    }).returning({ id: eventTokens.id, type: eventTokens.type, label: eventTokens.label, singleUse: eventTokens.singleUse })
+      inviteUrl,
+    }).returning({ id: eventTokens.id, type: eventTokens.type, label: eventTokens.label, singleUse: eventTokens.singleUse, inviteUrl: eventTokens.inviteUrl })
 
     const token = inserted[0]
     if (!token) throw createError(500, 'INTERNAL_ERROR', 'Failed to create token.')
 
-    return reply.code(201).send({ token, rawToken })
+    return reply.code(201).send({ token })
   })
 
   fastify.post('/api/events/:slug/cover', {
@@ -447,6 +450,8 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
         const rawToken = generateToken()
         const tokenHash = await hashToken(rawToken)
 
+        const inviteLink = `${config.APP_URL}/event/${slug}?t=${rawToken}`
+
         const [inserted] = await db.insert(eventTokens).values({
           eventId: event.id,
           type: 'attendee',
@@ -454,11 +459,10 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
           tokenHash,
           singleUse: true,
           contactId: contact.id,
+          inviteUrl: inviteLink,
         }).returning({ id: eventTokens.id })
 
         if (!inserted) continue
-
-        const inviteLink = `${config.APP_URL}/event/${slug}?t=${rawToken}`
 
         let emailSent = false
         if (body.channels.includes('email') && contact.email) {

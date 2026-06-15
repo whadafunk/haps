@@ -30,17 +30,13 @@
   let comments = $state<Array<{ id: string; displayName: string; body: string; createdAt: string }>>([])
   let commentsLoaded = $state(false)
 
-  type TokenRow = { id: string; type: string; label: string | null; status: string; singleUse: boolean; claimedBySessionId: string | null; createdAt: string }
-  const generalTokenId = (data.tokens as TokenRow[]).find(t => t.type === 'attendee' && !t.singleUse && t.status === 'active')?.id ?? null
-  let generalTokenRaw = $state<string | null>(null)
+  type TokenRow = { id: string; type: string; label: string | null; status: string; singleUse: boolean; inviteUrl: string | null; claimedBySessionId: string | null; createdAt: string }
+  let inviteTokens = $state((data.tokens as TokenRow[]).filter(t => t.type === 'attendee'))
+  const generalToken = $derived(inviteTokens.find((t: TokenRow) => !t.singleUse && t.status === 'active') ?? null)
   let generalCopied = $state(false)
-  let generatingInvite = $state(false)
-  let singleUseCopied = $state(false)
   let inviteError = $state('')
 
   // Invite-only token management
-  let inviteTokens = $state((data.tokens as TokenRow[]).filter(t => t.type === 'attendee'))
-  let newlyGenerated = $state<Array<{ tokenId: string; rawToken: string }>>([])
   let newLinkLabel = $state('')
   let generatingPersonalInvite = $state(false)
   let invitePersonalError = $state('')
@@ -50,7 +46,8 @@
   let revokeTargetTokenId = $state<string | null>(null)
   let revokeError = $state('')
   let revoking = $state(false)
-  let regeneratingInviteTokenId = $state<string | null>(null)
+  let qrTokenId = $state<string | null>(null)
+  let tokenQrCache = $state<Record<string, string>>({})
   const activeInviteTokens = $derived(inviteTokens.filter((t: TokenRow) => t.status === 'active'))
   const claimedInviteCount = $derived(activeInviteTokens.filter((t: TokenRow) => t.claimedBySessionId !== null).length)
   const unclaimedInviteCount = $derived(activeInviteTokens.filter((t: TokenRow) => t.claimedBySessionId === null).length)
@@ -91,28 +88,11 @@
   }
 
   onMount(() => {
-    const params = new URLSearchParams(window.location.search)
     const url = window.location.href.replace(/\?.*$/, '')
     editLink = url
     try {
       localStorage.setItem(`haps:editLink:${event.slug}`, url)
     } catch { /* storage disabled */ }
-
-    // Load general token raw value from localStorage (stored at event creation)
-    const initialIt = data.initialInviteToken
-    if (initialIt && generalTokenId) {
-      try {
-        localStorage.setItem(`haps:inviteToken:${event.slug}:${generalTokenId}`, initialIt)
-      } catch { /* storage disabled */ }
-      params.delete('it')
-      history.replaceState(null, '', url + (params.toString() ? '?' + params.toString() : ''))
-    }
-    if (generalTokenId) {
-      try {
-        const raw = localStorage.getItem(`haps:inviteToken:${event.slug}:${generalTokenId}`)
-        if (raw) generalTokenRaw = raw
-      } catch { /* storage disabled */ }
-    }
 
     api.listComments(event.slug).then(res => {
       comments = res.comments
@@ -125,14 +105,10 @@
     }).catch(() => { blastsLoaded = true })
   })
 
-  function inviteUrl(rawToken: string) {
-    return `${window.location.origin}/event/${event.slug}?t=${rawToken}`
-  }
-
   async function copyGeneralLink() {
-    if (!generalTokenRaw) return
+    if (!generalToken?.inviteUrl) return
     try {
-      await navigator.clipboard.writeText(inviteUrl(generalTokenRaw))
+      await navigator.clipboard.writeText(generalToken.inviteUrl)
       generalCopied = true
       setTimeout(() => { generalCopied = false }, 2000)
     } catch { /* clipboard unavailable */ }
@@ -142,9 +118,10 @@
   let qrCopied = $state(false)
 
   $effect(() => {
-    if (generalTokenRaw) {
-      QRCode.toDataURL(inviteUrl(generalTokenRaw), { width: 240, margin: 2, color: { dark: '#1a1510', light: '#f8f2e8' } })
-        .then(url => { qrDataUrl = url })
+    const url = generalToken?.inviteUrl ?? null
+    if (url) {
+      QRCode.toDataURL(url, { width: 240, margin: 2, color: { dark: '#1a1510', light: '#f8f2e8' } })
+        .then(d => { qrDataUrl = d })
         .catch(() => {})
     } else {
       qrDataUrl = null
@@ -162,29 +139,12 @@
     } catch { /* clipboard unavailable */ }
   }
 
-  async function copySingleUseLink() {
-    generatingInvite = true
-    inviteError = ''
-    try {
-      const res = await api.createToken(event.slug, { type: 'attendee', singleUse: true }, data.editToken)
-      await navigator.clipboard.writeText(inviteUrl(res.rawToken))
-      singleUseCopied = true
-      setTimeout(() => { singleUseCopied = false }, 2000)
-    } catch (e: unknown) {
-      inviteError = e instanceof ApiError ? e.message : 'Failed to generate link.'
-    } finally {
-      generatingInvite = false
-    }
-  }
-
   async function generatePersonalInvite() {
     generatingPersonalInvite = true
     invitePersonalError = ''
     try {
       const res = await api.createToken(event.slug, { type: 'attendee', singleUse: true, label: newLinkLabel || undefined }, data.editToken)
-      try { localStorage.setItem(`haps:inviteLink:${event.slug}:${res.token.id}`, inviteUrl(res.rawToken)) } catch { /* storage unavailable */ }
-      inviteTokens = [...inviteTokens, { id: res.token.id, type: 'attendee', label: res.token.label, status: 'active', singleUse: true, claimedBySessionId: null, createdAt: new Date().toISOString() }]
-      newlyGenerated = [...newlyGenerated, { tokenId: res.token.id, rawToken: res.rawToken }]
+      inviteTokens = [...inviteTokens, { id: res.token.id, type: 'attendee', label: res.token.label, status: 'active', singleUse: true, inviteUrl: res.token.inviteUrl, claimedBySessionId: null, createdAt: new Date().toISOString() }]
       newLinkLabel = ''
     } catch (e: unknown) {
       invitePersonalError = e instanceof ApiError ? e.message : 'Failed to generate invite.'
@@ -207,7 +167,6 @@
     try {
       await api.deleteToken(event.slug, tokenId, data.editToken)
       inviteTokens = inviteTokens.map(t => t.id === tokenId ? { ...t, status: 'blacklisted' } : t)
-      newlyGenerated = newlyGenerated.filter(g => g.tokenId !== tokenId)
       directoryLoaded = false
       showRevokeModal = false
       revokeTargetTokenId = null
@@ -218,32 +177,25 @@
     }
   }
 
-  async function regenerateInviteLink(token: TokenRow) {
-    regeneratingInviteTokenId = token.id
-    try {
-      await api.deleteToken(event.slug, token.id, data.editToken)
-      const res = await api.createToken(event.slug, { type: 'attendee', singleUse: true, label: token.label || undefined }, data.editToken)
-      try { localStorage.setItem(`haps:inviteLink:${event.slug}:${res.token.id}`, inviteUrl(res.rawToken)) } catch { /* storage unavailable */ }
-      inviteTokens = inviteTokens
-        .map(t => t.id === token.id ? { ...t, status: 'blacklisted' } : t)
-        .concat([{ id: res.token.id, type: 'attendee', label: res.token.label, status: 'active', singleUse: true, claimedBySessionId: null, createdAt: new Date().toISOString() }])
-      newlyGenerated = [...newlyGenerated.filter(g => g.tokenId !== token.id), { tokenId: res.token.id, rawToken: res.rawToken }]
-      directoryLoaded = false
-    } catch (e: unknown) {
-      invitePersonalError = e instanceof ApiError ? e.message : 'Failed to regenerate invite.'
-    } finally {
-      regeneratingInviteTokenId = null
-    }
-  }
-
   async function copyPersonalInviteLink(tokenId: string) {
-    const link = getInviteLink(tokenId)
-    if (!link) return
+    const token = inviteTokens.find(t => t.id === tokenId)
+    if (!token?.inviteUrl) return
     try {
-      await navigator.clipboard.writeText(link)
+      await navigator.clipboard.writeText(token.inviteUrl)
       copiedInviteTokenId = tokenId
       setTimeout(() => { copiedInviteTokenId = null }, 2000)
     } catch { /**/ }
+  }
+
+  async function toggleTokenQr(token: TokenRow) {
+    if (qrTokenId === token.id) { qrTokenId = null; return }
+    if (!tokenQrCache[token.id] && token.inviteUrl) {
+      try {
+        tokenQrCache[token.id] = await QRCode.toDataURL(token.inviteUrl, { width: 180, margin: 1, color: { dark: '#1a1510', light: '#f8f2e8' } })
+        tokenQrCache = { ...tokenQrCache }
+      } catch { /* QR generation failed */ }
+    }
+    qrTokenId = token.id
   }
 
   // Directory invite
@@ -271,9 +223,7 @@
   )
 
   function getInviteLink(tokenId: string): string | null {
-    const gen = newlyGenerated.find(g => g.tokenId === tokenId)
-    if (gen) return inviteUrl(gen.rawToken)
-    try { return localStorage.getItem(`haps:inviteLink:${event.slug}:${tokenId}`) ?? null } catch { return null }
+    return inviteTokens.find(t => t.id === tokenId)?.inviteUrl ?? null
   }
 
   const filteredGuests = $derived(
@@ -318,7 +268,7 @@
   async function refreshTokens() {
     try {
       const res = await api.listTokens(event.slug, data.editToken)
-      inviteTokens = res.tokens.filter(t => t.type === 'attendee')
+      inviteTokens = (res.tokens as TokenRow[]).filter(t => t.type === 'attendee')
     } catch { /* non-critical */ }
   }
 
@@ -345,11 +295,6 @@
       if (sendEmail) channels.push('email')
       if (sendWhatsapp) channels.push('whatsapp')
       const res = await api.bulkInvite(event.slug, [...selectedGuestIds], channels, data.editToken)
-      for (const inv of res.invitations) {
-        if (inv.tokenId && inv.inviteLink) {
-          try { localStorage.setItem(`haps:inviteLink:${event.slug}:${inv.tokenId}`, inv.inviteLink) } catch { /* */ }
-        }
-      }
       invitedLinks = res.invitations
       directoryGuests = directoryGuests.filter(g => !selectedGuestIds.has(g.id))
       selectedGuestIds = new Set()
@@ -589,10 +534,8 @@
           {:else}
             <div class="open-invite-row">
               <p class="open-invite-desc">Open event — anyone with the link can RSVP.</p>
-              {#if generalTokenRaw}
+              {#if generalToken?.inviteUrl}
                 <button class="copy-btn-sm" onclick={copyGeneralLink}>{generalCopied ? 'Copied!' : 'Copy link'}</button>
-              {:else}
-                <span class="channel-unavailable">Link unavailable — visit via edit link</span>
               {/if}
             </div>
             {#if qrDataUrl}
@@ -742,18 +685,18 @@
                     {token.status !== 'active' ? 'Revoked' : token.claimedBySessionId ? 'Visited' : 'Pending'}
                   </span>
                 </div>
-                {#if token.status === 'active' && !token.claimedBySessionId}
-                  {#if inviteLink}
-                    <div class="invite-link-row">
-                      <code class="invite-url">{inviteLink}</code>
-                      <button class="copy-btn" onclick={() => copyPersonalInviteLink(token.id)}>
+                {#if token.status === 'active' && !token.claimedBySessionId && inviteLink}
+                  <div class="invite-link-row">
+                    <code class="invite-url">{inviteLink}</code>
+                    <button class="copy-btn" onclick={() => copyPersonalInviteLink(token.id)}>
                       {copiedInviteTokenId === token.id ? 'Copied!' : 'Copy'}
                     </button>
+                    <button class="qr-btn" onclick={() => toggleTokenQr(token)} title="Show QR code">QR</button>
                   </div>
-                  {:else}
-                    <button class="btn-regenerate" onclick={() => regenerateInviteLink(token)} disabled={regeneratingInviteTokenId === token.id}>
-                      {regeneratingInviteTokenId === token.id ? 'Regenerating…' : 'Regenerate link'}
-                    </button>
+                  {#if qrTokenId === token.id && tokenQrCache[token.id]}
+                    <div class="token-qr-row">
+                      <img src={tokenQrCache[token.id]} alt="QR code for {token.label ?? 'invite'}" class="token-qr-img" />
+                    </div>
                   {/if}
                 {/if}
                 {#if token.status === 'active' && !token.claimedBySessionId}
@@ -1070,7 +1013,10 @@
   .channel-name { font-size: 0.875rem; font-weight: 600; color: #1a1510; }
   .channel-desc { font-size: 0.8rem; color: #6b6058; }
   .channel-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
-  .channel-unavailable { font-size: 0.78rem; color: #9a8f86; font-style: italic; }
+  .qr-btn { background: #ede8e0; border: 1px solid #c8bdb0; color: #4e453e; font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 6px; cursor: pointer; flex-shrink: 0; }
+  .qr-btn:hover { background: #e0d8cc; }
+  .token-qr-row { display: flex; justify-content: center; padding: 0.5rem 0 0.25rem; }
+  .token-qr-img { width: 120px; height: 120px; border-radius: 6px; }
   .open-invite-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
   .open-invite-desc { margin: 0; font-size: 0.875rem; color: #4e453e; }
   .copy-btn-sm { flex-shrink: 0; background: #c4962d; color: #fff; border: none; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
@@ -1177,9 +1123,6 @@
   .invite-status.claimed { background: #dde4dd; color: #4e453e; }
   .invite-status.revoked { background: #f8e8e2; color: #7a2a1a; }
   .invite-link-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-  .btn-regenerate { background: none; border: 1px solid #c8b8a8; color: #6b5c4c; padding: 0.25rem 0.625rem; border-radius: 6px; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
-  .btn-regenerate:hover:not(:disabled) { background: #f5ede4; }
-  .btn-regenerate:disabled { opacity: 0.6; cursor: default; }
   .invite-actions { display: flex; gap: 0.5rem; }
   .btn-revoke { background: none; border: 1px solid #f0c8b8; color: #8b3016; padding: 0.25rem 0.625rem; border-radius: 6px; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
   .btn-revoke:hover { background: #fdf2ee; }

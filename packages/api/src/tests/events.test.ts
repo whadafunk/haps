@@ -156,7 +156,7 @@ describe('Event tokens', () => {
       payload: { type: 'attendee', label: 'general' },
     })
     expect(res.statusCode).toBe(201)
-    expect(res.json().rawToken).toBeTruthy()
+    expect(res.json().token.inviteUrl).toBeTruthy()
   })
 
   it('revokes an attendee token', async () => {

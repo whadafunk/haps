@@ -88,6 +88,7 @@ export const eventTokens = pgTable('event_tokens', {
   label:                text('label'),
   status:               text('status').notNull().default('active'), // 'active' | 'blocked' | 'blacklisted'
   singleUse:            boolean('single_use').notNull().default(false),
+  inviteUrl:            text('invite_url'),  // raw URL for attendee tokens; null for edit tokens
   claimedBySessionId:   uuid('claimed_by_session_id').references(() => visitorSessions.id, { onDelete: 'set null' }),
   contactId:            uuid('contact_id').references(() => contacts.id, { onDelete: 'set null' }),
   createdAt:            timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
