@@ -72,6 +72,11 @@
   let guestListLoaded = $state(false)
 
   const event = $derived(data.event)
+  const rsvpDeadlinePassed = $derived(!!event.rsvpDeadline && new Date() > new Date(event.rsvpDeadline))
+
+  function formatDeadline(iso: string) {
+    return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+  }
 
   const THEMES: Record<string, Record<string, string>> = {
     forest: {
@@ -240,7 +245,7 @@
           <div class="meta-item">📍 {event.location}</div>
         {/if}
         <div class="meta-item">
-          {event.yesCount} going · {event.maybeCount} maybe
+          {event.yesCount} going · {event.maybeCount} maybe{event.waitlistCount > 0 ? ` · ${event.waitlistCount} waitlisted` : ''}
           {#if event.maxCapacity} · {event.maxCapacity} capacity{/if}
         </div>
       </div>
@@ -279,7 +284,25 @@
       <section class="section">
         <h2>RSVP</h2>
 
-        {#if data.inviteAlreadyUsed}
+        {#if event.rsvpDeadline && !rsvpDeadlinePassed}
+          <p class="deadline-notice">RSVP closes {formatDeadline(event.rsvpDeadline)}</p>
+        {/if}
+
+        {#if rsvpDeadlinePassed}
+          <div class="deadline-closed">
+            <strong>RSVP is closed.</strong>
+            <p>The deadline was {formatDeadline(event.rsvpDeadline!)}.</p>
+          </div>
+          {#if data.myRsvp}
+            <div class="rsvp-summary">
+              <div class="rsvp-summary-status rsvp-summary-{data.myRsvp.status}">
+                {data.myRsvp.status === 'yes' ? 'Going' : data.myRsvp.status === 'maybe' ? 'Maybe' : data.myRsvp.status === 'waitlist' ? 'Waitlisted' : 'Not going'}
+                {#if data.myRsvp.headCount > 1} · party of {data.myRsvp.headCount}{/if}
+              </div>
+              <div class="rsvp-summary-name">{data.myRsvp.displayName}</div>
+            </div>
+          {/if}
+        {:else if data.inviteAlreadyUsed}
           <div class="invite-used-banner">
             <strong>This invite link has already been used.</strong>
             <p>Contact the host for a new invite link.</p>
@@ -319,9 +342,15 @@
           </div>
         {:else if data.myRsvp && !editingRsvp}
           <!-- Read-only RSVP summary -->
+          {#if data.myRsvp.status === 'waitlist'}
+            <div class="waitlist-banner">
+              <strong>You're on the waitlist.</strong>
+              <p>We'll notify you if a spot opens up.</p>
+            </div>
+          {/if}
           <div class="rsvp-summary">
             <div class="rsvp-summary-status rsvp-summary-{data.myRsvp.status}">
-              {data.myRsvp.status === 'yes' ? 'Going' : data.myRsvp.status === 'maybe' ? 'Maybe' : 'Not going'}
+              {data.myRsvp.status === 'yes' ? 'Going' : data.myRsvp.status === 'maybe' ? 'Maybe' : data.myRsvp.status === 'waitlist' ? 'Waitlisted' : 'Not going'}
               {#if data.myRsvp.headCount > 1} · party of {data.myRsvp.headCount}{/if}
             </div>
             <div class="rsvp-summary-name">{data.myRsvp.displayName}</div>
@@ -504,6 +533,10 @@
   .editor-banner a { color: var(--accent, #b05525); text-decoration: none; font-weight: 600; }
   .section { background: var(--card-bg, #f0e8da); border: 1px solid var(--border, #cfc3b0); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
   .section h2 { margin: 0 0 1rem; font-size: 1.1rem; color: #1a1510; }
+  .deadline-notice { margin: 0 0 0.875rem; font-size: 0.85rem; color: #7a5a1a; background: #fef4e0; border: 1px solid #e0c870; border-radius: 6px; padding: 0.375rem 0.75rem; display: inline-block; }
+  .deadline-closed { background: #ede8e0; border: 1px solid #c8bdb0; border-radius: 8px; padding: 0.875rem 1rem; margin-bottom: 1rem; }
+  .deadline-closed strong { display: block; color: #1a1510; margin-bottom: 0.25rem; }
+  .deadline-closed p { margin: 0; font-size: 0.875rem; color: #6b6058; }
   .invite-used-banner { background: #fef4e0; color: #7a5a1a; border: 1px solid #e0c870; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
   .invite-used-banner strong { display: block; margin-bottom: 0.25rem; }
   .invite-used-banner p { margin: 0; font-size: 0.875rem; }
@@ -524,6 +557,10 @@
   .blocked-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.9rem; }
   .blocked-banner strong { display: block; margin-bottom: 0.25rem; }
   .blocked-banner p { margin: 0; font-size: 0.875rem; }
+  .waitlist-banner { background: #edf3fb; color: #1a4070; border: 1px solid #b0cce8; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
+  .waitlist-banner strong { display: block; margin-bottom: 0.25rem; }
+  .waitlist-banner p { margin: 0; font-size: 0.875rem; }
+  .rsvp-summary-waitlist { background: #edf3fb; color: #1a4070; border-color: #b0cce8; }
   .rsvp-form { display: flex; flex-direction: column; gap: 0.75rem; }
   .rsvp-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .rsvp-btn { padding: 0.5rem 1rem; border-radius: 8px; border: 2px solid var(--border, #cfc3b0); background: var(--card-bg, #f0e8da); font-size: 0.875rem; font-weight: 500; color: #3d352e; cursor: pointer; }

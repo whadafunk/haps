@@ -47,7 +47,7 @@ export interface Rsvp {
   userId?: string | null
   displayName: string
   email?: string | null
-  status: 'yes' | 'maybe' | 'no'
+  status: 'yes' | 'maybe' | 'no' | 'waitlist'
   headCount: number
   note?: string | null
   checkedIn: boolean

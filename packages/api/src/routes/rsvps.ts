@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, rsvps, visitorSessions, emailBlocklist, contacts } from '../db/schema.js'
-import { eq, and, count } from 'drizzle-orm'
+import { events, rsvps, visitorSessions, emailBlocklist, contacts, notifications } from '../db/schema.js'
+import { eq, and, count, asc } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { CreateRsvpSchema, UpdateRsvpSchema } from '@haps/shared'
 import { ensureSession } from '../middleware/session.js'
@@ -58,11 +58,11 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
 
     let rsvpStatus: string = body.status
     if (body.status === 'yes' && event.maxCapacity) {
-      const countRows = await db
+      const [countRow] = await db
         .select({ yesCount: count() })
         .from(rsvps)
         .where(and(eq(rsvps.eventId, event.id), eq(rsvps.status, 'yes')))
-      const yesCount = Number(countRows[0]?.yesCount ?? 0)
+      const yesCount = Number(countRow?.yesCount ?? 0)
       if (yesCount >= event.maxCapacity) {
         rsvpStatus = 'waitlist'
       }
@@ -130,11 +130,11 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
   })
 
   fastify.patch('/api/events/:slug/rsvps/:rsvpId', async (request) => {
-    const { rsvpId } = request.params as { slug: string; rsvpId: string }
+    const { slug, rsvpId } = request.params as { slug: string; rsvpId: string }
     const body = UpdateRsvpSchema.parse(request.body)
 
     const rows = await db
-      .select({ id: rsvps.id, sessionId: rsvps.sessionId, userId: rsvps.userId })
+      .select({ id: rsvps.id, sessionId: rsvps.sessionId, userId: rsvps.userId, status: rsvps.status, eventId: rsvps.eventId })
       .from(rsvps)
       .where(eq(rsvps.id, rsvpId))
       .limit(1)
@@ -149,7 +149,30 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!canEdit) throw createError(403, 'FORBIDDEN', 'Cannot modify this RSVP.')
 
     const updates: Partial<typeof rsvps.$inferInsert> & { updatedAt: Date } = { updatedAt: new Date() }
-    if (body.status !== undefined) updates.status = body.status
+
+    let finalStatus: string | undefined = body.status
+
+    if (body.status === 'yes' && existing.status !== 'yes') {
+      // Changing to 'yes' — check capacity
+      const [eventRow] = await db
+        .select({ maxCapacity: events.maxCapacity })
+        .from(events)
+        .where(eq(events.id, existing.eventId))
+        .limit(1)
+
+      if (eventRow?.maxCapacity) {
+        const [countRow] = await db
+          .select({ yesCount: count() })
+          .from(rsvps)
+          .where(and(eq(rsvps.eventId, existing.eventId), eq(rsvps.status, 'yes')))
+
+        if (Number(countRow?.yesCount ?? 0) >= eventRow.maxCapacity) {
+          finalStatus = 'waitlist'
+        }
+      }
+    }
+
+    if (finalStatus !== undefined) updates.status = finalStatus
     if (body.headCount !== undefined) updates.headCount = body.headCount
     if (body.note !== undefined) updates.note = body.note ?? null
 
@@ -157,14 +180,19 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
     const rsvp = updated[0]
     if (!rsvp) throw createError(404, 'RSVP_NOT_FOUND', 'RSVP not found.')
 
+    // If was confirmed and is now leaving confirmed status, open a spot for the waitlist
+    if (existing.status === 'yes' && finalStatus && finalStatus !== 'yes') {
+      await promoteFromWaitlist(existing.eventId, slug)
+    }
+
     return { rsvp: serializeRsvp(rsvp) }
   })
 
   fastify.delete('/api/events/:slug/rsvps/:rsvpId', async (request, reply) => {
-    const { rsvpId } = request.params as { slug: string; rsvpId: string }
+    const { slug, rsvpId } = request.params as { slug: string; rsvpId: string }
 
     const rows = await db
-      .select({ id: rsvps.id, sessionId: rsvps.sessionId, userId: rsvps.userId })
+      .select({ id: rsvps.id, sessionId: rsvps.sessionId, userId: rsvps.userId, status: rsvps.status, eventId: rsvps.eventId })
       .from(rsvps)
       .where(eq(rsvps.id, rsvpId))
       .limit(1)
@@ -179,6 +207,11 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!canDelete) throw createError(403, 'FORBIDDEN', 'Cannot delete this RSVP.')
 
     await db.delete(rsvps).where(eq(rsvps.id, rsvpId))
+
+    if (existing.status === 'yes') {
+      await promoteFromWaitlist(existing.eventId, slug)
+    }
+
     return reply.code(204).send()
   })
 
@@ -235,6 +268,46 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(isEditor ? { email: r.email } : {}),
       })),
     }
+  })
+}
+
+async function promoteFromWaitlist(eventId: string, eventSlug: string) {
+  const [eventRow] = await db
+    .select({ maxCapacity: events.maxCapacity })
+    .from(events)
+    .where(eq(events.id, eventId))
+    .limit(1)
+
+  if (!eventRow?.maxCapacity) return
+
+  const [countRow] = await db
+    .select({ yesCount: count() })
+    .from(rsvps)
+    .where(and(eq(rsvps.eventId, eventId), eq(rsvps.status, 'yes')))
+
+  const yesCount = Number(countRow?.yesCount ?? 0)
+  if (yesCount >= eventRow.maxCapacity) return
+
+  const [waitlisted] = await db
+    .select({ id: rsvps.id, sessionId: rsvps.sessionId, userId: rsvps.userId })
+    .from(rsvps)
+    .where(and(eq(rsvps.eventId, eventId), eq(rsvps.status, 'waitlist')))
+    .orderBy(asc(rsvps.createdAt))
+    .limit(1)
+
+  if (!waitlisted) return
+
+  await db.update(rsvps)
+    .set({ status: 'yes', updatedAt: new Date() })
+    .where(eq(rsvps.id, waitlisted.id))
+
+  await db.insert(notifications).values({
+    sessionId: waitlisted.sessionId ?? null,
+    userId:    waitlisted.userId ?? null,
+    eventId:   eventId,
+    type:      'waitlist_promotion',
+    body:      "A spot opened up — you've been moved from the waitlist to confirmed!",
+    link:      `/event/${eventSlug}`,
   })
 }
 

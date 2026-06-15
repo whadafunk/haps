@@ -7,6 +7,7 @@
   let selectedTheme = $state('')
   let selectedType = $state<'open' | 'invite_only'>('open')
   let allowPlusOnes = $state(false)
+  let hasDeadline = $state(false)
   let dateError = $state('')
 
   const THEMES: Record<string, Record<string, string>> = {
@@ -112,12 +113,23 @@
           <option value="Australia/Sydney">Sydney (AEST)</option>
         </select>
       </label>
-      {#if selectedType === 'open'}
-        <label>
-          Max capacity
-          <input type="number" name="maxCapacity" min="1" placeholder="Unlimited" />
+      <label>
+        Max capacity
+        <input type="number" name="maxCapacity" min="1" placeholder="Unlimited" />
+        <span class="field-hint">Leave blank for no limit</span>
+      </label>
+      <div class="deadline-section">
+        <label class="checkbox-label">
+          <input type="checkbox" bind:checked={hasDeadline} />
+          Set RSVP deadline
         </label>
-      {/if}
+        {#if hasDeadline}
+          <label>
+            RSVP closes on
+            <input type="date" name="rsvpDeadline" />
+          </label>
+        {/if}
+      </div>
       <div class="plus-ones-section">
         <label class="checkbox-label">
           <input type="checkbox" name="allowPlusOnes" bind:checked={allowPlusOnes} />
@@ -165,6 +177,7 @@
   .btn-primary:hover:not(:disabled) { background: var(--accent-hover, #924418); }
   .btn-primary:disabled { opacity: 0.6; }
   .error-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
+  .deadline-section { display: flex; flex-direction: column; gap: 0.5rem; }
   .plus-ones-section { display: flex; flex-direction: column; gap: 0.5rem; }
   .checkbox-label { display: flex; flex-direction: row; align-items: center; gap: 0.5rem; font-weight: 400; }
   .type-fieldset { border: 1px solid #c8bdb0; border-radius: 8px; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }

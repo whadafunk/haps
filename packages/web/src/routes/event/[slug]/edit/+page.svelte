@@ -24,6 +24,7 @@
   let rsvps = $state([...data.rsvps])
   const yesCount = $derived(rsvps.filter(r => r.status === 'yes').length)
   const maybeCount = $derived(rsvps.filter(r => r.status === 'maybe').length)
+  const waitlistCount = $derived(rsvps.filter(r => r.status === 'waitlist').length)
   let showGuestModal = $state(false)
 
   let comments = $state<Array<{ id: string; displayName: string; body: string; createdAt: string }>>([])
@@ -342,6 +343,8 @@
         theme: event.theme ?? undefined,
         showGuests: event.showGuests,
         allowComments: event.allowComments,
+        rsvpDeadline: event.rsvpDeadline ?? null,
+        maxCapacity: event.maxCapacity ?? null,
       }, data.editToken)
       saveSuccess = true
       setTimeout(() => { saveSuccess = false }, 2000)
@@ -456,6 +459,22 @@
           <label>Location <input type="text" bind:value={event.location} /></label>
           <label>Starts at <input type="datetime-local" value={event.startsAt?.slice(0, 16)} oninput={(e) => { event.startsAt = (e.target as HTMLInputElement).value + ':00Z' }} /></label>
           <label>
+            Max capacity
+            <input type="number" min="1" placeholder="Unlimited"
+              value={event.maxCapacity ?? ''}
+              oninput={(e) => { const v = (e.target as HTMLInputElement).value; event.maxCapacity = v ? parseInt(v, 10) : null }}
+            />
+            <span class="field-hint">Leave blank for no limit</span>
+          </label>
+          <label>
+            RSVP deadline
+            <input type="date"
+              value={event.rsvpDeadline?.slice(0, 10) ?? ''}
+              oninput={(e) => { const v = (e.target as HTMLInputElement).value; event.rsvpDeadline = v ? v + 'T23:59:59Z' : null }}
+            />
+            <span class="field-hint">Leave blank to remove deadline</span>
+          </label>
+          <label>
             Theme
             <select bind:value={event.theme}>
               <option value="">Default (warm)</option>
@@ -529,7 +548,7 @@
           {#if rsvps.length === 0}
             No RSVPs yet
           {:else}
-            {rsvps.length} RSVP{rsvps.length !== 1 ? 's' : ''} · {yesCount} going{maybeCount > 0 ? ` · ${maybeCount} maybe` : ''}
+            {rsvps.length} RSVP{rsvps.length !== 1 ? 's' : ''} · {yesCount} going{maybeCount > 0 ? ` · ${maybeCount} maybe` : ''}{waitlistCount > 0 ? ` · ${waitlistCount} waitlisted` : ''}{event.maxCapacity ? ` · ${event.maxCapacity} capacity` : ''}
           {/if}
         </p>
       </section>
@@ -980,6 +999,7 @@
   .phase-badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; background: #ede8e0; color: #9a8f86; border: 1px solid #d8d0c8; white-space: nowrap; }
 
   .form { display: flex; flex-direction: column; gap: 0.75rem; }
+  .field-hint { font-size: 0.75rem; font-weight: 400; color: #9a8e85; margin-top: 0.125rem; }
   label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; font-weight: 500; color: #3d352e; }
   label.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; font-weight: 400; }
   .checkboxes { display: flex; flex-direction: column; gap: 0.5rem; }

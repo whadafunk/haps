@@ -136,6 +136,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
         guestCount: count(),
         yesCount: sql<number>`count(*) filter (where ${rsvps.status} = 'yes')`,
         maybeCount: sql<number>`count(*) filter (where ${rsvps.status} = 'maybe')`,
+        waitlistCount: sql<number>`count(*) filter (where ${rsvps.status} = 'waitlist')`,
       })
       .from(rsvps)
       .leftJoin(visitorSessions, eq(rsvps.sessionId, visitorSessions.id))
@@ -166,6 +167,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
         guestCount: Number(counts?.guestCount ?? 0),
         yesCount: Number(counts?.yesCount ?? 0),
         maybeCount: Number(counts?.maybeCount ?? 0),
+        waitlistCount: Number(counts?.waitlistCount ?? 0),
       },
       myRsvp,
       isEditor: isEditor ?? false,
