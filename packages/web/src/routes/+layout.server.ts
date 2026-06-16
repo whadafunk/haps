@@ -2,11 +2,13 @@ import type { LayoutServerLoad } from './$types'
 import { serverGet } from '$lib/serverFetch'
 
 export const load: LayoutServerLoad = async ({ cookies }) => {
+  let requireRsvpBeforeRegister = true
   try {
-    const { setupRequired } = await serverGet<{ setupRequired: boolean }>('/setup/status', cookies)
-    if (setupRequired) return { meta: null, session: null, user: null, setupRequired: true }
+    const status = await serverGet<{ setupRequired: boolean; requireRsvpBeforeRegister: boolean }>('/setup/status', cookies)
+    if (status.setupRequired) return { meta: null, session: null, user: null, setupRequired: true, requireRsvpBeforeRegister: true }
+    requireRsvpBeforeRegister = status.requireRsvpBeforeRegister
   } catch {
-    return { meta: null, session: null, user: null, setupRequired: false }
+    return { meta: null, session: null, user: null, setupRequired: false, requireRsvpBeforeRegister: true }
   }
 
   let user: { id: string; email: string; displayName: string; role: string } | null = null
@@ -28,5 +30,5 @@ export const load: LayoutServerLoad = async ({ cookies }) => {
     }
   }
 
-  return { meta: null, session, user, setupRequired: false }
+  return { meta: null, session, user, setupRequired: false, requireRsvpBeforeRegister }
 }

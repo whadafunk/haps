@@ -11,7 +11,7 @@
   let displayName = $state(data.session?.displayName ?? '')
   let loading = $state(false)
   let error = $state('')
-  let noHistory = $state(false)
+  let noHistory = $state(data.noHistory)
 
   async function submit() {
     error = ''

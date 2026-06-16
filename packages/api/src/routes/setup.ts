@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { users } from '../db/schema.js'
+import { users, instanceConfig } from '../db/schema.js'
 import { eq, count } from 'drizzle-orm'
 import { hashPassword } from '../lib/crypto.js'
 import { createError } from '../lib/errors.js'
@@ -19,7 +19,11 @@ async function adminCount(): Promise<number> {
 
 const setupRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/api/setup/status', async () => {
-    return { setupRequired: (await adminCount()) === 0 }
+    const [cfg] = await db.select({ requireRsvpBeforeRegister: instanceConfig.requireRsvpBeforeRegister }).from(instanceConfig).limit(1)
+    return {
+      setupRequired: (await adminCount()) === 0,
+      requireRsvpBeforeRegister: cfg?.requireRsvpBeforeRegister ?? true,
+    }
   })
 
   fastify.post('/api/setup', async (request, reply) => {

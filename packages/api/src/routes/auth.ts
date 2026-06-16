@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
 import { users, visitorSessions, rsvps, comments, magicLinks, instanceConfig } from '../db/schema.js'
-import { eq, and, lt, count } from 'drizzle-orm'
+import { eq, and, lt, count, or } from 'drizzle-orm'
 import { verifyPassword, hashPassword, generateToken, sha256hex } from '../lib/crypto.js'
 import { signJwt, signRefreshToken, verifyRefreshToken } from '../middleware/auth.js'
 import { createError } from '../lib/errors.js'
@@ -133,13 +133,13 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     const guardEnabled = cfg?.requireRsvpBeforeRegister ?? true
     if (guardEnabled) {
       if (!request.session) throw createError(403, 'NO_EVENT_HISTORY', 'RSVP to at least one event before creating an account.')
-      if (!request.session.userId) {
-        const countRows = await db
-          .select({ rsvpCount: count() })
-          .from(rsvps)
-          .where(eq(rsvps.sessionId, request.session.id))
-        if ((countRows[0]?.rsvpCount ?? 0) === 0) throw createError(403, 'NO_EVENT_HISTORY', 'RSVP to at least one event before creating an account.')
-      }
+      // Check RSVPs by session_id OR user_id — sessions retain their userId after logout,
+      // so skipping the check when userId is set allows anyone who was ever logged in to bypass the guard.
+      const rsvpCondition = request.session.userId
+        ? or(eq(rsvps.sessionId, request.session.id), eq(rsvps.userId, request.session.userId))
+        : eq(rsvps.sessionId, request.session.id)
+      const countRows = await db.select({ rsvpCount: count() }).from(rsvps).where(rsvpCondition)
+      if ((countRows[0]?.rsvpCount ?? 0) === 0) throw createError(403, 'NO_EVENT_HISTORY', 'RSVP to at least one event before creating an account.')
     }
 
     const [existing] = await db
