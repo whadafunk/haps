@@ -56,7 +56,7 @@
     guestError = ''
     guestSuccess = false
     try {
-      await api.setupContact({
+      await api.setupGuestIdentity({
         displayName: guestName.trim(),
         email: guestEmail.trim(),
         phone: guestPhone.trim() || undefined,

@@ -13,10 +13,17 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
     const session = request.session
 
     // Self-heal: if user is logged in but session hasn't been linked yet, link now
-    if (request.user && !session.userId) {
+    if (request.user?.type === 'operator' && !session.userId) {
       session.userId = request.user.sub
       db.update(visitorSessions)
         .set({ userId: request.user.sub })
+        .where(eq(visitorSessions.id, session.id))
+        .execute()
+        .catch(() => {})
+    } else if (request.user?.type === 'guest' && !session.guestId) {
+      session.guestId = request.user.sub
+      db.update(visitorSessions)
+        .set({ guestId: request.user.sub })
         .where(eq(visitorSessions.id, session.id))
         .execute()
         .catch(() => {})

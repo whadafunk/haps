@@ -28,7 +28,7 @@ export interface InviteEntry {
 export interface GuestDetail {
   id: string
   shortId: string
-  type: 'contact' | 'guest' | 'admin' | 'organizer' | 'session'
+  type: 'unclaimed' | 'claimed' | 'admin' | 'organizer' | 'session'
   displayName: string | null
   email: string | null
   phone: string | null
@@ -50,11 +50,14 @@ export const load: PageServerLoad = async ({ params, parent, cookies }) => {
   } else if (id.startsWith('s-')) {
     endpoint = `/admin/guests/session/${id.slice(2)}`
   } else if (id.startsWith('c-')) {
-    endpoint = `/admin/guests/contact/${id.slice(2)}`
+    // Old contact-prefixed IDs — use the unified guest endpoint
+    endpoint = `/admin/guests/${id.slice(2)}`
   } else {
-    throw error(404)
+    // Bare UUID — direct guest lookup
+    endpoint = `/admin/guests/${id}`
   }
 
-  const { guest } = await serverGet<{ guest: GuestDetail }>(endpoint, cookies)
-  return { guest }
+  const data = await serverGet<{ guest: GuestDetail }>(endpoint, cookies).catch(() => null)
+  if (!data) throw error(404)
+  return { guest: data.guest }
 }

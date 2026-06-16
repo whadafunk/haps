@@ -81,7 +81,7 @@
     if (!editName.trim()) { editError = 'Name is required.'; return }
     editSaving = true; editError = ''
     try {
-      await api.updateContact(data.guest.id, {
+      await api.updateGuest(data.guest.id, {
         name:            editName.trim(),
         email:           editEmail.trim() || null,
         phone:           editPhone.trim() || null,
@@ -103,7 +103,7 @@
   async function doDeleteContact() {
     deleteLoading = true; deleteError = ''
     try {
-      await api.deleteContact(data.guest.id)
+      await api.deleteGuest(data.guest.id)
       showDeleteModal = false
       goto('/admin/guests')
     } catch (e: unknown) {
@@ -135,8 +135,10 @@
           <p class="guest-notes">{data.guest.notes}</p>
         {/if}
         <div class="guest-badges">
-          {#if data.guest.type === 'contact'}
-            <span class="type-badge type-contact">Contact</span>
+          {#if data.guest.type === 'unclaimed'}
+            <span class="type-badge type-contact">Guest</span>
+          {:else if data.guest.type === 'claimed'}
+            <span class="type-badge type-guest">Registered</span>
           {:else if data.guest.type === 'admin'}
             <span class="type-badge type-admin">Admin</span>
           {:else if data.guest.type === 'organizer'}
@@ -160,7 +162,7 @@
         {#if actionError || deleteError}
           <p class="action-error">{actionError || deleteError}</p>
         {/if}
-        {#if data.guest.type === 'contact' || data.guest.type === 'guest' || data.guest.type === 'admin' || data.guest.type === 'organizer'}
+        {#if data.guest.type === 'unclaimed' || data.guest.type === 'claimed' || data.guest.type === 'admin' || data.guest.type === 'organizer'}
           <button class="btn-secondary" onclick={openEditModal}>Edit</button>
           <button class="btn-danger-outline" onclick={() => { showDeleteModal = true; deleteError = '' }}>Delete</button>
         {:else if data.guest.type === 'session' && data.guest.status !== 'removed'}

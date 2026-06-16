@@ -160,8 +160,8 @@ export const BlockGuestSchema = z.object({
   blockEmail: z.boolean().optional(),
 }).strict()
 
-// Update a contact in the People directory
-export const UpdateContactSchema = z.object({
+// Update a guest in the People directory
+export const UpdateGuestSchema = z.object({
   name:            z.string().min(1).max(200).optional(),
   email:           z.string().email().nullish(),
   phone:           z.string().max(50).nullish(),
@@ -169,8 +169,8 @@ export const UpdateContactSchema = z.object({
   notes:           z.string().max(1000).nullish(),
 }).strict()
 
-// Manually create a contact in the People directory
-export const CreateContactSchema = z.object({
+// Manually create a guest in the People directory
+export const CreateGuestSchema = z.object({
   name:            z.string().min(1).max(200),
   email:           z.string().email(),
   phone:           z.string().max(50).optional(),
@@ -178,7 +178,11 @@ export const CreateContactSchema = z.object({
   notes:           z.string().max(1000).optional(),
 }).strict()
 
-// Invite contacts from directory to an event
+// Keep aliases for backward compatibility
+export const UpdateContactSchema = UpdateGuestSchema
+export const CreateContactSchema = CreateGuestSchema
+
+// Invite guests from directory to an event
 export const InviteContactsSchema = z.object({
   contactIds: z.array(z.string().uuid()).min(1).max(100),
   channels: z.array(z.enum(['email', 'whatsapp'])).optional().default([]),

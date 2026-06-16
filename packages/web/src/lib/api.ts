@@ -79,11 +79,18 @@ export const api = {
   changePassword: (body: { currentPassword: string; newPassword: string }) =>
     apiFetch<void>('/auth/change-password', { method: 'POST', body: JSON.stringify(body) }),
 
+  getMyGuestIdentity: () =>
+    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null } }>('/auth/me/guest'),
+
+  setupGuestIdentity: (body: { displayName: string; email: string; phone?: string; instagramHandle?: string }) =>
+    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null } }>('/auth/me/guest', { method: 'POST', body: JSON.stringify(body) }),
+
+  // Deprecated aliases kept for backward compat
   getContact: () =>
-    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null } }>('/auth/me/contact'),
+    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null } }>('/auth/me/guest'),
 
   setupContact: (body: { displayName: string; email: string; phone?: string; instagramHandle?: string }) =>
-    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null } }>('/auth/me/contact', { method: 'POST', body: JSON.stringify(body) }),
+    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null } }>('/auth/me/guest', { method: 'POST', body: JSON.stringify(body) }),
 
   deleteAccount: () =>
     apiFetch<void>('/auth/me', { method: 'DELETE' }),
@@ -235,15 +242,26 @@ export const api = {
     apiFetch<{ user: { id: string; email: string; displayName: string; role: string } }>('/admin/users', { method: 'POST', body: JSON.stringify(body) }),
 
   // People directory
-  createContact: (body: { name: string; email?: string; phone?: string; instagramHandle?: string; notes?: string }) =>
-    apiFetch<{ contact: { id: string; name: string; email: string | null } }>('/contacts', { method: 'POST', body: JSON.stringify(body) }),
+  createGuest: (body: { name: string; email?: string; phone?: string; instagramHandle?: string; notes?: string }) =>
+    apiFetch<{ contact: { id: string; name: string; email: string | null } }>('/guests', { method: 'POST', body: JSON.stringify(body) }),
 
-  updateContact: (contactId: string, body: { name?: string; email?: string | null; phone?: string | null; instagramHandle?: string | null; notes?: string | null }) =>
+  updateGuest: (guestId: string, body: { name?: string; email?: string | null; phone?: string | null; instagramHandle?: string | null; notes?: string | null }) =>
     apiFetch<{ contact: { id: string; name: string; email: string | null; phone: string | null; instagramHandle: string | null; notes: string | null } }>(
-      `/contacts/${contactId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+      `/guests/${guestId}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  deleteContact: (contactId: string) =>
-    apiFetch<void>(`/contacts/${contactId}`, { method: 'DELETE' }),
+  deleteGuest: (guestId: string) =>
+    apiFetch<void>(`/guests/${guestId}`, { method: 'DELETE' }),
+
+  // Deprecated aliases
+  createContact: (body: { name: string; email?: string; phone?: string; instagramHandle?: string; notes?: string }) =>
+    apiFetch<{ contact: { id: string; name: string; email: string | null } }>('/guests', { method: 'POST', body: JSON.stringify(body) }),
+
+  updateContact: (guestId: string, body: { name?: string; email?: string | null; phone?: string | null; instagramHandle?: string | null; notes?: string | null }) =>
+    apiFetch<{ contact: { id: string; name: string; email: string | null; phone: string | null; instagramHandle: string | null; notes: string | null } }>(
+      `/guests/${guestId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  deleteContact: (guestId: string) =>
+    apiFetch<void>(`/guests/${guestId}`, { method: 'DELETE' }),
 
   // Admin guests
   blockGuest: (sessionId: string, body: { reason: string; blockEmail?: boolean }) =>

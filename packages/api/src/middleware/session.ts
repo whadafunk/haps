@@ -16,6 +16,7 @@ declare module 'fastify' {
       statusReason: string | null
       eventAccess: Record<string, 'attendee' | 'editor'>
       userId: string | null
+      guestId: string | null
     } | null
   }
 }
@@ -41,6 +42,7 @@ const sessionPlugin: FastifyPluginAsync = async (fastify) => {
         statusReason:    visitorSessions.statusReason,
         eventAccess:     visitorSessions.eventAccess,
         userId:          visitorSessions.userId,
+        guestId:         visitorSessions.guestId,
       })
       .from(visitorSessions)
       .where(eq(visitorSessions.id, sessionId.value))
@@ -59,6 +61,7 @@ const sessionPlugin: FastifyPluginAsync = async (fastify) => {
       statusReason:    session.statusReason,
       eventAccess:     (session.eventAccess as Record<string, 'attendee' | 'editor'>) ?? {},
       userId:          session.userId,
+      guestId:         session.guestId,
     }
 
     db.update(visitorSessions)
@@ -72,12 +75,13 @@ const sessionPlugin: FastifyPluginAsync = async (fastify) => {
 export async function ensureSession(request: FastifyRequest, reply: FastifyReply) {
   if (request.session) return
 
-  // Link the new session to the authenticated user immediately if one is present
-  const userId = request.user?.sub ?? null
+  // Link the new session to the authenticated user/guest immediately if one is present
+  const userId = (request.user?.type === 'operator') ? request.user.sub : null
+  const guestId = (request.user?.type === 'guest') ? request.user.sub : null
 
   const rows = await db
     .insert(visitorSessions)
-    .values(userId ? { userId } : {})
+    .values({ userId: userId ?? undefined, guestId: guestId ?? undefined })
     .returning({
       id:              visitorSessions.id,
       displayName:     visitorSessions.displayName,
@@ -88,6 +92,7 @@ export async function ensureSession(request: FastifyRequest, reply: FastifyReply
       statusReason:    visitorSessions.statusReason,
       eventAccess:     visitorSessions.eventAccess,
       userId:          visitorSessions.userId,
+      guestId:         visitorSessions.guestId,
     })
 
   const session = rows[0]
@@ -111,7 +116,8 @@ export async function ensureSession(request: FastifyRequest, reply: FastifyReply
     status:          session.status ?? 'active',
     statusReason:    session.statusReason,
     eventAccess:     (session.eventAccess as Record<string, 'attendee' | 'editor'>) ?? {},
-    userId,
+    userId:          session.userId,
+    guestId:         session.guestId,
   }
 }
 

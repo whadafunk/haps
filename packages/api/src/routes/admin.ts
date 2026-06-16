@@ -1,9 +1,9 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { users, events, instanceConfig, visitorSessions, rsvps, eventTokens, emailBlocklist, contacts } from '../db/schema.js'
+import { users, events, instanceConfig, visitorSessions, rsvps, eventTokens, emailBlocklist, guests } from '../db/schema.js'
 import { eq, count, sql, and, isNull, desc, ne, inArray } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
-import { CreateUserSchema, BlockGuestSchema, RemoveGuestSchema, CreateContactSchema, UpdateContactSchema } from '@haps/shared'
+import { CreateUserSchema, BlockGuestSchema, RemoveGuestSchema, CreateGuestSchema, UpdateGuestSchema } from '@haps/shared'
 import { hashPassword } from '../lib/crypto.js'
 import { config } from '../lib/config.js'
 import { z } from 'zod'
@@ -47,10 +47,10 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
     if (!user) throw createError(500, 'INTERNAL_ERROR', 'Failed to create user.')
 
-    // Auto-create/claim contact for the new user
-    await db.insert(contacts)
+    // Auto-create/claim guest for the new operator user
+    await db.insert(guests)
       .values({ name: body.displayName, email: body.email.toLowerCase(), userId: user.id })
-      .onConflictDoUpdate({ target: contacts.email, set: { userId: user.id, name: body.displayName, updatedAt: new Date() } })
+      .onConflictDoUpdate({ target: guests.email, set: { userId: user.id, name: body.displayName, updatedAt: new Date() } })
 
     return reply.code(201).send({ user })
   })
@@ -149,54 +149,76 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/api/admin/guests', { preHandler: staffPreHandler }, async () => {
     const rows = await db
       .select({
-        id:          contacts.id,
+        id:          guests.id,
         type:        sql<string>`case
-          when ${contacts.userId} is null then 'contact'
-          when ${users.role} = 'admin' then 'admin'
-          when ${users.role} = 'organizer' then 'organizer'
-          else 'guest'
+          when ${guests.passwordHash} is not null and ${guests.userId} is not null and ${users.role} = 'admin' then 'admin'
+          when ${guests.passwordHash} is not null and ${guests.userId} is not null and ${users.role} = 'organizer' then 'organizer'
+          when ${guests.passwordHash} is not null then 'claimed'
+          else 'unclaimed'
         end`,
-        displayName: contacts.name,
-        email:       contacts.email,
-        phone:       contacts.phone,
-        status:      contacts.status,
-        firstSeen:   sql<string>`coalesce((select min(r.created_at) from rsvps r where r.contact_id = ${contacts.id}), ${contacts.createdAt})::text`,
-        eventCount:  sql<number>`(select count(distinct r.event_id)::int from rsvps r where r.contact_id = ${contacts.id})`,
+        displayName: guests.name,
+        email:       guests.email,
+        phone:       guests.phone,
+        status:      guests.status,
+        firstSeen:   sql<string>`coalesce((select min(r.created_at) from rsvps r where r.guest_id = ${guests.id}), ${guests.createdAt})::text`,
+        eventCount:  sql<number>`(select count(distinct r.event_id)::int from rsvps r where r.guest_id = ${guests.id})`,
       })
-      .from(contacts)
-      .leftJoin(users, eq(users.id, contacts.userId))
-      .orderBy(desc(contacts.createdAt))
+      .from(guests)
+      .leftJoin(users, eq(users.id, guests.userId))
+      .orderBy(desc(guests.createdAt))
 
     return { guests: rows.map((g) => ({ ...g, firstSeen: new Date(g.firstSeen).toISOString() })) }
   })
 
-  fastify.post('/api/contacts', { preHandler: staffPreHandler }, async (request, reply) => {
-    const body = CreateContactSchema.parse(request.body)
+  fastify.post('/api/guests', { preHandler: staffPreHandler }, async (request, reply) => {
+    const body = CreateGuestSchema.parse(request.body)
 
     const [existing] = await db
-      .select({ id: contacts.id })
-      .from(contacts)
-      .where(eq(contacts.email, body.email.toLowerCase()))
+      .select({ id: guests.id })
+      .from(guests)
+      .where(eq(guests.email, body.email.toLowerCase()))
       .limit(1)
-    if (existing) throw createError(409, 'EMAIL_ALREADY_EXISTS', 'A contact with this email already exists.')
+    if (existing) throw createError(409, 'EMAIL_ALREADY_EXISTS', 'A guest with this email already exists.')
 
-    const [contact] = await db.insert(contacts).values({
+    const [guest] = await db.insert(guests).values({
       name:            body.name,
       email:           body.email.toLowerCase(),
       phone:           body.phone ?? null,
       instagramHandle: body.instagramHandle ?? null,
       notes:           body.notes ?? null,
-    }).returning({ id: contacts.id, name: contacts.name, email: contacts.email })
-    if (!contact) throw createError(500, 'INTERNAL_ERROR', 'Failed to create contact.')
-    return reply.code(201).send({ contact })
+    }).returning({ id: guests.id, name: guests.name, email: guests.email })
+    if (!guest) throw createError(500, 'INTERNAL_ERROR', 'Failed to create guest.')
+    return reply.code(201).send({ contact: guest })
   })
 
-  fastify.patch('/api/contacts/:contactId', { preHandler: staffPreHandler }, async (request, reply) => {
-    const { contactId } = request.params as { contactId: string }
-    const body = UpdateContactSchema.parse(request.body)
+  // Keep old route as alias
+  fastify.post('/api/contacts', { preHandler: staffPreHandler }, async (request, reply) => {
+    const body = CreateGuestSchema.parse(request.body)
 
-    const [existing] = await db.select({ id: contacts.id }).from(contacts).where(eq(contacts.id, contactId)).limit(1)
-    if (!existing) throw createError(404, 'CONTACT_NOT_FOUND', 'Contact not found.')
+    const [existing] = await db
+      .select({ id: guests.id })
+      .from(guests)
+      .where(eq(guests.email, body.email.toLowerCase()))
+      .limit(1)
+    if (existing) throw createError(409, 'EMAIL_ALREADY_EXISTS', 'A guest with this email already exists.')
+
+    const [guest] = await db.insert(guests).values({
+      name:            body.name,
+      email:           body.email.toLowerCase(),
+      phone:           body.phone ?? null,
+      instagramHandle: body.instagramHandle ?? null,
+      notes:           body.notes ?? null,
+    }).returning({ id: guests.id, name: guests.name, email: guests.email })
+    if (!guest) throw createError(500, 'INTERNAL_ERROR', 'Failed to create guest.')
+    return reply.code(201).send({ contact: guest })
+  })
+
+  fastify.patch('/api/guests/:guestId', { preHandler: staffPreHandler }, async (request, reply) => {
+    const { guestId } = request.params as { guestId: string }
+    const body = UpdateGuestSchema.parse(request.body)
+
+    const [existing] = await db.select({ id: guests.id }).from(guests).where(eq(guests.id, guestId)).limit(1)
+    if (!existing) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
 
     const updates: Record<string, unknown> = { updatedAt: new Date() }
     if (body.name !== undefined) updates.name = body.name
@@ -205,48 +227,88 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     if (body.instagramHandle !== undefined) updates.instagramHandle = body.instagramHandle ?? null
     if (body.notes !== undefined) updates.notes = body.notes ?? null
 
-    const [updated] = await db.update(contacts)
+    const [updated] = await db.update(guests)
       .set(updates as Parameters<ReturnType<typeof db.update>['set']>[0])
-      .where(eq(contacts.id, contactId))
+      .where(eq(guests.id, guestId))
       .returning({
-        id:              contacts.id,
-        name:            contacts.name,
-        email:           contacts.email,
-        phone:           contacts.phone,
-        instagramHandle: contacts.instagramHandle,
-        notes:           contacts.notes,
+        id:              guests.id,
+        name:            guests.name,
+        email:           guests.email,
+        phone:           guests.phone,
+        instagramHandle: guests.instagramHandle,
+        notes:           guests.notes,
       })
     return reply.send({ contact: updated })
   })
 
-  fastify.delete('/api/contacts/:contactId', { preHandler: staffPreHandler }, async (request, reply) => {
+  // Keep old route as alias
+  fastify.patch('/api/contacts/:contactId', { preHandler: staffPreHandler }, async (request, reply) => {
     const { contactId } = request.params as { contactId: string }
-    const [existing] = await db.select({ id: contacts.id }).from(contacts).where(eq(contacts.id, contactId)).limit(1)
-    if (!existing) throw createError(404, 'CONTACT_NOT_FOUND', 'Contact not found.')
-    await db.delete(contacts).where(eq(contacts.id, contactId))
+    const body = UpdateGuestSchema.parse(request.body)
+
+    const [existing] = await db.select({ id: guests.id }).from(guests).where(eq(guests.id, contactId)).limit(1)
+    if (!existing) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
+
+    const updates: Record<string, unknown> = { updatedAt: new Date() }
+    if (body.name !== undefined) updates.name = body.name
+    if (body.email !== undefined) updates.email = body.email?.toLowerCase() ?? null
+    if (body.phone !== undefined) updates.phone = body.phone ?? null
+    if (body.instagramHandle !== undefined) updates.instagramHandle = body.instagramHandle ?? null
+    if (body.notes !== undefined) updates.notes = body.notes ?? null
+
+    const [updated] = await db.update(guests)
+      .set(updates as Parameters<ReturnType<typeof db.update>['set']>[0])
+      .where(eq(guests.id, contactId))
+      .returning({
+        id:              guests.id,
+        name:            guests.name,
+        email:           guests.email,
+        phone:           guests.phone,
+        instagramHandle: guests.instagramHandle,
+        notes:           guests.notes,
+      })
+    return reply.send({ contact: updated })
+  })
+
+  fastify.delete('/api/guests/:guestId', { preHandler: staffPreHandler }, async (request, reply) => {
+    const { guestId } = request.params as { guestId: string }
+    const [existing] = await db.select({ id: guests.id }).from(guests).where(eq(guests.id, guestId)).limit(1)
+    if (!existing) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
+    await db.delete(guests).where(eq(guests.id, guestId))
     return reply.code(204).send()
   })
 
-  fastify.get('/api/admin/guests/contact/:contactId', { preHandler: staffPreHandler }, async (request) => {
+  // Keep old route as alias
+  fastify.delete('/api/contacts/:contactId', { preHandler: staffPreHandler }, async (request, reply) => {
     const { contactId } = request.params as { contactId: string }
+    const [existing] = await db.select({ id: guests.id }).from(guests).where(eq(guests.id, contactId)).limit(1)
+    if (!existing) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
+    await db.delete(guests).where(eq(guests.id, contactId))
+    return reply.code(204).send()
+  })
 
-    const [contact] = await db
+  // Single unified guest detail endpoint
+  fastify.get('/api/admin/guests/:guestId', { preHandler: staffPreHandler }, async (request) => {
+    const { guestId } = request.params as { guestId: string }
+
+    const [guest] = await db
       .select({
-        id:              contacts.id,
-        name:            contacts.name,
-        email:           contacts.email,
-        phone:           contacts.phone,
-        instagramHandle: contacts.instagramHandle,
-        notes:           contacts.notes,
-        userId:          contacts.userId,
-        status:          contacts.status,
-        statusReason:    contacts.statusReason,
-        createdAt:       contacts.createdAt,
+        id:              guests.id,
+        name:            guests.name,
+        email:           guests.email,
+        phone:           guests.phone,
+        instagramHandle: guests.instagramHandle,
+        notes:           guests.notes,
+        userId:          guests.userId,
+        passwordHash:    guests.passwordHash,
+        status:          guests.status,
+        statusReason:    guests.statusReason,
+        createdAt:       guests.createdAt,
       })
-      .from(contacts)
-      .where(eq(contacts.id, contactId))
+      .from(guests)
+      .where(eq(guests.id, guestId))
       .limit(1)
-    if (!contact) throw createError(404, 'CONTACT_NOT_FOUND', 'Contact not found.')
+    if (!guest) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
 
     const inviteRows = await db
       .select({
@@ -266,7 +328,7 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
         eq(rsvps.sessionId, eventTokens.claimedBySessionId),
         eq(rsvps.eventId, eventTokens.eventId),
       ))
-      .where(eq(eventTokens.contactId, contactId))
+      .where(eq(eventTokens.guestId, guestId))
       .orderBy(desc(events.startsAt))
 
     const rsvpRows = await db
@@ -282,35 +344,33 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
       })
       .from(rsvps)
       .innerJoin(events, eq(events.id, rsvps.eventId))
-      .where(eq(rsvps.contactId, contactId))
+      .where(eq(rsvps.guestId, guestId))
       .orderBy(desc(events.startsAt))
 
-    // Determine type by looking up user role if userId is set
-    let contactType = 'contact'
-    if (contact.userId) {
-      const [contactUser] = await db
-        .select({ role: users.role })
-        .from(users)
-        .where(eq(users.id, contact.userId))
-        .limit(1)
-      if (contactUser?.role === 'admin') contactType = 'admin'
-      else if (contactUser?.role === 'organizer') contactType = 'organizer'
-      else contactType = 'guest'
+    // Determine type
+    let guestType = 'unclaimed'
+    if (guest.passwordHash && guest.userId) {
+      const [linkedUser] = await db.select({ role: users.role }).from(users).where(eq(users.id, guest.userId)).limit(1)
+      if (linkedUser?.role === 'admin') guestType = 'admin'
+      else if (linkedUser?.role === 'organizer') guestType = 'organizer'
+      else guestType = 'claimed'
+    } else if (guest.passwordHash) {
+      guestType = 'claimed'
     }
 
     return {
       guest: {
-        id:              contact.id,
-        shortId:         contact.id.slice(0, 8),
-        type:            contactType,
-        displayName:     contact.name,
-        email:           contact.email,
-        phone:           contact.phone,
-        instagramHandle: contact.instagramHandle,
-        notes:           contact.notes,
-        status:          contact.status,
-        statusReason:    contact.statusReason ?? null,
-        firstSeen:       contact.createdAt.toISOString(),
+        id:              guest.id,
+        shortId:         guest.id.slice(0, 8),
+        type:            guestType,
+        displayName:     guest.name,
+        email:           guest.email,
+        phone:           guest.phone,
+        instagramHandle: guest.instagramHandle,
+        notes:           guest.notes,
+        status:          guest.status,
+        statusReason:    guest.statusReason ?? null,
+        firstSeen:       guest.createdAt.toISOString(),
         events:          rsvpRows.map((r) => ({ ...r, startsAt: r.startsAt.toISOString(), rsvpCreatedAt: r.rsvpCreatedAt.toISOString() })),
         invites:         inviteRows.map((r) => ({
           tokenId:     r.tokenId,
@@ -327,51 +387,75 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     }
   })
 
+  // Keep old endpoint as alias
+  fastify.get('/api/admin/guests/contact/:contactId', { preHandler: staffPreHandler }, async (request, reply) => {
+    const { contactId } = request.params as { contactId: string }
+
+    const [guest] = await db
+      .select({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle, notes: guests.notes, userId: guests.userId, passwordHash: guests.passwordHash, status: guests.status, statusReason: guests.statusReason, createdAt: guests.createdAt })
+      .from(guests).where(eq(guests.id, contactId)).limit(1)
+    if (!guest) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
+
+    const inviteRows = await db
+      .select({ tokenId: eventTokens.id, eventSlug: events.slug, eventTitle: events.title, startsAt: events.startsAt, timezone: events.timezone, tokenStatus: eventTokens.status, visited: sql<boolean>`${eventTokens.claimedBySessionId} is not null`, rsvpStatus: rsvps.status, headCount: rsvps.headCount })
+      .from(eventTokens).innerJoin(events, eq(events.id, eventTokens.eventId))
+      .leftJoin(rsvps, and(eq(rsvps.sessionId, eventTokens.claimedBySessionId), eq(rsvps.eventId, eventTokens.eventId)))
+      .where(eq(eventTokens.guestId, contactId)).orderBy(desc(events.startsAt))
+
+    const rsvpRows = await db
+      .select({ eventSlug: events.slug, eventTitle: events.title, startsAt: events.startsAt, timezone: events.timezone, rsvpStatus: rsvps.status, headCount: rsvps.headCount, checkedIn: rsvps.checkedIn, rsvpCreatedAt: rsvps.createdAt })
+      .from(rsvps).innerJoin(events, eq(events.id, rsvps.eventId))
+      .where(eq(rsvps.guestId, contactId)).orderBy(desc(events.startsAt))
+
+    let guestType = 'unclaimed'
+    if (guest.passwordHash && guest.userId) {
+      const [lu] = await db.select({ role: users.role }).from(users).where(eq(users.id, guest.userId)).limit(1)
+      if (lu?.role === 'admin') guestType = 'admin'
+      else if (lu?.role === 'organizer') guestType = 'organizer'
+      else guestType = 'claimed'
+    } else if (guest.passwordHash) {
+      guestType = 'claimed'
+    }
+
+    return reply.send({
+      guest: {
+        id: guest.id, shortId: guest.id.slice(0, 8), type: guestType, displayName: guest.name, email: guest.email,
+        phone: guest.phone, instagramHandle: guest.instagramHandle, notes: guest.notes, status: guest.status,
+        statusReason: guest.statusReason ?? null, firstSeen: guest.createdAt.toISOString(),
+        events: rsvpRows.map((r) => ({ ...r, startsAt: r.startsAt.toISOString(), rsvpCreatedAt: r.rsvpCreatedAt.toISOString() })),
+        invites: inviteRows.map((r) => ({ tokenId: r.tokenId, eventSlug: r.eventSlug, eventTitle: r.eventTitle, startsAt: r.startsAt.toISOString(), timezone: r.timezone, tokenStatus: r.tokenStatus, visited: r.visited, rsvpStatus: r.rsvpStatus ?? null, headCount: r.headCount ?? null })),
+      },
+    })
+  })
+
+  // Keep old session/user detail endpoints as aliases (return empty invites since they're now contact-based)
   fastify.get('/api/admin/guests/user/:guestId', { preHandler: staffPreHandler }, async (request) => {
     const user = request.user!
     const { guestId } = request.params as { guestId: string }
     const isAdmin = user.role === 'admin'
 
-    const [guest] = await db
+    const [guestUser] = await db
       .select({ id: users.id, displayName: users.displayName, email: users.email, phone: users.phone, instagramHandle: users.instagramHandle, createdAt: users.createdAt, role: users.role })
       .from(users)
       .where(eq(users.id, guestId))
       .limit(1)
-    if (!guest) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
+    if (!guestUser) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
 
     const eventRows = await db
-      .select({
-        eventSlug:     events.slug,
-        eventTitle:    events.title,
-        startsAt:      events.startsAt,
-        timezone:      events.timezone,
-        rsvpStatus:    rsvps.status,
-        headCount:     rsvps.headCount,
-        checkedIn:     rsvps.checkedIn,
-        rsvpCreatedAt: rsvps.createdAt,
-      })
-      .from(rsvps)
-      .innerJoin(events, eq(events.id, rsvps.eventId))
+      .select({ eventSlug: events.slug, eventTitle: events.title, startsAt: events.startsAt, timezone: events.timezone, rsvpStatus: rsvps.status, headCount: rsvps.headCount, checkedIn: rsvps.checkedIn, rsvpCreatedAt: rsvps.createdAt })
+      .from(rsvps).innerJoin(events, eq(events.id, rsvps.eventId))
       .where(and(eq(rsvps.userId, guestId), isAdmin ? undefined : eq(events.organizerId, user.sub)))
       .orderBy(desc(events.startsAt))
 
     return {
       guest: {
-        id:              guest.id,
-        shortId:         guest.id.slice(0, 8),
-        type:            guest.role === 'admin' ? 'admin' : guest.role === 'organizer' ? 'organizer' : 'guest',
-        displayName:     guest.displayName,
-        email:           guest.email,
-        phone:           guest.phone,
-        instagramHandle: guest.instagramHandle,
-        status:          'active',
-        statusReason:    null,
-        firstSeen:       guest.createdAt.toISOString(),
-        events: eventRows.map((r) => ({
-          ...r,
-          startsAt:      r.startsAt.toISOString(),
-          rsvpCreatedAt: r.rsvpCreatedAt.toISOString(),
-        })),
+        id: guestUser.id, shortId: guestUser.id.slice(0, 8),
+        type: guestUser.role === 'admin' ? 'admin' : guestUser.role === 'organizer' ? 'organizer' : 'claimed',
+        displayName: guestUser.displayName, email: guestUser.email, phone: guestUser.phone,
+        instagramHandle: guestUser.instagramHandle, status: 'active', statusReason: null,
+        firstSeen: guestUser.createdAt.toISOString(),
+        events: eventRows.map((r) => ({ ...r, startsAt: r.startsAt.toISOString(), rsvpCreatedAt: r.rsvpCreatedAt.toISOString() })),
+        invites: [],
       },
     }
   })
@@ -382,54 +466,25 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     const isAdmin = user.role === 'admin'
 
     const [session] = await db
-      .select({
-        id:              visitorSessions.id,
-        displayName:     visitorSessions.displayName,
-        email:           visitorSessions.email,
-        phone:           visitorSessions.phone,
-        instagramHandle: visitorSessions.instagramHandle,
-        status:          visitorSessions.status,
-        statusReason:    visitorSessions.statusReason,
-        createdAt:       visitorSessions.createdAt,
-      })
-      .from(visitorSessions)
-      .where(eq(visitorSessions.id, guestId))
-      .limit(1)
+      .select({ id: visitorSessions.id, displayName: visitorSessions.displayName, email: visitorSessions.email, phone: visitorSessions.phone, instagramHandle: visitorSessions.instagramHandle, status: visitorSessions.status, statusReason: visitorSessions.statusReason, createdAt: visitorSessions.createdAt })
+      .from(visitorSessions).where(eq(visitorSessions.id, guestId)).limit(1)
     if (!session) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
 
     const eventRows = await db
-      .select({
-        eventSlug:     events.slug,
-        eventTitle:    events.title,
-        startsAt:      events.startsAt,
-        timezone:      events.timezone,
-        rsvpStatus:    rsvps.status,
-        headCount:     rsvps.headCount,
-        checkedIn:     rsvps.checkedIn,
-        rsvpCreatedAt: rsvps.createdAt,
-      })
-      .from(rsvps)
-      .innerJoin(events, eq(events.id, rsvps.eventId))
+      .select({ eventSlug: events.slug, eventTitle: events.title, startsAt: events.startsAt, timezone: events.timezone, rsvpStatus: rsvps.status, headCount: rsvps.headCount, checkedIn: rsvps.checkedIn, rsvpCreatedAt: rsvps.createdAt })
+      .from(rsvps).innerJoin(events, eq(events.id, rsvps.eventId))
       .where(and(eq(rsvps.sessionId, guestId), isNull(rsvps.userId), isAdmin ? undefined : eq(events.organizerId, user.sub)))
       .orderBy(desc(events.startsAt))
 
     return {
       guest: {
-        id:              session.id,
-        shortId:         session.id.slice(0, 8),
-        type:            'session',
-        displayName:     session.displayName ?? 'Anonymous',
-        email:           session.email ?? null,
-        phone:           session.phone ?? null,
-        instagramHandle: session.instagramHandle ?? null,
-        status:          session.status,
-        statusReason:    session.statusReason ?? null,
-        firstSeen:       session.createdAt.toISOString(),
-        events: eventRows.map((r) => ({
-          ...r,
-          startsAt:      r.startsAt.toISOString(),
-          rsvpCreatedAt: r.rsvpCreatedAt.toISOString(),
-        })),
+        id: session.id, shortId: session.id.slice(0, 8), type: 'session',
+        displayName: session.displayName ?? 'Anonymous', email: session.email ?? null,
+        phone: session.phone ?? null, instagramHandle: session.instagramHandle ?? null,
+        status: session.status, statusReason: session.statusReason ?? null,
+        firstSeen: session.createdAt.toISOString(),
+        events: eventRows.map((r) => ({ ...r, startsAt: r.startsAt.toISOString(), rsvpCreatedAt: r.rsvpCreatedAt.toISOString() })),
+        invites: [],
       },
     }
   })
@@ -454,7 +509,6 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
         .set({ status: 'blocked', statusReason: body.reason, statusAt: new Date(), statusBy: actorId })
         .where(eq(visitorSessions.id, guestId))
 
-      // Block all active attendee tokens linked via RSVPs for this session
       const rsvpTokenIds = await tx
         .select({ tokenId: rsvps.tokenId })
         .from(rsvps)
@@ -490,7 +544,6 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
         .set({ status: 'active', statusReason: null, statusAt: null, statusBy: null })
         .where(eq(visitorSessions.id, guestId))
 
-      // Re-activate their tokens that were blocked (not blacklisted)
       const rsvpTokenIds = await tx
         .select({ tokenId: rsvps.tokenId })
         .from(rsvps)
@@ -521,7 +574,6 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
         .set({ status: 'removed', statusAt: new Date(), statusBy: actorId })
         .where(eq(visitorSessions.id, guestId))
 
-      // Blacklist all their tokens permanently
       const rsvpTokenIds = await tx
         .select({ tokenId: rsvps.tokenId })
         .from(rsvps)
@@ -531,7 +583,6 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
         await tx.update(eventTokens).set({ status: 'blacklisted' }).where(eq(eventTokens.id, tid))
       }
 
-      // Delete all RSVPs
       await tx.delete(rsvps).where(eq(rsvps.sessionId, guestId))
 
       if (body.blockEmail && session.email) {

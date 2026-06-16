@@ -8,7 +8,7 @@ export const load: PageServerLoad = async ({ parent, cookies }) => {
 
   let contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null } | null = null
   try {
-    const res = await serverGet<{ contact: typeof contact }>('/auth/me/contact', cookies)
+    const res = await serverGet<{ contact: typeof contact }>('/auth/me/guest', cookies)
     contact = res.contact
   } catch (e: unknown) {
     if (!(e instanceof ServerApiError && e.statusCode === 404)) {

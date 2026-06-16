@@ -6,7 +6,7 @@ export const users = pgTable('users', {
   email:           text('email').notNull().unique(),
   passwordHash:    text('password_hash').notNull(),
   displayName:     text('display_name').notNull(),
-  role:            text('role').notNull(), // 'admin' | 'organizer' | 'member'
+  role:            text('role').notNull(), // 'admin' | 'organizer'
   avatarUrl:       text('avatar_url'),
   phone:           text('phone'),
   instagramHandle: text('instagram_handle'),
@@ -16,9 +16,28 @@ export const users = pgTable('users', {
   updatedAt:       timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+export const guests = pgTable('guests', {
+  id:              uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  name:            text('name').notNull(),
+  email:           text('email').notNull().unique(),
+  phone:           text('phone'),
+  instagramHandle: text('instagram_handle'),
+  notes:           text('notes'),
+  passwordHash:    text('password_hash'),  // null = unclaimed; set = claimed account
+  userId:          uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  status:          text('status').notNull().default('active'),
+  statusReason:    text('status_reason'),
+  createdAt:       timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:       timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  emailIdx: index('guests_email_idx').on(t.email),
+  userIdx:  index('guests_user_idx').on(t.userId).where(sql`${t.userId} is not null`),
+}))
+
 export const visitorSessions = pgTable('visitor_sessions', {
   id:              uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   userId:          uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  guestId:         uuid('guest_id').references(() => guests.id, { onDelete: 'set null' }),
   displayName:     text('display_name'),
   email:           text('email'),
   phone:           text('phone'),
@@ -32,6 +51,7 @@ export const visitorSessions = pgTable('visitor_sessions', {
   lastSeenAt:      timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   userIdx:   index('visitor_sessions_user_idx').on(t.userId).where(sql`${t.userId} is not null`),
+  guestIdx:  index('visitor_sessions_guest_idx').on(t.guestId).where(sql`${t.guestId} is not null`),
   statusIdx: index('visitor_sessions_status_idx').on(t.status).where(sql`${t.status} != 'active'`),
 }))
 
@@ -67,23 +87,6 @@ export const events = pgTable('events', {
   expiresIdx:      index('events_expires_idx').on(t.expiresAt).where(sql`${t.expiresAt} is not null`),
 }))
 
-export const contacts = pgTable('contacts', {
-  id:              uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-  name:            text('name').notNull(),
-  email:           text('email').notNull().unique(),
-  phone:           text('phone'),
-  instagramHandle: text('instagram_handle'),
-  notes:           text('notes'),
-  userId:          uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
-  status:          text('status').notNull().default('active'),
-  statusReason:    text('status_reason'),
-  createdAt:       timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt:       timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => ({
-  emailIdx: index('contacts_email_idx').on(t.email),
-  userIdx:  index('contacts_user_idx').on(t.userId).where(sql`${t.userId} is not null`),
-}))
-
 export const eventTokens = pgTable('event_tokens', {
   id:                   uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   eventId:              uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
@@ -94,17 +97,17 @@ export const eventTokens = pgTable('event_tokens', {
   singleUse:            boolean('single_use').notNull().default(false),
   inviteUrl:            text('invite_url'),  // raw URL for attendee tokens; null for edit tokens
   claimedBySessionId:   uuid('claimed_by_session_id').references(() => visitorSessions.id, { onDelete: 'set null' }),
-  contactId:            uuid('contact_id').references(() => contacts.id, { onDelete: 'set null' }),
+  guestId:              uuid('guest_id').references(() => guests.id, { onDelete: 'set null' }),
   createdAt:            timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   eventTypeIdx:  index('event_tokens_event_type_idx').on(t.eventId, t.type).where(sql`${t.status} = 'active'`),
-  contactIdx:    index('event_tokens_contact_idx').on(t.contactId).where(sql`${t.contactId} is not null`),
+  guestIdx:      index('event_tokens_guest_idx').on(t.guestId).where(sql`${t.guestId} is not null`),
 }))
 
 export const rsvps = pgTable('rsvps', {
   id:          uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   eventId:     uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
-  contactId:   uuid('contact_id').references(() => contacts.id, { onDelete: 'set null' }),
+  guestId:     uuid('guest_id').references(() => guests.id, { onDelete: 'set null' }),
   sessionId:   uuid('session_id').references(() => visitorSessions.id, { onDelete: 'set null' }),
   userId:      uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
   tokenId:     uuid('token_id').references(() => eventTokens.id, { onDelete: 'set null' }),
@@ -118,13 +121,13 @@ export const rsvps = pgTable('rsvps', {
   createdAt:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt:   timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
-  uniqueEventSession:   unique().on(t.eventId, t.sessionId),
-  uniqueEventUser:      unique().on(t.eventId, t.userId),
-  eventStatusIdx:       index('rsvps_event_status_idx').on(t.eventId, t.status),
-  sessionIdx:           index('rsvps_session_idx').on(t.sessionId),
-  userIdx:              index('rsvps_user_idx').on(t.userId),
-  contactIdx:           index('rsvps_contact_idx').on(t.contactId).where(sql`${t.contactId} is not null`),
-  uniqueEventContact:   uniqueIndex('rsvps_event_contact_idx').on(t.eventId, t.contactId).where(sql`${t.contactId} is not null`),
+  uniqueEventSession:  unique().on(t.eventId, t.sessionId),
+  uniqueEventUser:     unique().on(t.eventId, t.userId),
+  uniqueEventGuest:    uniqueIndex('rsvps_event_guest_idx').on(t.eventId, t.guestId).where(sql`${t.guestId} is not null`),
+  eventStatusIdx:      index('rsvps_event_status_idx').on(t.eventId, t.status),
+  sessionIdx:          index('rsvps_session_idx').on(t.sessionId),
+  userIdx:             index('rsvps_user_idx').on(t.userId),
+  guestIdx:            index('rsvps_guest_idx').on(t.guestId).where(sql`${t.guestId} is not null`),
 }))
 
 export const emailBlocklist = pgTable('email_blocklist', {

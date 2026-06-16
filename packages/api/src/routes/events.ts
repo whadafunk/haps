@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, eventTokens, rsvps, visitorSessions, notifications, contacts } from '../db/schema.js'
+import { events, eventTokens, rsvps, visitorSessions, guests } from '../db/schema.js'
 import { eq, and, count, sql } from 'drizzle-orm'
 import { generateToken, hashToken, verifyToken } from '../lib/crypto.js'
 import { generateSlug } from '../lib/slug.js'
@@ -350,7 +350,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.code(204).send()
   })
 
-  // Directory — contacts not yet invited to this event
+  // Directory — guests not yet invited to this event
   fastify.get('/api/events/:slug/directory', {
     preHandler: [fastify.requireEditToken],
   }, async (request) => {
@@ -360,25 +360,25 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     const event = eventRows[0]
     if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
 
-    const contactList = await db
+    const guestList = await db
       .select({
-        id: contacts.id,
-        name: contacts.name,
-        email: contacts.email,
-        phone: contacts.phone,
-        instagramHandle: contacts.instagramHandle,
+        id: guests.id,
+        name: guests.name,
+        email: guests.email,
+        phone: guests.phone,
+        instagramHandle: guests.instagramHandle,
       })
-      .from(contacts)
+      .from(guests)
       .where(sql`not exists (
         select 1 from event_tokens
         where event_tokens.event_id = ${event.id}
           and event_tokens.type = 'attendee'
           and event_tokens.status = 'active'
-          and event_tokens.contact_id = contacts.id
+          and event_tokens.guest_id = guests.id
       )`)
-      .orderBy(contacts.name)
+      .orderBy(guests.name)
 
-    return { contacts: contactList }
+    return { contacts: guestList }
   })
 
   // Invite contacts from the directory to this event
@@ -394,49 +394,49 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     const event = eventRows[0]
     if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
 
-    const invitations: Array<{ contactId: string; contactName: string; tokenId: string | null; inviteLink: string | null; emailSent: boolean; whatsappUrl: string | null }> = []
+    const invitations: Array<{ guestId: string; guestName: string; tokenId: string | null; inviteLink: string | null; emailSent: boolean; whatsappUrl: string | null }> = []
 
     if (event.eventType === 'open') {
       // Open events: notify only — share the plain event URL, no token generated
       const eventUrl = `${config.APP_URL}/event/${slug}`
-      for (const contactId of body.contactIds) {
-        const contactRows = await db
-          .select({ id: contacts.id, name: contacts.name, email: contacts.email, phone: contacts.phone })
-          .from(contacts).where(eq(contacts.id, contactId)).limit(1)
-        const contact = contactRows[0]
-        if (!contact) continue
+      for (const guestId of body.contactIds) {
+        const guestRows = await db
+          .select({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone })
+          .from(guests).where(eq(guests.id, guestId)).limit(1)
+        const guest = guestRows[0]
+        if (!guest) continue
 
         let emailSent = false
-        if (body.channels.includes('email') && contact.email) {
+        if (body.channels.includes('email') && guest.email) {
           try {
             await sendEmail({
-              to: contact.email,
+              to: guest.email,
               subject: `You're invited to ${event.title}`,
-              text: `Hi ${contact.name},\n\nYou've been invited to ${event.title}.\n\nView the event and RSVP here:\n${eventUrl}`,
-              html: `<p>Hi ${contact.name},</p><p>You've been invited to <strong>${event.title}</strong>.</p><p><a href="${eventUrl}">View event and RSVP →</a></p>`,
+              text: `Hi ${guest.name},\n\nYou've been invited to ${event.title}.\n\nView the event and RSVP here:\n${eventUrl}`,
+              html: `<p>Hi ${guest.name},</p><p>You've been invited to <strong>${event.title}</strong>.</p><p><a href="${eventUrl}">View event and RSVP →</a></p>`,
             })
             emailSent = true
           } catch { /* SMTP not configured or failed — degrade gracefully */ }
         }
 
-        const whatsappUrl = (body.channels.includes('whatsapp') && contact.phone)
-          ? `https://wa.me/${contact.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${contact.name}! You're invited to ${event.title}. RSVP here: ${eventUrl}`)}`
+        const whatsappUrl = (body.channels.includes('whatsapp') && guest.phone)
+          ? `https://wa.me/${guest.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${guest.name}! You're invited to ${event.title}. RSVP here: ${eventUrl}`)}`
           : null
 
-        invitations.push({ contactId: contact.id, contactName: contact.name, tokenId: null, inviteLink: null, emailSent, whatsappUrl })
+        invitations.push({ guestId: guest.id, guestName: guest.name, tokenId: null, inviteLink: null, emailSent, whatsappUrl })
       }
     } else {
-      // Invite-only events: create a single-use token per contact
-      for (const contactId of body.contactIds) {
-        const contactRows = await db
-          .select({ id: contacts.id, name: contacts.name, email: contacts.email, phone: contacts.phone })
-          .from(contacts)
-          .where(eq(contacts.id, contactId))
+      // Invite-only events: create a single-use token per guest
+      for (const guestId of body.contactIds) {
+        const guestRows = await db
+          .select({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone })
+          .from(guests)
+          .where(eq(guests.id, guestId))
           .limit(1)
-        const contact = contactRows[0]
-        if (!contact) continue
+        const guest = guestRows[0]
+        if (!guest) continue
 
-        // Idempotent — skip if this contact already has an active token for this event
+        // Idempotent — skip if this guest already has an active token for this event
         const existing = await db
           .select({ id: eventTokens.id })
           .from(eventTokens)
@@ -444,7 +444,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
             eq(eventTokens.eventId, event.id),
             eq(eventTokens.type, 'attendee'),
             eq(eventTokens.status, 'active'),
-            eq(eventTokens.contactId, contactId),
+            eq(eventTokens.guestId, guestId),
           ))
           .limit(1)
         if (existing[0]) continue
@@ -457,33 +457,33 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
         const [inserted] = await db.insert(eventTokens).values({
           eventId: event.id,
           type: 'attendee',
-          label: contact.name,
+          label: guest.name,
           tokenHash,
           singleUse: true,
-          contactId: contact.id,
+          guestId: guest.id,
           inviteUrl: inviteLink,
         }).returning({ id: eventTokens.id })
 
         if (!inserted) continue
 
         let emailSent = false
-        if (body.channels.includes('email') && contact.email) {
+        if (body.channels.includes('email') && guest.email) {
           try {
             await sendEmail({
-              to: contact.email,
+              to: guest.email,
               subject: `You're invited to ${event.title}`,
-              text: `Hi ${contact.name},\n\nYou've been invited to ${event.title}.\n\nView the event and RSVP here:\n${inviteLink}`,
-              html: `<p>Hi ${contact.name},</p><p>You've been invited to <strong>${event.title}</strong>.</p><p><a href="${inviteLink}">View event and RSVP →</a></p>`,
+              text: `Hi ${guest.name},\n\nYou've been invited to ${event.title}.\n\nView the event and RSVP here:\n${inviteLink}`,
+              html: `<p>Hi ${guest.name},</p><p>You've been invited to <strong>${event.title}</strong>.</p><p><a href="${inviteLink}">View event and RSVP →</a></p>`,
             })
             emailSent = true
           } catch { /* SMTP not configured or failed — degrade gracefully */ }
         }
 
-        const whatsappUrl = (body.channels.includes('whatsapp') && contact.phone)
-          ? `https://wa.me/${contact.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${contact.name}! You're invited to ${event.title}. Here's your personal invite link: ${inviteLink}`)}`
+        const whatsappUrl = (body.channels.includes('whatsapp') && guest.phone)
+          ? `https://wa.me/${guest.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${guest.name}! You're invited to ${event.title}. Here's your personal invite link: ${inviteLink}`)}`
           : null
 
-        invitations.push({ contactId: contact.id, contactName: contact.name, tokenId: inserted.id, inviteLink, emailSent, whatsappUrl })
+        invitations.push({ guestId: guest.id, guestName: guest.name, tokenId: inserted.id, inviteLink, emailSent, whatsappUrl })
       }
     }
 

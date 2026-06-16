@@ -61,7 +61,7 @@
   async function doBulkDelete() {
     bulkDeleting = true; bulkError = ''
     try {
-      await Promise.all(selectedContacts.map((g: GuestRow) => api.deleteContact(g.id)))
+      await Promise.all(selectedContacts.map((g: GuestRow) => api.deleteGuest(g.id)))
       showBulkDeleteModal = false
       clearSelection()
       await invalidateAll()
@@ -79,7 +79,7 @@
   let inviteSendWhatsapp = $state(false)
   let inviting = $state(false)
   let inviteError = $state('')
-  let inviteResults = $state<Array<{ contactName: string; inviteLink: string; emailSent: boolean; whatsappUrl: string | null }> | null>(null)
+  let inviteResults = $state<Array<{ guestName: string; inviteLink: string; emailSent: boolean; whatsappUrl: string | null }> | null>(null)
 
   const inviteSelectedEmailCount = $derived(
     selectedContacts.filter((g: GuestRow) => g.email).length
@@ -118,8 +118,8 @@
         try { localStorage.setItem(`haps:inviteLink:${selectedEventSlug}:${inv.tokenId}`, inv.inviteLink) } catch { /* */ }
       }
       inviteResults = res.invitations.map(inv => ({
-        contactName: inv.contactName,
-        inviteLink: inv.inviteLink,
+        guestName: (inv as unknown as { guestName: string }).guestName ?? (inv as unknown as { contactName: string }).contactName,
+        inviteLink: inv.inviteLink ?? '',
         emailSent: inv.emailSent,
         whatsappUrl: inv.whatsappUrl,
       }))
@@ -156,7 +156,7 @@
     if (!addEmail.trim()) { addError = 'Email is required.'; return }
     addSaving = true; addError = ''
     try {
-      await api.createContact({
+      await api.createGuest({
         name: addName.trim(),
         email: addEmail.trim(),
         phone: addPhone.trim() || undefined,
@@ -290,7 +290,7 @@
             {#each inviteResults as inv, idx (idx)}
               <div class="invited-result-row">
                 <div class="invited-result-header">
-                  <span class="dir-name">{inv.contactName}</span>
+                  <span class="dir-name">{inv.guestName}</span>
                   {#if inv.emailSent}<span class="delivery-badge">Email sent</span>{/if}
                 </div>
                 {#if inv.inviteLink}
