@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import type { FastifyInstance } from 'fastify'
-import { getApp, closeApp, truncateAll, setupAdmin, createOrganizer, createEvent, getSessionWithProfile } from './helpers.js'
+import { getApp, closeApp, truncateAll, setupAdmin, createOrganizer, createEvent, getSessionCookie, getSessionWithProfile } from './helpers.js'
 
 let app: FastifyInstance
 let adminCookies: string
@@ -39,13 +39,13 @@ describe('POST /api/events/:slug/rsvps', () => {
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
       headers: { Cookie: session },
-      payload: { displayName: 'Alice', status: 'yes' },
+      payload: { displayName: 'Alice', status: 'yes', email: 'alice@test.com' },
     })
     const res = await app.inject({
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
       headers: { Cookie: session },
-      payload: { displayName: 'Alice', status: 'maybe' },
+      payload: { displayName: 'Alice', status: 'maybe', email: 'alice@test.com' },
     })
     expect(res.statusCode).toBe(201)
     expect(res.json().rsvp.status).toBe('maybe')
@@ -57,7 +57,7 @@ describe('POST /api/events/:slug/rsvps', () => {
       method: 'POST',
       url: '/api/events/no-such-event/rsvps',
       headers: { Cookie: session },
-      payload: { displayName: 'Alice', status: 'yes' },
+      payload: { displayName: 'Alice', status: 'yes', email: 'alice@test.com' },
     })
     expect(res.statusCode).toBe(404)
   })
@@ -69,7 +69,7 @@ describe('POST /api/events/:slug/rsvps', () => {
       method: 'POST',
       url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: session },
-      payload: { displayName: 'Alice', status: 'yes' },
+      payload: { displayName: 'Alice', status: 'yes', email: 'alice@test.com' },
     })
     expect(res.statusCode).toBe(403)
     expect(res.json().error.code).toBe('EVENT_NOT_PUBLISHED')
@@ -78,7 +78,8 @@ describe('POST /api/events/:slug/rsvps', () => {
 
 describe('GET /api/events/:slug/rsvps', () => {
   it('returns the RSVP list to an editor', async () => {
-    const session = await getSessionWithProfile(app)
+    // Use a fresh session (no pre-set display name) so the RSVP sets the identity
+    const session = await getSessionCookie(app)
     await app.inject({
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
@@ -118,7 +119,7 @@ describe('DELETE /api/events/:slug/rsvps/:rsvpId', () => {
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
       headers: { Cookie: session },
-      payload: { displayName: 'Alice', status: 'yes' },
+      payload: { displayName: 'Alice', status: 'yes', email: 'alice@test.com' },
     })
     const rsvpId = createRes.json().rsvp.id
     const res = await app.inject({
@@ -135,7 +136,7 @@ describe('DELETE /api/events/:slug/rsvps/:rsvpId', () => {
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
       headers: { Cookie: session },
-      payload: { displayName: 'Alice', status: 'yes' },
+      payload: { displayName: 'Alice', status: 'yes', email: 'alice@test.com' },
     })
     const rsvpId = createRes.json().rsvp.id
     const res = await app.inject({

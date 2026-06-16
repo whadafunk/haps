@@ -20,20 +20,13 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
       throw createError(403, 'GUEST_BLOCKED', session.statusReason ?? 'You have been blocked from this platform.')
     }
 
-    // Profile gate: only for anonymous guests — registered users already have an account email
-    if (!session.email && !session.userId) {
-      throw createError(428, 'PROFILE_REQUIRED', 'Please complete your profile before RSVPing.')
-    }
-
     // Email blocklist check
-    if (body.email) {
-      const [blocked] = await db
-        .select({ id: emailBlocklist.id })
-        .from(emailBlocklist)
-        .where(eq(emailBlocklist.email, body.email.toLowerCase()))
-        .limit(1)
-      if (blocked) throw createError(403, 'EMAIL_BLOCKED', 'This email address has been blocked.')
-    }
+    const [blocked] = await db
+      .select({ id: emailBlocklist.id })
+      .from(emailBlocklist)
+      .where(eq(emailBlocklist.email, body.email.toLowerCase()))
+      .limit(1)
+    if (blocked) throw createError(403, 'EMAIL_BLOCKED', 'This email address has been blocked.')
 
     const eventRows = await db
       .select({ id: events.id, status: events.status, eventType: events.eventType, maxCapacity: events.maxCapacity, rsvpDeadline: events.rsvpDeadline })
@@ -68,40 +61,75 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
+    // Identity lock: once a session has a display name, use that instead of what was submitted
+    const lockedName = session.displayName ?? body.displayName
+    const lockedEmail = body.email.toLowerCase()
+
+    // Persist display name and email on first RSVP
     if (!session.displayName) {
       await db
         .update(visitorSessions)
-        .set({ displayName: body.displayName, email: body.email ?? null })
+        .set({ displayName: lockedName, email: lockedEmail })
         .where(eq(visitorSessions.id, session.id))
-      session.displayName = body.displayName
+      session.displayName = lockedName
     }
 
-    const inserted = await db
-      .insert(rsvps)
+    // Find-or-create contact by email; link user_id if logged in
+    const [contact] = await db.insert(contacts)
       .values({
-        eventId:     event.id,
-        sessionId:   session.id,
-        userId:      session.userId,
-        displayName: body.displayName,
-        email:       body.email ?? null,
-        status:      rsvpStatus,
-        headCount:   body.headCount,
-        note:        body.note ?? null,
+        name:   lockedName,
+        email:  lockedEmail,
+        userId: session.userId ?? null,
       })
       .onConflictDoUpdate({
-        target: [rsvps.eventId, rsvps.sessionId],
+        target: contacts.email,
         set: {
-          displayName: body.displayName,
-          email:       body.email ?? null,
+          name:      lockedName,
+          userId:    session.userId ?? null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning({ id: contacts.id })
+    if (!contact) throw createError(500, 'INTERNAL_ERROR', 'Failed to upsert contact.')
+
+    // Select-then-upsert: find existing RSVP for this session/user first
+    const [existingRsvp] = await db
+      .select({ id: rsvps.id, sessionId: rsvps.sessionId })
+      .from(rsvps)
+      .where(and(eq(rsvps.eventId, event.id), eq(rsvps.sessionId, session.id)))
+      .limit(1)
+
+    let rsvp
+    if (existingRsvp) {
+      const updated = await db.update(rsvps)
+        .set({
+          displayName: lockedName,
+          email:       lockedEmail,
           status:      rsvpStatus,
           headCount:   body.headCount,
           note:        body.note ?? null,
+          contactId:   contact.id,
           updatedAt:   new Date(),
-        },
-      })
-      .returning()
-
-    const rsvp = inserted[0]
+        })
+        .where(eq(rsvps.id, existingRsvp.id))
+        .returning()
+      rsvp = updated[0]
+    } else {
+      const inserted = await db.insert(rsvps)
+        .values({
+          eventId:     event.id,
+          sessionId:   session.id,
+          userId:      session.userId ?? null,
+          contactId:   contact.id,
+          displayName: lockedName,
+          email:       lockedEmail,
+          status:      rsvpStatus,
+          headCount:   body.headCount,
+          note:        body.note ?? null,
+        })
+        .returning()
+      rsvp = inserted[0]
+    }
     if (!rsvp) throw createError(500, 'INTERNAL_ERROR', 'Failed to create RSVP.')
 
     // Track event access in session so it shows up on "My Events"
@@ -113,17 +141,6 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
         .set({ eventAccess: updatedAccess })
         .where(eq(visitorSessions.id, session.id))
       session.eventAccess = updatedAccess as Record<string, 'attendee' | 'editor'>
-    }
-
-    // Auto-upsert contact from RSVP data when an email is known
-    const rsvpEmail = body.email ?? session.email
-    if (rsvpEmail) {
-      await db.insert(contacts)
-        .values({ name: body.displayName, email: rsvpEmail.toLowerCase() })
-        .onConflictDoUpdate({
-          target: contacts.email,
-          set: { name: body.displayName, updatedAt: new Date() },
-        })
     }
 
     return reply.code(201).send({ rsvp: serializeRsvp(rsvp) })

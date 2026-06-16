@@ -28,8 +28,7 @@
   }
 
   function guestHref(g: { id: string; type: string }) {
-    const prefix = g.type === 'user' ? 'u' : g.type === 'contact' ? 'c' : 's'
-    return `/admin/guests/${prefix}-${g.id}`
+    return `/admin/guests/c-${g.id}`
   }
 
   // ── Multi-select ────────────────────────────────────────────────────────────
@@ -50,11 +49,9 @@
   }
 
   const selectedContacts = $derived(
-    filtered.filter((g: GuestRow) => selected.has(g.id) && g.type === 'contact')
+    filtered.filter((g: GuestRow) => selected.has(g.id))
   )
-  const selectedNonContacts = $derived(
-    filtered.filter((g: GuestRow) => selected.has(g.id) && g.type !== 'contact')
-  )
+  const selectedNonContacts = $derived([] as GuestRow[])
 
   // ── Bulk delete ─────────────────────────────────────────────────────────────
   let showBulkDeleteModal = $state(false)
@@ -156,11 +153,12 @@
 
   async function addPerson() {
     if (!addName.trim()) { addError = 'Name is required.'; return }
+    if (!addEmail.trim()) { addError = 'Email is required.'; return }
     addSaving = true; addError = ''
     try {
       await api.createContact({
         name: addName.trim(),
-        email: addEmail.trim() || undefined,
+        email: addEmail.trim(),
         phone: addPhone.trim() || undefined,
         instagramHandle: addInstagram.trim() || undefined,
       })
@@ -200,9 +198,6 @@
       <div class="bulk-bar">
         <span class="bulk-count">
           {selected.size} selected
-          {#if selectedNonContacts.length > 0}
-            <span class="bulk-hint">({selectedContacts.length} contact{selectedContacts.length !== 1 ? 's' : ''})</span>
-          {/if}
         </span>
         <button class="btn-ghost-sm" onclick={clearSelection}>Clear</button>
         <button
@@ -219,9 +214,7 @@
         >
           Delete {selectedContacts.length > 0 ? selectedContacts.length : ''} contact{selectedContacts.length !== 1 ? 's' : ''}
         </button>
-        {#if selectedNonContacts.length > 0}
-          <span class="bulk-hint">Guest/member entries must be managed individually.</span>
-        {/if}
+
       </div>
     {/if}
 
@@ -256,21 +249,19 @@
                 {/if}
               </div>
               <div class="guest-meta">
-                {#if guest.type === 'contact'}
-                  <span class="event-count">Not yet attended</span>
-                {:else}
-                  <span class="event-count">{guest.eventCount} event{guest.eventCount !== 1 ? 's' : ''}</span>
+                <span class="event-count">{guest.eventCount > 0 ? `${guest.eventCount} event${guest.eventCount !== 1 ? 's' : ''}` : 'Not yet attended'}</span>
+                {#if guest.eventCount > 0}
                   <span class="first-seen">{formatDate(guest.firstSeen)}</span>
-                  {#if guest.status === 'blocked'}
-                    <span class="status-badge status-blocked">Blocked</span>
-                  {:else if guest.status === 'removed'}
-                    <span class="status-badge status-removed">Removed</span>
-                  {/if}
+                {/if}
+                {#if guest.status === 'blocked'}
+                  <span class="status-badge status-blocked">Blocked</span>
+                {:else if guest.status === 'removed'}
+                  <span class="status-badge status-removed">Removed</span>
                 {/if}
                 <span class="type-badge type-{guest.type}">
-                  {guest.type === 'user' ? 'Registered' : guest.type === 'contact' ? 'Contact' : 'Guest'}
+                  {guest.type === 'person' ? 'Person' : 'Contact'}
                 </span>
-                {#if guest.type !== 'user'}
+                {#if guest.type !== 'person'}
                   <span class="no-account-badge">no account</span>
                 {/if}
               </div>
@@ -424,8 +415,8 @@
           <input id="add-name" type="text" bind:value={addName} placeholder="Full name" />
         </label>
         <label class="field">
-          <span class="field-label">Email</span>
-          <input id="add-email" type="email" bind:value={addEmail} placeholder="person@example.com" />
+          <span class="field-label">Email <span class="req">*</span></span>
+          <input id="add-email" type="email" bind:value={addEmail} placeholder="person@example.com" required />
           <p class="field-hint">Used to match with future RSVPs and send email invitations.</p>
         </label>
         <label class="field">
@@ -519,6 +510,7 @@
 
   .type-badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; white-space: nowrap; }
   .type-user { background: #e8f0fc; color: #2a4a7a; }
+  .type-person { background: #e8f0fc; color: #2a4a7a; }
   .type-session { background: #ede8e0; color: #4e453e; }
   .type-contact { background: #f4eddc; color: #6e4e1a; }
   .no-account-badge { font-size: 0.65rem; font-weight: 500; color: #7a5a1a; background: #fef4e0; border: 1px solid #e0c870; border-radius: 4px; padding: 0.15rem 0.4rem; white-space: nowrap; }

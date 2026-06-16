@@ -38,7 +38,7 @@ describe('GET /api/session/me', () => {
       method: 'POST',
       url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: session },
-      payload: { displayName: 'Alice', status: 'yes' },
+      payload: { displayName: 'Alice', status: 'yes', email: 'guest@test.com' },
     })
 
     const res = await app.inject({

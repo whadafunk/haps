@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { users, instanceConfig } from '../db/schema.js'
+import { users, instanceConfig, contacts } from '../db/schema.js'
 import { eq, count } from 'drizzle-orm'
 import { hashPassword } from '../lib/crypto.js'
 import { createError } from '../lib/errors.js'
@@ -43,6 +43,11 @@ const setupRoutes: FastifyPluginAsync = async (fastify) => {
 
     const user = inserted[0]
     if (!user) throw createError(500, 'INTERNAL_ERROR', 'Failed to create admin user.')
+
+    // Create/claim contact for the admin user
+    await db.insert(contacts)
+      .values({ name: body.displayName, email: body.email.toLowerCase(), userId: user.id })
+      .onConflictDoUpdate({ target: contacts.email, set: { userId: user.id, updatedAt: new Date() } })
 
     return reply.code(201).send({ user })
   })

@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { users, visitorSessions, rsvps, comments, magicLinks, instanceConfig } from '../db/schema.js'
-import { eq, and, lt, count, or } from 'drizzle-orm'
+import { users, visitorSessions, rsvps, comments, magicLinks, instanceConfig, contacts } from '../db/schema.js'
+import { eq, and, lt, count } from 'drizzle-orm'
 import { verifyPassword, hashPassword, generateToken, sha256hex } from '../lib/crypto.js'
 import { signJwt, signRefreshToken, verifyRefreshToken } from '../middleware/auth.js'
 import { createError } from '../lib/errors.js'
@@ -132,23 +132,40 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     const [cfg] = await db.select({ requireRsvpBeforeRegister: instanceConfig.requireRsvpBeforeRegister }).from(instanceConfig).limit(1)
     const guardEnabled = cfg?.requireRsvpBeforeRegister ?? true
     if (guardEnabled) {
-      if (!request.session) throw createError(403, 'NO_EVENT_HISTORY', 'RSVP to at least one event before creating an account.')
-      // Check RSVPs by session_id OR user_id — sessions retain their userId after logout,
-      // so skipping the check when userId is set allows anyone who was ever logged in to bypass the guard.
-      const rsvpCondition = request.session.userId
-        ? or(eq(rsvps.sessionId, request.session.id), eq(rsvps.userId, request.session.userId))
-        : eq(rsvps.sessionId, request.session.id)
-      const countRows = await db.select({ rsvpCount: count() }).from(rsvps).where(rsvpCondition)
-      if ((countRows[0]?.rsvpCount ?? 0) === 0) throw createError(403, 'NO_EVENT_HISTORY', 'RSVP to at least one event before creating an account.')
+      const [contactForEmail] = await db
+        .select({ id: contacts.id })
+        .from(contacts)
+        .where(eq(contacts.email, body.email.toLowerCase()))
+        .limit(1)
+      if (!contactForEmail) {
+        throw createError(403, 'NO_EVENT_HISTORY', 'RSVP to at least one event before creating an account.')
+      }
+      const [countRow] = await db
+        .select({ n: count() })
+        .from(rsvps)
+        .where(eq(rsvps.contactId, contactForEmail.id))
+      if (Number(countRow?.n ?? 0) === 0) {
+        throw createError(403, 'NO_EVENT_HISTORY', 'RSVP to at least one event before creating an account.')
+      }
     }
 
-    const [existing] = await db
+    // Check if email is already claimed by a user (via contacts table)
+    const [existingContact] = await db
+      .select({ id: contacts.id, userId: contacts.userId })
+      .from(contacts)
+      .where(eq(contacts.email, body.email.toLowerCase()))
+      .limit(1)
+    if (existingContact?.userId) {
+      throw createError(409, 'EMAIL_ALREADY_EXISTS', 'An account with this email already exists.')
+    }
+
+    // Safety net: also check users table
+    const [existingUser] = await db
       .select({ id: users.id })
       .from(users)
       .where(eq(users.email, body.email))
       .limit(1)
-
-    if (existing) throw createError(409, 'EMAIL_ALREADY_EXISTS', 'An account with this email already exists.')
+    if (existingUser) throw createError(409, 'EMAIL_ALREADY_EXISTS', 'An account with this email already exists.')
 
     const passwordHash = await hashPassword(body.password)
     const [newUser] = await db
@@ -157,6 +174,14 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       .returning({ id: users.id, email: users.email, displayName: users.displayName, role: users.role })
 
     if (!newUser) throw createError(500, 'INTERNAL_ERROR', 'Failed to create account.')
+
+    // Claim the contact (upsert by email, set userId)
+    await db.insert(contacts)
+      .values({ name: body.displayName, email: body.email.toLowerCase(), userId: newUser.id })
+      .onConflictDoUpdate({
+        target: contacts.email,
+        set: { userId: newUser.id, name: body.displayName, updatedAt: new Date() },
+      })
 
     // Merge current visitor session into the new account
     if (request.session) {

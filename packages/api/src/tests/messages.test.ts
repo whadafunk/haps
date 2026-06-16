@@ -34,7 +34,7 @@ describe('POST /api/events/:slug/messages', () => {
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
       headers: { Cookie: session },
-      payload: { displayName: 'Alice', status: 'yes' },
+      payload: { displayName: 'Alice', status: 'yes', email: 'guest@test.com' },
     })
     const res = await app.inject({
       method: 'POST',
@@ -53,7 +53,7 @@ describe('POST /api/events/:slug/messages', () => {
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
       headers: { Cookie: session },
-      payload: { displayName: 'Bob', status: 'maybe' },
+      payload: { displayName: 'Bob', status: 'maybe', email: 'bob@test.com' },
     })
     const res = await app.inject({
       method: 'POST',
@@ -120,13 +120,13 @@ describe('POST /api/events/:slug/blast', () => {
     expect(res.json().queued).toBe(2)
   })
 
-  it('does not queue jobs for yes RSVPs without email', async () => {
-    const session = await getSessionWithProfile(app, { email: 'noemail@test.com' })
+  it('queues 1 job for a yes RSVP with email', async () => {
+    const session = await getSessionWithProfile(app, { email: 'withmail@test.com' })
     await app.inject({
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
       headers: { Cookie: session },
-      payload: { displayName: 'NoEmail', status: 'yes' }, // no rsvp-level email, but session has one
+      payload: { displayName: 'WithEmail', status: 'yes', email: 'withmail@test.com' },
     })
     const res = await app.inject({
       method: 'POST',
@@ -134,7 +134,7 @@ describe('POST /api/events/:slug/blast', () => {
       headers: { 'x-edit-token': editToken },
       payload: { subject: 'Update', body: 'Body', channels: ['email'] },
     })
-    expect(res.json().queued).toBe(0)
+    expect(res.json().queued).toBe(1)
   })
 
   it('blast appears in the messages feed', async () => {
@@ -170,7 +170,7 @@ describe('DELETE /api/events/:slug/messages/:messageId', () => {
       method: 'POST',
       url: `/api/events/${eventSlug}/rsvps`,
       headers: { Cookie: session },
-      payload: { displayName: 'Alice', status: 'yes' },
+      payload: { displayName: 'Alice', status: 'yes', email: 'guest@test.com' },
     })
     const postRes = await app.inject({
       method: 'POST',

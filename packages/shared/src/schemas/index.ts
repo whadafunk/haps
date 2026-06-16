@@ -57,7 +57,7 @@ export const CreateRsvpSchema = z.object({
   status: z.enum(['yes', 'maybe', 'no']),
   headCount: z.number().int().positive().default(1),
   note: z.string().max(1000).optional(),
-  email: z.string().email().optional(),
+  email: z.string().email(),
 }).strict()
 
 export const UpdateRsvpSchema = z.object({
@@ -162,7 +162,7 @@ export const UpdateContactSchema = z.object({
 // Manually create a contact in the People directory
 export const CreateContactSchema = z.object({
   name:            z.string().min(1).max(200),
-  email:           z.string().email().optional(),
+  email:           z.string().email(),
   phone:           z.string().max(50).optional(),
   instagramHandle: z.string().max(100).optional(),
   notes:           z.string().max(1000).optional(),

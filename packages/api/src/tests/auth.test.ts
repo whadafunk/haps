@@ -89,7 +89,7 @@ describe('POST /api/auth/register', () => {
     await app.inject({
       method: 'POST', url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: sessionCookie },
-      payload: { displayName: 'Alice', status: 'yes' },
+      payload: { displayName: 'Alice', status: 'yes', email: 'alice@test.com' },
     })
 
     const res = await app.inject({
@@ -120,12 +120,12 @@ describe('POST /api/auth/register', () => {
     const orgCookies = await createOrganizer(app, adminCookies)
     const { event } = await createEvent(app, orgCookies, { status: 'published' })
 
-    // Session A registers
+    // Session A RSVPs with alice@test.com (creates contact), then registers
     const sessionA = await getSessionWithProfile(app)
     await app.inject({
       method: 'POST', url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: sessionA },
-      payload: { displayName: 'Alice', status: 'yes' },
+      payload: { displayName: 'Alice', status: 'yes', email: 'alice@test.com' },
     })
     await app.inject({
       method: 'POST', url: '/api/auth/register',
@@ -133,12 +133,12 @@ describe('POST /api/auth/register', () => {
       payload: { email: 'alice@test.com', password: 'Password123!', displayName: 'Alice' },
     })
 
-    // Session B tries to register with the same email
+    // Session B RSVPs with bob@test.com (creates contact), then tries to register with alice@test.com (already claimed)
     const sessionB = await getSessionWithProfile(app, { email: 'bob@test.com' })
     await app.inject({
       method: 'POST', url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: sessionB },
-      payload: { displayName: 'Bob', status: 'yes' },
+      payload: { displayName: 'Bob', status: 'yes', email: 'bob@test.com' },
     })
     const res = await app.inject({
       method: 'POST', url: '/api/auth/register',
@@ -161,16 +161,16 @@ describe('POST /api/auth/register', () => {
     const orgCookies = await createOrganizer(app, adminCookies)
     const { event } = await createEvent(app, orgCookies, { status: 'published' })
 
-    // Guest RSVPs with a visitor session
+    // Guest RSVPs with alice@test.com (creates contact, links RSVP to contact)
     const sessionCookie = await getSessionWithProfile(app)
     await app.inject({
       method: 'POST',
       url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: sessionCookie },
-      payload: { displayName: 'Alice', status: 'yes' },
+      payload: { displayName: 'Alice', status: 'yes', email: 'alice@test.com' },
     })
 
-    // Guest registers — session should merge into new account
+    // Guest registers — contact alice@test.com has an RSVP so guard passes
     const regRes = await app.inject({
       method: 'POST',
       url: '/api/auth/register',
@@ -195,12 +195,12 @@ describe('POST /api/auth/register', () => {
     const orgCookies = await createOrganizer(app, adminCookies)
     const { event } = await createEvent(app, orgCookies, { status: 'published' })
 
-    // Device A: register after RSVPing (guard requires at least one RSVP)
+    // Device A: register after RSVPing with alice@test.com (guard checks contact by email)
     const sessionA = await getSessionWithProfile(app)
     await app.inject({
       method: 'POST', url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: sessionA },
-      payload: { displayName: 'Alice', status: 'yes' },
+      payload: { displayName: 'Alice', status: 'yes', email: 'alice@test.com' },
     })
     const regRes = await app.inject({
       method: 'POST', url: '/api/auth/register',
@@ -215,7 +215,7 @@ describe('POST /api/auth/register', () => {
     await app.inject({
       method: 'POST', url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: sessionB },
-      payload: { displayName: 'Alice', status: 'maybe' },
+      payload: { displayName: 'Alice', status: 'maybe', email: 'alice-b@test.com' },
     })
 
     // Login on device B — merge should discard the session RSVP (user already has 'yes')
@@ -347,7 +347,7 @@ describe('POST /api/auth/magic-link/verify', () => {
       method: 'POST',
       url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: sessionCookie },
-      payload: { displayName: 'Bob', status: 'yes' },
+      payload: { displayName: 'Bob', status: 'yes', email: 'guest@test.com' },
     })
 
     // Guest requests magic link and verifies it (session carries forward)

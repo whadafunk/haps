@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
 import { users, events, instanceConfig, visitorSessions, rsvps, eventTokens, emailBlocklist, contacts } from '../db/schema.js'
-import { eq, count, sql, and, isNull, isNotNull, or, desc, ne } from 'drizzle-orm'
+import { eq, count, sql, and, isNull, desc, ne } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { CreateUserSchema, BlockGuestSchema, RemoveGuestSchema, CreateContactSchema, UpdateContactSchema } from '@haps/shared'
 import { hashPassword } from '../lib/crypto.js'
@@ -43,6 +43,13 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
       .catch(() => {
         throw createError(409, 'EMAIL_ALREADY_EXISTS', 'A user with this email already exists.')
       })
+
+    if (!user) throw createError(500, 'INTERNAL_ERROR', 'Failed to create user.')
+
+    // Auto-create/claim contact for the new user
+    await db.insert(contacts)
+      .values({ name: body.displayName, email: body.email.toLowerCase(), userId: user.id })
+      .onConflictDoUpdate({ target: contacts.email, set: { userId: user.id, name: body.displayName, updatedAt: new Date() } })
 
     return reply.code(201).send({ user })
   })
@@ -138,79 +145,37 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   // ── People directory ─────────────────────────────────────────────────────
 
-  fastify.get('/api/admin/guests', { preHandler: staffPreHandler }, async (request) => {
-    const user = request.user!
-    const isAdmin = user.role === 'admin'
-
-    const [userRows, sessionRows] = await Promise.all([
-      db
-        .select({
-          id:          users.id,
-          type:        sql<string>`'user'`,
-          displayName: users.displayName,
-          email:       users.email,
-          phone:       users.phone,
-          status:      sql<string>`'active'`,
-          firstSeen:   sql<Date>`min(${rsvps.createdAt})`,
-          eventCount:  sql<number>`count(distinct ${rsvps.eventId})::int`,
-        })
-        .from(rsvps)
-        .innerJoin(users, eq(rsvps.userId, users.id))
-        .innerJoin(events, eq(rsvps.eventId, events.id))
-        .where(and(eq(users.role, 'member'), isAdmin ? undefined : eq(events.organizerId, user.sub)))
-        .groupBy(users.id),
-
-      db
-        .select({
-          id:          visitorSessions.id,
-          type:        sql<string>`'session'`,
-          displayName: sql<string>`coalesce(${visitorSessions.displayName}, max(${rsvps.displayName}))`,
-          email:       sql<string | null>`coalesce(${visitorSessions.email}, max(${rsvps.email}))`,
-          phone:       visitorSessions.phone,
-          status:      visitorSessions.status,
-          firstSeen:   sql<Date>`min(${rsvps.createdAt})`,
-          eventCount:  sql<number>`count(distinct ${rsvps.eventId})::int`,
-        })
-        .from(rsvps)
-        .innerJoin(visitorSessions, eq(rsvps.sessionId, visitorSessions.id))
-        .innerJoin(events, eq(rsvps.eventId, events.id))
-        .where(and(isNull(rsvps.userId), isAdmin ? undefined : eq(events.organizerId, user.sub)))
-        .groupBy(visitorSessions.id),
-    ])
-
-    // Contacts that are not yet represented by a session or user (directory-only people)
-    const contactRows = await db
+  fastify.get('/api/admin/guests', { preHandler: staffPreHandler }, async () => {
+    const rows = await db
       .select({
         id:          contacts.id,
-        type:        sql<string>`'contact'`,
+        type:        sql<string>`case when ${contacts.userId} is null then 'contact' else 'person' end`,
         displayName: contacts.name,
         email:       contacts.email,
         phone:       contacts.phone,
-        status:      sql<string>`'active'`,
-        firstSeen:   contacts.createdAt,
-        eventCount:  sql<number>`0`,
+        status:      contacts.status,
+        firstSeen:   sql<string>`coalesce((select min(r.created_at) from rsvps r where r.contact_id = ${contacts.id}), ${contacts.createdAt})::text`,
+        eventCount:  sql<number>`(select count(distinct r.event_id)::int from rsvps r where r.contact_id = ${contacts.id})`,
       })
       .from(contacts)
-      .where(or(
-        isNull(contacts.email),
-        and(
-          isNotNull(contacts.email),
-          sql`not exists (select 1 from visitor_sessions vs where vs.email = contacts.email)`,
-          sql`not exists (select 1 from users u where u.email = contacts.email)`,
-        ),
-      ))
+      .orderBy(desc(contacts.createdAt))
 
-    const all = [...userRows, ...sessionRows, ...contactRows].sort(
-      (a, b) => new Date(b.firstSeen).getTime() - new Date(a.firstSeen).getTime()
-    )
-    return { guests: all.map((g) => ({ ...g, firstSeen: new Date(g.firstSeen).toISOString() })) }
+    return { guests: rows.map((g) => ({ ...g, firstSeen: new Date(g.firstSeen).toISOString() })) }
   })
 
   fastify.post('/api/contacts', { preHandler: staffPreHandler }, async (request, reply) => {
     const body = CreateContactSchema.parse(request.body)
+
+    const [existing] = await db
+      .select({ id: contacts.id })
+      .from(contacts)
+      .where(eq(contacts.email, body.email.toLowerCase()))
+      .limit(1)
+    if (existing) throw createError(409, 'EMAIL_ALREADY_EXISTS', 'A contact with this email already exists.')
+
     const [contact] = await db.insert(contacts).values({
       name:            body.name,
-      email:           body.email?.toLowerCase() ?? null,
+      email:           body.email.toLowerCase(),
       phone:           body.phone ?? null,
       instagramHandle: body.instagramHandle ?? null,
       notes:           body.notes ?? null,
@@ -266,6 +231,9 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
         phone:           contacts.phone,
         instagramHandle: contacts.instagramHandle,
         notes:           contacts.notes,
+        userId:          contacts.userId,
+        status:          contacts.status,
+        statusReason:    contacts.statusReason,
         createdAt:       contacts.createdAt,
       })
       .from(contacts)
@@ -294,20 +262,36 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
       .where(eq(eventTokens.contactId, contactId))
       .orderBy(desc(events.startsAt))
 
+    const rsvpRows = await db
+      .select({
+        eventSlug:     events.slug,
+        eventTitle:    events.title,
+        startsAt:      events.startsAt,
+        timezone:      events.timezone,
+        rsvpStatus:    rsvps.status,
+        headCount:     rsvps.headCount,
+        checkedIn:     rsvps.checkedIn,
+        rsvpCreatedAt: rsvps.createdAt,
+      })
+      .from(rsvps)
+      .innerJoin(events, eq(events.id, rsvps.eventId))
+      .where(eq(rsvps.contactId, contactId))
+      .orderBy(desc(events.startsAt))
+
     return {
       guest: {
         id:              contact.id,
         shortId:         contact.id.slice(0, 8),
-        type:            'contact',
+        type:            contact.userId ? 'person' : 'contact',
         displayName:     contact.name,
         email:           contact.email,
         phone:           contact.phone,
         instagramHandle: contact.instagramHandle,
         notes:           contact.notes,
-        status:          'active',
-        statusReason:    null,
+        status:          contact.status,
+        statusReason:    contact.statusReason ?? null,
         firstSeen:       contact.createdAt.toISOString(),
-        events:          [],
+        events:          rsvpRows.map((r) => ({ ...r, startsAt: r.startsAt.toISOString(), rsvpCreatedAt: r.rsvpCreatedAt.toISOString() })),
         invites:         inviteRows.map((r) => ({
           tokenId:     r.tokenId,
           eventSlug:   r.eventSlug,
