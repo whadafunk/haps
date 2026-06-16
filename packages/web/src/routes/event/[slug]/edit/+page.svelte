@@ -484,7 +484,8 @@
 
   <div class="tabs">
     <button class="tab-btn" class:active={activeTab === 'details'} onclick={() => activeTab = 'details'}>Details</button>
-    <button class="tab-btn" class:active={activeTab === 'activity'} onclick={() => activeTab = 'activity'}>Activity</button>
+    <button class="tab-btn" class:active={activeTab === 'guests'} onclick={() => activeTab = 'guests'}>Guests</button>
+    <button class="tab-btn" class:active={activeTab === 'updates'} onclick={() => activeTab = 'updates'}>Updates</button>
     <button class="tab-btn" class:active={activeTab === 'wall'} onclick={() => activeTab = 'wall'}>Wall</button>
   </div>
 
@@ -607,7 +608,7 @@
     </div>
   {/if}
 
-  {#if activeTab === 'activity'}
+  {#if activeTab === 'guests'}
     <div class="cards">
       <section class="card">
         <div class="card-header">
@@ -622,7 +623,11 @@
           {/if}
         </p>
       </section>
+    </div>
+  {/if}
 
+  {#if activeTab === 'updates'}
+    <div class="cards">
       <section class="card">
         <div class="blast-card-header">
           <h2>Updates</h2>

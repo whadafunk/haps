@@ -57,29 +57,18 @@
     }
   }
 
-  type EventMessage = { id: string; displayName: string; subject: string | null; body: string; type: string; createdAt: string }
-  let messages = $state<EventMessage[]>([])
-  let messagesLoaded = $state(false)
+  import type { Post } from '@haps/shared'
 
-  import type { Post, AlbumPhoto } from '@haps/shared'
-
-  // Wall + Album
-  let wallTab = $state<'wall' | 'album'>('wall')
+  // Wall
   let posts = $state<Post[]>([])
   let postsLoaded = $state(false)
-  let albumPhotos = $state<(AlbumPhoto & { isOwn?: boolean })[]>([])
-  let albumLoaded = $state(false)
-
   let postBody = $state('')
   let postFiles = $state<FileList | null>(null)
   let postLoading = $state(false)
   let postError = $state('')
 
-  let albumFiles = $state<FileList | null>(null)
-  let albumUploadLoading = $state(false)
-  let albumUploadError = $state('')
-
-  let lightboxPhoto = $state<(AlbumPhoto & { isOwn?: boolean }) | null>(null)
+  type LightboxPhoto = { id: string; url: string; caption?: string | null; uploaderName: string; isOwn?: boolean }
+  let lightboxPhoto = $state<LightboxPhoto | null>(null)
 
   let guestList = $state<Array<{ id: string; displayName: string; status: string; headCount: number; isHost?: boolean }>>([])
   let guestListLoaded = $state(false)
@@ -190,15 +179,6 @@
     } catch { /**/ }
   }
 
-  async function loadAlbum() {
-    if (albumLoaded) return
-    try {
-      const res = await api.listAlbum(event.slug)
-      albumPhotos = res.photos
-      albumLoaded = true
-    } catch { /**/ }
-  }
-
   async function submitPost() {
     if (!postBody.trim() && (!postFiles || postFiles.length === 0)) {
       postError = 'Add some text or at least one photo.'
@@ -214,11 +194,6 @@
       }
       const res = await api.createPost(event.slug, fd)
       posts = [...posts, res.post]
-      // Add photos to album too
-      if (res.post.photos.length > 0) {
-        const newPhotos = res.post.photos.map((p) => ({ ...p, uploaderName: res.post.authorName, eventId: event.slug, createdAt: res.post.createdAt, isOwn: true }))
-        albumPhotos = [...albumPhotos, ...newPhotos]
-      }
       postBody = ''
       postFiles = null
     } catch (e: unknown) {
@@ -236,43 +211,17 @@
     } catch { /**/ }
   }
 
-  async function uploadToAlbum() {
-    if (!albumFiles || albumFiles.length === 0) return
-    albumUploadLoading = true
-    albumUploadError = ''
-    try {
-      const fd = new FormData()
-      for (const file of albumFiles) fd.append('photos', file)
-      const res = await api.uploadToAlbum(event.slug, fd)
-      albumPhotos = [...albumPhotos, ...res.photos]
-      albumFiles = null
-    } catch (e: unknown) {
-      albumUploadError = e instanceof ApiError ? e.message : 'Failed to upload.'
-    } finally {
-      albumUploadLoading = false
-    }
-  }
-
   async function deletePhoto(photoId: string) {
-    if (!confirm('Remove this photo from the album?')) return
+    if (!confirm('Remove this photo?')) return
     try {
       await api.deletePhoto(event.slug, photoId)
-      albumPhotos = albumPhotos.filter((p) => p.id !== photoId)
-    } catch { /**/ }
-  }
-
-  async function loadMessages() {
-    if (messagesLoaded) return
-    try {
-      const res = await api.listMessages(event.slug)
-      messages = res.messages
-      messagesLoaded = true
+      posts = posts.map(p => ({ ...p, photos: p.photos.filter(ph => ph.id !== photoId) }))
+      lightboxPhoto = null
     } catch { /**/ }
   }
 
   $effect(() => {
-    if (event.showAlbum) { loadPosts(); loadAlbum() }
-    loadMessages()
+    if (event.showAlbum) { loadPosts() }
     if (event.showGuests && !guestListLoaded) {
       api.listRsvps(event.slug).then(res => {
         guestList = res.rsvps
@@ -541,126 +490,64 @@
       </section>
     {/if}
 
-    <!-- Updates (host-only blasts) -->
-    {#if messages.length > 0 || !messagesLoaded}
-      <section class="section">
-        <h2>Updates</h2>
-        {#if messagesLoaded}
-          <div class="messages">
-            {#each messages as msg (msg.id)}
-              <div class="message">
-                {#if msg.subject}
-                  <div class="message-subject">{msg.subject}</div>
-                {/if}
-                <p class="message-body">{msg.body}</p>
-                <div class="message-meta">
-                  <span class="message-time">{new Date(msg.createdAt).toLocaleDateString()}</span>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <p class="muted">Loading…</p>
-        {/if}
-      </section>
-    {/if}
-
-    <!-- Wall + Album -->
+    <!-- Wall -->
     {#if event.showAlbum}
       <section class="section">
-        <div class="wall-tabs">
-          <button class="wall-tab" class:active={wallTab === 'wall'} onclick={() => wallTab = 'wall'}>Wall</button>
-          <button class="wall-tab" class:active={wallTab === 'album'} onclick={() => wallTab = 'album'}>
-            Album {albumPhotos.length > 0 ? `(${albumPhotos.length})` : ''}
-          </button>
+        <div class="wall-header">
+          <h2>Wall</h2>
+          <a href="/event/{event.slug}/album" class="album-link">Photo album →</a>
         </div>
 
-        {#if wallTab === 'wall'}
-          {#if event.status === 'published'}
-            <div class="post-composer">
-              {#if postError}
-                <div class="error-banner">{postError}</div>
-              {/if}
-              <textarea bind:value={postBody} rows="2" placeholder="Share something…" class="post-textarea"></textarea>
-              <div class="post-composer-actions">
-                <label class="photo-pick-btn">
-                  📷 {postFiles && postFiles.length > 0 ? `${postFiles.length} photo${postFiles.length > 1 ? 's' : ''} selected` : 'Add photos'}
-                  <input type="file" accept="image/*" multiple onchange={(e) => { postFiles = (e.target as HTMLInputElement).files }} style="display:none" />
-                </label>
-                <button onclick={submitPost} disabled={postLoading} class="post-btn">
-                  {postLoading ? 'Posting…' : 'Post'}
-                </button>
-              </div>
+        {#if event.status === 'published'}
+          <div class="post-composer">
+            {#if postError}
+              <div class="error-banner">{postError}</div>
+            {/if}
+            <textarea bind:value={postBody} rows="2" placeholder="Share something…" class="post-textarea"></textarea>
+            <div class="post-composer-actions">
+              <label class="photo-pick-btn">
+                📷 {postFiles && postFiles.length > 0 ? `${postFiles.length} photo${postFiles.length > 1 ? 's' : ''} selected` : 'Add photos'}
+                <input type="file" accept="image/*" multiple onchange={(e) => { postFiles = (e.target as HTMLInputElement).files }} style="display:none" />
+              </label>
+              <button onclick={submitPost} disabled={postLoading} class="post-btn">
+                {postLoading ? 'Posting…' : 'Post'}
+              </button>
             </div>
-          {/if}
+          </div>
+        {/if}
 
-          {#if postsLoaded}
-            {#if posts.length === 0}
-              <p class="muted">No posts yet. Be the first to share!</p>
-            {:else}
-              <div class="post-feed">
-                {#each posts as post (post.id)}
-                  <div class="post-card">
-                    <div class="post-header">
-                      <strong class="post-author">{post.authorName}</strong>
-                      <span class="post-time">{new Date(post.createdAt).toLocaleDateString()}</span>
-                      {#if post.isOwn || data.isEditor}
-                        <button class="post-delete-btn" onclick={() => deletePost(post.id)} title="Delete post">✕</button>
-                      {/if}
-                    </div>
-                    {#if post.body}
-                      <p class="post-body">{post.body}</p>
-                    {/if}
-                    {#if post.photos.length > 0}
-                      <div class="post-photos" class:single={post.photos.length === 1}>
-                        {#each post.photos as photo (photo.id)}
-                          <button class="photo-thumb-btn" onclick={() => lightboxPhoto = albumPhotos.find(p => p.id === photo.id) ?? { ...photo, uploaderName: post.authorName, eventId: event.slug, createdAt: post.createdAt }}>
-                            <img src={photo.url} alt={photo.caption ?? ''} class="photo-thumb" loading="lazy" />
-                          </button>
-                        {/each}
-                      </div>
+        {#if postsLoaded}
+          {#if posts.length === 0}
+            <p class="muted">No posts yet. Be the first to share!</p>
+          {:else}
+            <div class="post-feed">
+              {#each posts as post (post.id)}
+                <div class="post-card">
+                  <div class="post-header">
+                    <strong class="post-author">{post.authorName}</strong>
+                    <span class="post-time">{new Date(post.createdAt).toLocaleDateString()}</span>
+                    {#if post.isOwn || data.isEditor}
+                      <button class="post-delete-btn" onclick={() => deletePost(post.id)} title="Delete post">✕</button>
                     {/if}
                   </div>
-                {/each}
-              </div>
-            {/if}
-          {:else}
-            <p class="muted">Loading…</p>
-          {/if}
-        {:else}
-          <!-- Album tab -->
-          {#if event.status === 'published'}
-            <div class="album-upload">
-              {#if albumUploadError}
-                <div class="error-banner">{albumUploadError}</div>
-              {/if}
-              <label class="photo-pick-btn">
-                📷 {albumFiles && albumFiles.length > 0 ? `${albumFiles.length} photo${albumFiles.length > 1 ? 's' : ''} selected` : 'Upload photos'}
-                <input type="file" accept="image/*" multiple onchange={(e) => { albumFiles = (e.target as HTMLInputElement).files }} style="display:none" />
-              </label>
-              {#if albumFiles && albumFiles.length > 0}
-                <button onclick={uploadToAlbum} disabled={albumUploadLoading} class="post-btn">
-                  {albumUploadLoading ? 'Uploading…' : `Upload ${albumFiles.length} photo${albumFiles.length > 1 ? 's' : ''}`}
-                </button>
-              {/if}
+                  {#if post.body}
+                    <p class="post-body">{post.body}</p>
+                  {/if}
+                  {#if post.photos.length > 0}
+                    <div class="post-photos" class:single={post.photos.length === 1}>
+                      {#each post.photos as photo (photo.id)}
+                        <button class="photo-thumb-btn" onclick={() => lightboxPhoto = { ...photo, uploaderName: post.authorName, isOwn: post.isOwn }}>
+                          <img src={photo.url} alt={photo.caption ?? ''} class="photo-thumb" loading="lazy" />
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              {/each}
             </div>
           {/if}
-
-          {#if albumLoaded}
-            {#if albumPhotos.length === 0}
-              <p class="muted">No photos yet.</p>
-            {:else}
-              <div class="album-grid">
-                {#each albumPhotos as photo (photo.id)}
-                  <button class="album-cell-btn" onclick={() => lightboxPhoto = photo}>
-                    <img src={photo.url} alt={photo.caption ?? ''} class="album-img" loading="lazy" />
-                  </button>
-                {/each}
-              </div>
-            {/if}
-          {:else}
-            <p class="muted">Loading…</p>
-          {/if}
+        {:else}
+          <p class="muted">Loading…</p>
         {/if}
       </section>
     {/if}
@@ -768,9 +655,10 @@
   .no-identity-banner { background: #fef4e0; color: #7a5a1a; border: 1px solid #e0c870; border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.9rem; }
   .no-identity-banner a { color: #b05525; font-weight: 600; text-decoration: none; }
   .no-identity-banner a:hover { text-decoration: underline; }
-  .wall-tabs { display: flex; gap: 0.25rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border, #cfc3b0); padding-bottom: 0; }
-  .wall-tab { background: none; border: none; padding: 0.5rem 0.875rem; font-size: 0.875rem; font-weight: 500; color: #6b6058; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
-  .wall-tab.active { color: var(--accent, #b05525); border-bottom-color: var(--accent, #b05525); font-weight: 600; }
+  .wall-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .wall-header h2 { margin: 0; }
+  .album-link { font-size: 0.875rem; font-weight: 600; color: var(--accent, #b05525); text-decoration: none; }
+  .album-link:hover { text-decoration: underline; }
   .post-composer { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border, #cfc3b0); }
   .post-textarea { padding: 0.5rem 0.75rem; border: 1px solid var(--border, #c8bdb0); border-radius: 8px; font-size: 0.95rem; font-family: inherit; background: #fff; color: #1a1510; resize: none; }
   .post-composer-actions { display: flex; gap: 0.5rem; align-items: center; }
@@ -790,10 +678,6 @@
   .post-photos.single { grid-template-columns: 1fr; max-width: 320px; }
   .photo-thumb-btn { padding: 0; border: none; background: none; cursor: pointer; aspect-ratio: 1; overflow: hidden; }
   .photo-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .album-upload { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border, #cfc3b0); flex-wrap: wrap; }
-  .album-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
-  .album-cell-btn { padding: 0; border: none; background: none; cursor: pointer; aspect-ratio: 1; overflow: hidden; border-radius: 4px; }
-  .album-img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
   .lightbox-inner { background: #fff; border-radius: 12px; overflow: hidden; max-width: 560px; width: 100%; }
   .lightbox-img { width: 100%; max-height: 70vh; object-fit: contain; display: block; background: #111; }
@@ -802,7 +686,6 @@
   .lightbox-actions { display: flex; gap: 0.5rem; padding: 0.75rem 1rem; border-top: 1px solid #e8e0d8; }
   .lightbox-close { margin-left: auto; background: var(--card-inner, #e8ddd0); border: 1px solid var(--border, #cfc3b0); border-radius: 6px; padding: 0.375rem 0.875rem; font-size: 0.875rem; cursor: pointer; }
   .lightbox-delete { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 6px; padding: 0.375rem 0.875rem; font-size: 0.875rem; cursor: pointer; }
-  .messages { display: flex; flex-direction: column; gap: 0.5rem; }
   .message { border-radius: 8px; padding: 0.75rem; border: 1px solid var(--accent, #b05525); background: var(--card-bg, #f0e8da); }
   .message-subject { font-weight: 700; font-size: 0.9rem; color: #1a1510; margin-bottom: 0.25rem; }
   .message-body { margin: 0 0 0.375rem; font-size: 0.9rem; color: #3d352e; white-space: pre-wrap; }
