@@ -5,6 +5,7 @@
   import { goto } from '$app/navigation'
   import { onMount } from 'svelte'
   import QRCode from 'qrcode'
+  import type { Post, AlbumPhoto } from '@haps/shared'
 
   let { data } = $props<{ data: PageData }>()
 
@@ -27,8 +28,20 @@
   const waitlistCount = $derived(rsvps.filter(r => r.status === 'waitlist').length)
   let showGuestModal = $state(false)
 
-  let comments = $state<Array<{ id: string; displayName: string; body: string; createdAt: string }>>([])
-  let commentsLoaded = $state(false)
+  // Wall + Album
+  let wallTab = $state<'wall' | 'album'>('wall')
+  let posts = $state<Post[]>([])
+  let postsLoaded = $state(false)
+  let albumPhotos = $state<(AlbumPhoto & { isOwn?: boolean })[]>([])
+  let albumLoaded = $state(false)
+  let postBody = $state('')
+  let postFiles = $state<FileList | null>(null)
+  let postLoading = $state(false)
+  let postError = $state('')
+  let albumFiles = $state<FileList | null>(null)
+  let albumUploadLoading = $state(false)
+  let albumUploadError = $state('')
+  let lightboxPhoto = $state<(AlbumPhoto & { isOwn?: boolean }) | null>(null)
 
   type TokenRow = { id: string; type: string; label: string | null; status: string; singleUse: boolean; inviteUrl: string | null; claimedBySessionId: string | null; createdAt: string }
   let inviteTokens = $state((data.tokens as TokenRow[]).filter(t => t.type === 'attendee'))
@@ -94,15 +107,21 @@
       if (stored) editLink = stored
     } catch { /* storage disabled */ }
 
-    api.listComments(event.slug).then(res => {
-      comments = res.comments
-      commentsLoaded = true
-    }).catch(() => { commentsLoaded = true })
-
     api.listMessages(event.slug).then(res => {
       blasts = res.messages.filter((m: { type: string }) => m.type === 'blast')
       blastsLoaded = true
     }).catch(() => { blastsLoaded = true })
+  })
+
+  $effect(() => {
+    if (activeTab === 'wall') {
+      if (!postsLoaded) {
+        api.listPosts(event.slug).then(res => { posts = res.posts; postsLoaded = true }).catch(() => { postsLoaded = true })
+      }
+      if (!albumLoaded) {
+        api.listAlbum(event.slug).then(res => { albumPhotos = res.photos; albumLoaded = true }).catch(() => { albumLoaded = true })
+      }
+    }
   })
 
   async function copyGeneralLink() {
@@ -375,11 +394,59 @@
     } catch { /**/ }
   }
 
-  async function deleteComment(commentId: string) {
-    if (!confirm('Delete this comment?')) return
+  async function submitPost() {
+    if (!postBody.trim() && (!postFiles || postFiles.length === 0)) { postError = 'Add some text or at least one photo.'; return }
+    postLoading = true
+    postError = ''
     try {
-      await api.deleteComment(event.slug, commentId, data.editToken)
-      comments = comments.filter(c => c.id !== commentId)
+      const fd = new FormData()
+      if (postBody.trim()) fd.append('body', postBody.trim())
+      if (postFiles) { for (const file of postFiles) fd.append('photos', file) }
+      const res = await api.createPost(event.slug, fd)
+      posts = [...posts, res.post]
+      if (res.post.photos.length > 0) {
+        const newPhotos = res.post.photos.map(p => ({ ...p, uploaderName: res.post.authorName, eventId: event.slug, createdAt: res.post.createdAt, isOwn: true }))
+        albumPhotos = [...albumPhotos, ...newPhotos]
+      }
+      postBody = ''
+      postFiles = null
+    } catch (e: unknown) {
+      postError = e instanceof ApiError ? e.message : 'Failed to post.'
+    } finally {
+      postLoading = false
+    }
+  }
+
+  async function deletePost(postId: string) {
+    if (!confirm('Delete this post?')) return
+    try {
+      await api.deletePost(event.slug, postId, data.editToken)
+      posts = posts.filter(p => p.id !== postId)
+    } catch { /**/ }
+  }
+
+  async function uploadToAlbum() {
+    if (!albumFiles || albumFiles.length === 0) return
+    albumUploadLoading = true
+    albumUploadError = ''
+    try {
+      const fd = new FormData()
+      for (const file of albumFiles) fd.append('photos', file)
+      const res = await api.uploadToAlbum(event.slug, fd)
+      albumPhotos = [...albumPhotos, ...res.photos]
+      albumFiles = null
+    } catch (e: unknown) {
+      albumUploadError = e instanceof ApiError ? e.message : 'Failed to upload.'
+    } finally {
+      albumUploadLoading = false
+    }
+  }
+
+  async function deletePhoto(photoId: string) {
+    if (!confirm('Remove this photo?')) return
+    try {
+      await api.deletePhoto(event.slug, photoId, data.editToken)
+      albumPhotos = albumPhotos.filter(p => p.id !== photoId)
     } catch { /**/ }
   }
 
@@ -418,6 +485,7 @@
   <div class="tabs">
     <button class="tab-btn" class:active={activeTab === 'details'} onclick={() => activeTab = 'details'}>Details</button>
     <button class="tab-btn" class:active={activeTab === 'activity'} onclick={() => activeTab = 'activity'}>Activity</button>
+    <button class="tab-btn" class:active={activeTab === 'wall'} onclick={() => activeTab = 'wall'}>Wall</button>
   </div>
 
   {#if activeTab === 'details'}
@@ -556,30 +624,6 @@
       </section>
 
       <section class="card">
-        <h2>Comments ({comments.length})</h2>
-        {#if event.status === 'draft'}
-          <p class="draft-lock">Comments are available once the event is published.</p>
-        {:else if !commentsLoaded}
-          <p class="muted">Loading…</p>
-        {:else if comments.length === 0}
-          <p class="muted">No comments yet.</p>
-        {:else}
-          <div class="comment-list">
-            {#each comments as comment (comment.id)}
-              <div class="comment-row">
-                <div class="comment-meta">
-                  <strong>{comment.displayName}</strong>
-                  <span class="comment-time">{new Date(comment.createdAt).toLocaleDateString()}</span>
-                </div>
-                <p class="comment-body">{comment.body}</p>
-                <button class="btn-remove" onclick={() => deleteComment(comment.id)}>Delete</button>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </section>
-
-      <section class="card">
         <div class="blast-card-header">
           <h2>Updates</h2>
           {#if event.status !== 'draft'}
@@ -605,7 +649,117 @@
       </section>
     </div>
   {/if}
+
+  {#if activeTab === 'wall'}
+    <div class="cards">
+      <section class="card">
+        <div class="wall-tabs">
+          <button class="wall-tab" class:active={wallTab === 'wall'} onclick={() => wallTab = 'wall'}>Wall</button>
+          <button class="wall-tab" class:active={wallTab === 'album'} onclick={() => wallTab = 'album'}>
+            Album{albumPhotos.length > 0 ? ` (${albumPhotos.length})` : ''}
+          </button>
+        </div>
+
+        {#if wallTab === 'wall'}
+          {#if event.status === 'published'}
+            <div class="post-composer">
+              {#if postError}<div class="error-banner">{postError}</div>{/if}
+              <textarea bind:value={postBody} rows="2" placeholder="Share something…" class="post-textarea"></textarea>
+              <div class="post-composer-actions">
+                <label class="photo-pick-btn">
+                  {postFiles && postFiles.length > 0 ? `${postFiles.length} photo${postFiles.length > 1 ? 's' : ''} selected` : 'Add photos'}
+                  <input type="file" accept="image/*" multiple onchange={(e) => { postFiles = (e.target as HTMLInputElement).files }} style="display:none" />
+                </label>
+                <button onclick={submitPost} disabled={postLoading} class="btn-primary-sm">
+                  {postLoading ? 'Posting…' : 'Post'}
+                </button>
+              </div>
+            </div>
+          {/if}
+
+          {#if postsLoaded}
+            {#if posts.length === 0}
+              <p class="muted">No posts yet.</p>
+            {:else}
+              <div class="post-feed">
+                {#each posts as post (post.id)}
+                  <div class="post-card">
+                    <div class="post-header">
+                      <strong class="post-author">{post.authorName}</strong>
+                      <span class="post-time">{new Date(post.createdAt).toLocaleDateString()}</span>
+                      <button class="post-delete-btn" onclick={() => deletePost(post.id)} title="Delete post">✕</button>
+                    </div>
+                    {#if post.body}<p class="post-body">{post.body}</p>{/if}
+                    {#if post.photos.length > 0}
+                      <div class="post-photos" class:single={post.photos.length === 1}>
+                        {#each post.photos as photo (photo.id)}
+                          <button class="photo-thumb-btn" onclick={() => lightboxPhoto = albumPhotos.find(p => p.id === photo.id) ?? { ...photo, uploaderName: post.authorName, eventId: event.slug, createdAt: post.createdAt }}>
+                            <img src={photo.url} alt={photo.caption ?? ''} class="photo-thumb" loading="lazy" />
+                          </button>
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          {:else}
+            <p class="muted">Loading…</p>
+          {/if}
+        {:else}
+          {#if event.status === 'published'}
+            <div class="album-upload">
+              {#if albumUploadError}<div class="error-banner">{albumUploadError}</div>{/if}
+              <label class="photo-pick-btn">
+                {albumFiles && albumFiles.length > 0 ? `${albumFiles.length} photo${albumFiles.length > 1 ? 's' : ''} selected` : 'Upload photos'}
+                <input type="file" accept="image/*" multiple onchange={(e) => { albumFiles = (e.target as HTMLInputElement).files }} style="display:none" />
+              </label>
+              {#if albumFiles && albumFiles.length > 0}
+                <button onclick={uploadToAlbum} disabled={albumUploadLoading} class="btn-primary-sm" style="margin-left:0.5rem">
+                  {albumUploadLoading ? 'Uploading…' : `Upload ${albumFiles.length} photo${albumFiles.length > 1 ? 's' : ''}`}
+                </button>
+              {/if}
+            </div>
+          {/if}
+
+          {#if albumLoaded}
+            {#if albumPhotos.length === 0}
+              <p class="muted">No photos yet.</p>
+            {:else}
+              <div class="album-grid">
+                {#each albumPhotos as photo (photo.id)}
+                  <button class="album-cell-btn" onclick={() => lightboxPhoto = photo}>
+                    <img src={photo.url} alt={photo.caption ?? ''} class="album-img" loading="lazy" />
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          {:else}
+            <p class="muted">Loading…</p>
+          {/if}
+        {/if}
+      </section>
+    </div>
+  {/if}
 </main>
+
+{#if lightboxPhoto}
+  <div class="modal-backdrop" onclick={() => lightboxPhoto = null} role="presentation">
+    <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Photo">
+      <div class="modal-header">
+        <span class="lightbox-uploader">{lightboxPhoto.uploaderName}</span>
+        <button class="modal-close" onclick={() => lightboxPhoto = null} aria-label="Close">×</button>
+      </div>
+      <div class="modal-body lightbox-body">
+        <img src={lightboxPhoto.url} alt={lightboxPhoto.caption ?? ''} class="lightbox-img" />
+        {#if lightboxPhoto.caption}<p class="lightbox-caption">{lightboxPhoto.caption}</p>{/if}
+        <div class="lightbox-actions">
+          <button onclick={() => { if (lightboxPhoto) deletePhoto(lightboxPhoto.id); lightboxPhoto = null }} class="btn-danger">Remove photo</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if showGuestModal}
   <div class="modal-backdrop" onclick={() => showGuestModal = false} role="presentation">
@@ -1031,14 +1185,44 @@
   .badge-no { background: #ede8e0; color: #4e453e; }
   .note { margin: 0.25rem 0 0; font-size: 0.8rem; color: #6b6058; }
 
-  .comment-list { display: flex; flex-direction: column; gap: 0.5rem; }
-  .comment-row { display: flex; flex-direction: column; padding: 0.75rem; background: #e8ddd0; border-radius: 8px; border: 1px solid #cfc3b0; gap: 0.25rem; }
-  .comment-meta { display: flex; align-items: baseline; gap: 0.5rem; }
-  .comment-meta strong { font-size: 0.875rem; color: #1a1510; }
-  .comment-time { font-size: 0.75rem; color: #9a8f86; }
-  .comment-body { margin: 0; font-size: 0.875rem; color: #3d352e; }
   .btn-remove { background: none; border: none; color: #9a8f86; font-size: 0.75rem; cursor: pointer; padding: 0; align-self: flex-end; margin-top: 0.25rem; }
   .btn-remove:hover { color: #8b3016; }
+
+  .wall-tabs { display: flex; gap: 0; border-bottom: 1px solid #cfc3b0; margin-bottom: 1rem; }
+  .wall-tab { background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 600; color: #6b6058; cursor: pointer; font-family: inherit; }
+  .wall-tab:hover { color: #1a1510; }
+  .wall-tab.active { color: #b05525; border-bottom-color: #b05525; }
+
+  .post-composer { margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+  .post-textarea { padding: 0.5rem 0.75rem; border: 1px solid #c8bdb0; border-radius: 8px; font-size: 0.9rem; font-family: inherit; background: #fff; color: #1a1510; resize: vertical; }
+  .post-textarea:focus { outline: 2px solid #b05525; outline-offset: -1px; }
+  .post-composer-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  .photo-pick-btn { display: inline-block; background: #ede8e0; color: #4e453e; border: 1px solid #c8bdb0; padding: 0.375rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 500; cursor: pointer; }
+  .photo-pick-btn:hover { background: #e0d8cc; }
+
+  .post-feed { display: flex; flex-direction: column; gap: 0.75rem; }
+  .post-card { background: #e8ddd0; border: 1px solid #cfc3b0; border-radius: 10px; padding: 0.875rem 1rem; display: flex; flex-direction: column; gap: 0.375rem; }
+  .post-header { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  .post-author { font-size: 0.875rem; color: #1a1510; }
+  .post-time { font-size: 0.75rem; color: #9a8f86; }
+  .post-delete-btn { margin-left: auto; background: none; border: none; color: #9a8f86; font-size: 0.8rem; cursor: pointer; padding: 0.1rem 0.3rem; line-height: 1; }
+  .post-delete-btn:hover { color: #8b3016; }
+  .post-body { margin: 0; font-size: 0.875rem; color: #3d352e; white-space: pre-wrap; }
+  .post-photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.25rem; margin-top: 0.25rem; }
+  .post-photos.single { grid-template-columns: 1fr; }
+  .photo-thumb-btn { padding: 0; border: none; background: none; cursor: pointer; border-radius: 6px; overflow: hidden; aspect-ratio: 1; }
+  .photo-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  .album-upload { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+  .album-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.375rem; }
+  .album-cell-btn { padding: 0; border: none; background: none; cursor: pointer; border-radius: 6px; overflow: hidden; aspect-ratio: 1; }
+  .album-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  .lightbox-body { align-items: center; }
+  .lightbox-img { max-width: 100%; max-height: 60vh; border-radius: 8px; object-fit: contain; display: block; }
+  .lightbox-caption { margin: 0.5rem 0 0; font-size: 0.875rem; color: #3d352e; text-align: center; }
+  .lightbox-uploader { font-size: 0.875rem; font-weight: 600; color: #3d352e; }
+  .lightbox-actions { margin-top: 0.75rem; }
 
   .blast-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
   .blast-card-header h2 { margin: 0; }
