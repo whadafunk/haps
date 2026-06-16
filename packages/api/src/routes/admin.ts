@@ -149,7 +149,12 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     const rows = await db
       .select({
         id:          contacts.id,
-        type:        sql<string>`case when ${contacts.userId} is null then 'contact' else 'person' end`,
+        type:        sql<string>`case
+          when ${contacts.userId} is null then 'contact'
+          when u.role = 'admin' then 'admin'
+          when u.role = 'organizer' then 'organizer'
+          else 'guest'
+        end`,
         displayName: contacts.name,
         email:       contacts.email,
         phone:       contacts.phone,
@@ -158,6 +163,7 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
         eventCount:  sql<number>`(select count(distinct r.event_id)::int from rsvps r where r.contact_id = ${contacts.id})`,
       })
       .from(contacts)
+      .leftJoin(users, eq(users.id, contacts.userId))
       .orderBy(desc(contacts.createdAt))
 
     return { guests: rows.map((g) => ({ ...g, firstSeen: new Date(g.firstSeen).toISOString() })) }
@@ -278,11 +284,24 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
       .where(eq(rsvps.contactId, contactId))
       .orderBy(desc(events.startsAt))
 
+    // Determine type by looking up user role if userId is set
+    let contactType = 'contact'
+    if (contact.userId) {
+      const [contactUser] = await db
+        .select({ role: users.role })
+        .from(users)
+        .where(eq(users.id, contact.userId))
+        .limit(1)
+      if (contactUser?.role === 'admin') contactType = 'admin'
+      else if (contactUser?.role === 'organizer') contactType = 'organizer'
+      else contactType = 'guest'
+    }
+
     return {
       guest: {
         id:              contact.id,
         shortId:         contact.id.slice(0, 8),
-        type:            contact.userId ? 'person' : 'contact',
+        type:            contactType,
         displayName:     contact.name,
         email:           contact.email,
         phone:           contact.phone,
@@ -313,7 +332,7 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     const isAdmin = user.role === 'admin'
 
     const [guest] = await db
-      .select({ id: users.id, displayName: users.displayName, email: users.email, phone: users.phone, instagramHandle: users.instagramHandle, createdAt: users.createdAt })
+      .select({ id: users.id, displayName: users.displayName, email: users.email, phone: users.phone, instagramHandle: users.instagramHandle, createdAt: users.createdAt, role: users.role })
       .from(users)
       .where(eq(users.id, guestId))
       .limit(1)
@@ -339,7 +358,7 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
       guest: {
         id:              guest.id,
         shortId:         guest.id.slice(0, 8),
-        type:            'user',
+        type:            guest.role === 'admin' ? 'admin' : guest.role === 'organizer' ? 'organizer' : 'guest',
         displayName:     guest.displayName,
         email:           guest.email,
         phone:           guest.phone,

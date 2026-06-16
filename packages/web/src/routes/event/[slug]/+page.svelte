@@ -68,7 +68,7 @@
   let comments = $state<Array<{ id: string; displayName: string; body: string; createdAt: string }>>([])
   let commentsLoaded = $state(false)
 
-  let guestList = $state<Array<{ id: string; displayName: string; status: string; headCount: number }>>([])
+  let guestList = $state<Array<{ id: string; displayName: string; status: string; headCount: number; isHost?: boolean }>>([])
   let guestListLoaded = $state(false)
 
   const event = $derived(data.event)
@@ -112,18 +112,17 @@
   }
 
   async function submitRsvp() {
-    if (!rsvpStatus || !rsvpName) { rsvpError = 'Name and RSVP status are required.'; return }
-    if (!rsvpEmail) { rsvpError = 'Email is required.'; return }
+    if (!rsvpStatus) { rsvpError = 'RSVP status is required.'; return }
+    // For anonymous users, name and email are required
+    if (!data.user && (!rsvpName || !rsvpEmail)) { rsvpError = 'Name and email are required.'; return }
     rsvpLoading = true
     rsvpError = ''
     try {
-      await api.submitRsvp(event.slug, {
-        displayName: rsvpName,
-        status: rsvpStatus,
-        headCount: rsvpHeadCount,
-        note: rsvpNote || undefined,
-        email: rsvpEmail,
-      })
+      // Logged-in users don't need to send displayName/email (derived from their contact)
+      const rsvpPayload = data.user
+        ? { status: rsvpStatus, headCount: rsvpHeadCount, note: rsvpNote || undefined }
+        : { displayName: rsvpName, status: rsvpStatus, headCount: rsvpHeadCount, note: rsvpNote || undefined, email: rsvpEmail }
+      await api.submitRsvp(event.slug, rsvpPayload)
       await invalidateAll()
       editingRsvp = false
       // Reload guest list after RSVP
@@ -367,59 +366,79 @@
             <div class="error-banner">{rsvpError}</div>
           {/if}
 
-          <div class="rsvp-form">
-            {#if data.lockedIdentity?.displayName}
-              <div class="locked-field">
-                <span class="locked-label">Your name</span>
-                <span class="locked-value">{data.lockedIdentity.displayName}</span>
-              </div>
-            {:else}
-              <label>
-                Your name <span class="req">*</span>
-                <input type="text" bind:value={rsvpName} placeholder="Name" required />
-              </label>
-            {/if}
-            <div class="rsvp-buttons">
-              {#each ['yes', 'maybe', 'no'] as status}
-                <button
-                  class="rsvp-btn rsvp-{status}"
-                  class:active={rsvpStatus === status}
-                  onclick={() => rsvpStatus = status}
-                >
-                  {status === 'yes' ? '✓ Going' : status === 'maybe' ? '? Maybe' : '✗ Can\'t go'}
-                </button>
-              {/each}
+          {#if data.user && !data.lockedIdentity?.displayName}
+            <!-- Logged-in user with no linked contact -->
+            <div class="no-identity-banner">
+              You need to set up a guest identity before RSVPing.
+              <a href="/account">Go to account settings →</a>
             </div>
-            <label>
-              Party size
-              <input type="number" min="1" max="20" bind:value={rsvpHeadCount} />
-            </label>
-            <label>
-              Note (optional)
-              <input type="text" bind:value={rsvpNote} placeholder="Any notes…" />
-            </label>
-            {#if data.lockedIdentity?.email}
-              <div class="locked-field">
-                <span class="locked-label">Email</span>
-                <span class="locked-value">{data.lockedIdentity.email}</span>
-              </div>
-            {:else}
-              <label>
-                Email <span class="req">*</span>
-                <input type="email" bind:value={rsvpEmail} placeholder="you@example.com" required />
-              </label>
-            {/if}
-            <div class="rsvp-actions">
-              <button class="submit-btn" onclick={submitRsvp} disabled={rsvpLoading}>
-                {rsvpLoading ? 'Saving…' : data.myRsvp ? 'Update RSVP' : 'Submit RSVP'}
-              </button>
-              {#if data.myRsvp}
-                <button class="cancel-btn" onclick={() => { editingRsvp = false; rsvpError = '' }}>
-                  Cancel
-                </button>
+          {:else}
+            <div class="rsvp-form">
+              {#if data.user}
+                <!-- Logged-in: show name/email as read-only from contact -->
+                <div class="locked-field">
+                  <span class="locked-label">Your name</span>
+                  <span class="locked-value">{data.lockedIdentity?.displayName}</span>
+                </div>
+              {:else if data.lockedIdentity?.displayName}
+                <div class="locked-field">
+                  <span class="locked-label">Your name</span>
+                  <span class="locked-value">{data.lockedIdentity.displayName}</span>
+                </div>
+              {:else}
+                <label>
+                  Your name <span class="req">*</span>
+                  <input type="text" bind:value={rsvpName} placeholder="Name" required />
+                </label>
               {/if}
+              <div class="rsvp-buttons">
+                {#each ['yes', 'maybe', 'no'] as status}
+                  <button
+                    class="rsvp-btn rsvp-{status}"
+                    class:active={rsvpStatus === status}
+                    onclick={() => rsvpStatus = status}
+                  >
+                    {status === 'yes' ? '✓ Going' : status === 'maybe' ? '? Maybe' : '✗ Can\'t go'}
+                  </button>
+                {/each}
+              </div>
+              <label>
+                Party size
+                <input type="number" min="1" max="20" bind:value={rsvpHeadCount} />
+              </label>
+              <label>
+                Note (optional)
+                <input type="text" bind:value={rsvpNote} placeholder="Any notes…" />
+              </label>
+              {#if data.user}
+                <!-- Logged-in: show email as read-only from contact -->
+                <div class="locked-field">
+                  <span class="locked-label">Email</span>
+                  <span class="locked-value">{data.lockedIdentity?.email}</span>
+                </div>
+              {:else if data.lockedIdentity?.email}
+                <div class="locked-field">
+                  <span class="locked-label">Email</span>
+                  <span class="locked-value">{data.lockedIdentity.email}</span>
+                </div>
+              {:else}
+                <label>
+                  Email <span class="req">*</span>
+                  <input type="email" bind:value={rsvpEmail} placeholder="you@example.com" required />
+                </label>
+              {/if}
+              <div class="rsvp-actions">
+                <button class="submit-btn" onclick={submitRsvp} disabled={rsvpLoading || (data.user && !data.lockedIdentity?.displayName)}>
+                  {rsvpLoading ? 'Saving…' : data.myRsvp ? 'Update RSVP' : 'Submit RSVP'}
+                </button>
+                {#if data.myRsvp}
+                  <button class="cancel-btn" onclick={() => { editingRsvp = false; rsvpError = '' }}>
+                    Cancel
+                  </button>
+                {/if}
+              </div>
             </div>
-          </div>
+          {/if}
         {/if}
       </section>
     {/if}
@@ -433,6 +452,9 @@
             {#each guestList.filter(r => r.status === 'yes') as guest (guest.id)}
               <div class="guest-row">
                 <span class="guest-name">{guest.displayName}</span>
+                {#if guest.isHost}
+                  <span class="host-badge">host</span>
+                {/if}
                 {#if guest.headCount > 1}
                   <span class="guest-count">+{guest.headCount - 1}</span>
                 {/if}
@@ -597,6 +619,10 @@
   .guest-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: var(--card-inner, #e8ddd0); border-radius: 8px; }
   .guest-name { font-size: 0.9rem; color: #1a1510; font-weight: 500; }
   .guest-count { font-size: 0.8rem; color: #6b6058; }
+  .host-badge { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; background: #fef4e0; color: #7a5a1a; border: 1px solid #e0c870; border-radius: 4px; padding: 0.1rem 0.375rem; }
+  .no-identity-banner { background: #fef4e0; color: #7a5a1a; border: 1px solid #e0c870; border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.9rem; }
+  .no-identity-banner a { color: #b05525; font-weight: 600; text-decoration: none; }
+  .no-identity-banner a:hover { text-decoration: underline; }
   .comments { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
   .comment { background: var(--card-inner, #e8ddd0); border-radius: 8px; padding: 0.75rem; border: 1px solid var(--border, #cfc3b0); }
   .comment strong { font-size: 0.875rem; color: #1a1510; }

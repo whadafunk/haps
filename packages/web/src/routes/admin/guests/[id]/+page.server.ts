@@ -28,7 +28,7 @@ export interface InviteEntry {
 export interface GuestDetail {
   id: string
   shortId: string
-  type: 'user' | 'session' | 'contact'
+  type: 'contact' | 'guest' | 'admin' | 'organizer' | 'session'
   displayName: string | null
   email: string | null
   phone: string | null

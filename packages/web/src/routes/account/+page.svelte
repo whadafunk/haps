@@ -11,6 +11,15 @@
   let profileError = $state('')
   let profileSuccess = $state(false)
 
+  // Guest identity form
+  let guestName = $state(data.contact?.name ?? data.user?.displayName ?? '')
+  let guestEmail = $state(data.contact?.email ?? '')
+  let guestPhone = $state(data.contact?.phone ?? '')
+  let guestInstagram = $state(data.contact?.instagramHandle ?? '')
+  let guestSaving = $state(false)
+  let guestError = $state('')
+  let guestSuccess = $state(false)
+
   // Password form
   let currentPassword = $state('')
   let newPassword = $state('')
@@ -37,6 +46,28 @@
       profileError = e instanceof ApiError ? e.message : 'Failed to update profile.'
     } finally {
       profileSaving = false
+    }
+  }
+
+  async function saveGuestIdentity() {
+    if (!guestName.trim()) { guestError = 'Name is required.'; return }
+    if (!guestEmail.trim()) { guestError = 'Email is required.'; return }
+    guestSaving = true
+    guestError = ''
+    guestSuccess = false
+    try {
+      await api.setupContact({
+        displayName: guestName.trim(),
+        email: guestEmail.trim(),
+        phone: guestPhone.trim() || undefined,
+        instagramHandle: guestInstagram.trim() || undefined,
+      })
+      guestSuccess = true
+      await invalidateAll()
+    } catch (e: unknown) {
+      guestError = e instanceof ApiError ? e.message : 'Failed to save guest identity.'
+    } finally {
+      guestSaving = false
     }
   }
 
@@ -105,6 +136,46 @@
         <div class="form-actions">
           <button onclick={saveProfile} disabled={profileSaving} class="btn-primary">
             {profileSaving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Guest identity</h2>
+      <p class="section-hint">This is the name and email that appears on your RSVPs and in the guest list. It can be different from your login email.</p>
+
+      {#if !data.contact}
+        <div class="warn-banner">You haven't set up a guest identity yet. You won't be able to RSVP to events until you do.</div>
+      {/if}
+
+      {#if guestError}
+        <div class="error-banner">{guestError}</div>
+      {/if}
+      {#if guestSuccess}
+        <div class="success-banner">Guest identity saved.</div>
+      {/if}
+
+      <div class="form">
+        <label>
+          Name
+          <input type="text" bind:value={guestName} maxlength="200" placeholder="Your name" />
+        </label>
+        <label>
+          Email
+          <input type="email" bind:value={guestEmail} placeholder="you@example.com" />
+        </label>
+        <label>
+          Phone (optional)
+          <input type="tel" bind:value={guestPhone} placeholder="+1 555 000 0000" />
+        </label>
+        <label>
+          Instagram (optional)
+          <input type="text" bind:value={guestInstagram} placeholder="@handle" />
+        </label>
+        <div class="form-actions">
+          <button onclick={saveGuestIdentity} disabled={guestSaving} class="btn-primary">
+            {guestSaving ? 'Saving…' : 'Save identity'}
           </button>
         </div>
       </div>
@@ -197,6 +268,8 @@
   .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
   .error-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.625rem 0.875rem; margin-bottom: 0.75rem; font-size: 0.875rem; }
   .success-banner { background: #edf4ec; color: #2d5a2a; border: 1px solid #b8d9b4; border-radius: 8px; padding: 0.625rem 0.875rem; margin-bottom: 0.75rem; font-size: 0.875rem; }
+  .section-hint { margin: 0 0 1rem; font-size: 0.85rem; color: #6b6058; line-height: 1.4; }
+  .warn-banner { background: #fef4e0; color: #7a5a1a; border: 1px solid #e0c870; border-radius: 8px; padding: 0.625rem 0.875rem; margin-bottom: 0.75rem; font-size: 0.875rem; }
   .danger-zone { border-color: #e8b4a0; }
   .danger-zone h2 { color: #7a2a1a; }
   .danger-text { margin: 0 0 1rem; font-size: 0.875rem; color: #6b6058; }

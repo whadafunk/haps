@@ -52,12 +52,22 @@ export const UpdateEventSchema = z.object({
 }).strict()
 
 // RSVPs
+// displayName and email are optional in the schema — the route enforces
+// requirements based on auth context (required for anonymous, ignored for logged-in).
 export const CreateRsvpSchema = z.object({
-  displayName: z.string().min(1).max(200),
+  displayName: z.string().min(1).max(200).optional(),
   status: z.enum(['yes', 'maybe', 'no']),
   headCount: z.number().int().positive().default(1),
   note: z.string().max(1000).optional(),
-  email: z.string().email(),
+  email: z.string().email().optional(),
+}).strict()
+
+// Schema for the guest identity endpoint (linked contact for a registered user)
+export const SetupContactSchema = z.object({
+  displayName:     z.string().min(1).max(200),
+  email:           z.string().email(),
+  phone:           z.string().max(50).optional(),
+  instagramHandle: z.string().max(100).optional(),
 }).strict()
 
 export const UpdateRsvpSchema = z.object({

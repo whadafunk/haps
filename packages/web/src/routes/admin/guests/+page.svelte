@@ -137,7 +137,7 @@
     } catch { /* */ }
   }
 
-  // ── Add person modal ────────────────────────────────────────────────────────
+  // ── Add contact modal ────────────────────────────────────────────────────────
   let showAddModal = $state(false)
   let addName = $state('')
   let addEmail = $state('')
@@ -151,7 +151,7 @@
     showAddModal = true
   }
 
-  async function addPerson() {
+  async function addContact() {
     if (!addName.trim()) { addError = 'Name is required.'; return }
     if (!addEmail.trim()) { addError = 'Email is required.'; return }
     addSaving = true; addError = ''
@@ -165,7 +165,7 @@
       showAddModal = false
       await invalidateAll()
     } catch (e: unknown) {
-      addError = e instanceof ApiError ? e.message : 'Failed to add person.'
+      addError = e instanceof ApiError ? e.message : 'Failed to add contact.'
     } finally { addSaving = false }
   }
 </script>
@@ -174,10 +174,10 @@
   <div class="container">
     <div class="page-header">
       <div>
-        <h1>People</h1>
-        <p class="subtitle">{data.guests.length} person{data.guests.length !== 1 ? 's' : ''}</p>
+        <h1>Guests</h1>
+        <p class="subtitle">{data.guests.length} {data.guests.length !== 1 ? 'entries' : 'entry'}</p>
       </div>
-      <button class="btn-add" onclick={openAddModal}>+ Add person</button>
+      <button class="btn-add" onclick={openAddModal}>+ Add contact</button>
     </div>
 
     <div class="toolbar">
@@ -259,9 +259,9 @@
                   <span class="status-badge status-removed">Removed</span>
                 {/if}
                 <span class="type-badge type-{guest.type}">
-                  {guest.type === 'person' ? 'Person' : 'Contact'}
+                  {guest.type === 'guest' ? 'Guest' : guest.type === 'admin' ? 'Admin' : guest.type === 'organizer' ? 'Organizer' : 'Contact'}
                 </span>
-                {#if guest.type !== 'person'}
+                {#if guest.type === 'contact'}
                   <span class="no-account-badge">no account</span>
                 {/if}
               </div>
@@ -398,12 +398,12 @@
   </div>
 {/if}
 
-<!-- Add person modal -->
+<!-- Add contact modal -->
 {#if showAddModal}
   <div class="modal-backdrop" onclick={() => showAddModal = false} role="presentation">
-    <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Add person">
+    <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Add contact">
       <div class="modal-header">
-        <h3>Add person</h3>
+        <h3>Add contact</h3>
         <button class="modal-close" onclick={() => showAddModal = false} aria-label="Close">×</button>
       </div>
       <div class="modal-body">
@@ -430,8 +430,8 @@
       </div>
       <div class="modal-actions">
         <button class="btn-secondary" onclick={() => showAddModal = false}>Cancel</button>
-        <button class="btn-primary" onclick={addPerson} disabled={addSaving}>
-          {addSaving ? 'Adding…' : 'Add person'}
+        <button class="btn-primary" onclick={addContact} disabled={addSaving}>
+          {addSaving ? 'Adding…' : 'Add contact'}
         </button>
       </div>
     </div>
@@ -509,8 +509,9 @@
   .first-seen { font-size: 0.8rem; color: #8a7a6e; white-space: nowrap; }
 
   .type-badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; white-space: nowrap; }
-  .type-user { background: #e8f0fc; color: #2a4a7a; }
-  .type-person { background: #e8f0fc; color: #2a4a7a; }
+  .type-guest { background: #e8f0fc; color: #2a4a7a; }
+  .type-admin { background: #e8f0fc; color: #2a4a7a; }
+  .type-organizer { background: #e8f0fc; color: #2a4a7a; }
   .type-session { background: #ede8e0; color: #4e453e; }
   .type-contact { background: #f4eddc; color: #6e4e1a; }
   .no-account-badge { font-size: 0.65rem; font-weight: 500; color: #7a5a1a; background: #fef4e0; border: 1px solid #e0c870; border-radius: 4px; padding: 0.15rem 0.4rem; white-space: nowrap; }

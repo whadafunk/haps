@@ -85,7 +85,8 @@ describe('POST /api/auth/register', () => {
   it('creates a member account and returns auth cookies', async () => {
     const orgCookies = await createOrganizer(app, adminCookies)
     const { event } = await createEvent(app, orgCookies, { status: 'published' })
-    const sessionCookie = await getSessionWithProfile(app)
+    // Use a fresh session (no pre-set email) so the RSVP email is accepted
+    const sessionCookie = await getSessionCookie(app)
     await app.inject({
       method: 'POST', url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: sessionCookie },
@@ -121,7 +122,7 @@ describe('POST /api/auth/register', () => {
     const { event } = await createEvent(app, orgCookies, { status: 'published' })
 
     // Session A RSVPs with alice@test.com (creates contact), then registers
-    const sessionA = await getSessionWithProfile(app)
+    const sessionA = await getSessionCookie(app)
     await app.inject({
       method: 'POST', url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: sessionA },
@@ -134,7 +135,7 @@ describe('POST /api/auth/register', () => {
     })
 
     // Session B RSVPs with bob@test.com (creates contact), then tries to register with alice@test.com (already claimed)
-    const sessionB = await getSessionWithProfile(app, { email: 'bob@test.com' })
+    const sessionB = await getSessionCookie(app)
     await app.inject({
       method: 'POST', url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: sessionB },
@@ -162,7 +163,7 @@ describe('POST /api/auth/register', () => {
     const { event } = await createEvent(app, orgCookies, { status: 'published' })
 
     // Guest RSVPs with alice@test.com (creates contact, links RSVP to contact)
-    const sessionCookie = await getSessionWithProfile(app)
+    const sessionCookie = await getSessionCookie(app)
     await app.inject({
       method: 'POST',
       url: `/api/events/${event.slug}/rsvps`,
@@ -196,7 +197,7 @@ describe('POST /api/auth/register', () => {
     const { event } = await createEvent(app, orgCookies, { status: 'published' })
 
     // Device A: register after RSVPing with alice@test.com (guard checks contact by email)
-    const sessionA = await getSessionWithProfile(app)
+    const sessionA = await getSessionCookie(app)
     await app.inject({
       method: 'POST', url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: sessionA },
@@ -211,7 +212,7 @@ describe('POST /api/auth/register', () => {
     const authCookies = mergeCookies(sessionA, extractCookies(regRes.headers))
 
     // Device B: independent session RSVPs to the same event
-    const sessionB = await getSessionWithProfile(app, { email: 'alice-b@test.com' })
+    const sessionB = await getSessionCookie(app)
     await app.inject({
       method: 'POST', url: `/api/events/${event.slug}/rsvps`,
       headers: { Cookie: sessionB },

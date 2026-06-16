@@ -114,7 +114,7 @@
 
 <main class="page">
   <div class="container">
-    <div class="back-link"><a href="/admin/guests">← People</a></div>
+    <div class="back-link"><a href="/admin/guests">← Guests</a></div>
 
     <div class="guest-header">
       <div class="guest-identity">
@@ -137,10 +137,12 @@
         <div class="guest-badges">
           {#if data.guest.type === 'contact'}
             <span class="type-badge type-contact">Contact</span>
+          {:else if data.guest.type === 'admin'}
+            <span class="type-badge type-admin">Admin</span>
+          {:else if data.guest.type === 'organizer'}
+            <span class="type-badge type-organizer">Organizer</span>
           {:else}
-            <span class="type-badge type-{data.guest.type}">
-              {data.guest.type === 'user' ? 'Registered' : 'Guest'}
-            </span>
+            <span class="type-badge type-guest">Guest</span>
           {/if}
           {#if data.guest.status === 'blocked'}
             <span class="status-badge status-blocked">Blocked</span>
@@ -158,7 +160,7 @@
         {#if actionError || deleteError}
           <p class="action-error">{actionError || deleteError}</p>
         {/if}
-        {#if data.guest.type === 'contact'}
+        {#if data.guest.type === 'contact' || data.guest.type === 'guest' || data.guest.type === 'admin' || data.guest.type === 'organizer'}
           <button class="btn-secondary" onclick={openEditModal}>Edit</button>
           <button class="btn-danger-outline" onclick={() => { showDeleteModal = true; deleteError = '' }}>Delete</button>
         {:else if data.guest.type === 'session' && data.guest.status !== 'removed'}
@@ -383,7 +385,9 @@
   .status-reason { margin: 0.375rem 0 0; font-size: 0.825rem; color: #7a3010; font-style: italic; }
 
   .type-badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; }
-  .type-user { background: #e8f0fc; color: #2a4a7a; }
+  .type-guest { background: #e8f0fc; color: #2a4a7a; }
+  .type-admin { background: #e8f0fc; color: #2a4a7a; }
+  .type-organizer { background: #e8f0fc; color: #2a4a7a; }
   .type-session { background: #ede8e0; color: #4e453e; }
   .type-contact { background: #f4eddc; color: #6e4e1a; }
 

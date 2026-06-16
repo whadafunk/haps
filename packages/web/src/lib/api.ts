@@ -79,6 +79,12 @@ export const api = {
   changePassword: (body: { currentPassword: string; newPassword: string }) =>
     apiFetch<void>('/auth/change-password', { method: 'POST', body: JSON.stringify(body) }),
 
+  getContact: () =>
+    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null } }>('/auth/me/contact'),
+
+  setupContact: (body: { displayName: string; email: string; phone?: string; instagramHandle?: string }) =>
+    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null } }>('/auth/me/contact', { method: 'POST', body: JSON.stringify(body) }),
+
   deleteAccount: () =>
     apiFetch<void>('/auth/me', { method: 'DELETE' }),
 

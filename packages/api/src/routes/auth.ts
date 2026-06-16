@@ -5,7 +5,7 @@ import { eq, and, lt, count } from 'drizzle-orm'
 import { verifyPassword, hashPassword, generateToken, sha256hex } from '../lib/crypto.js'
 import { signJwt, signRefreshToken, verifyRefreshToken } from '../middleware/auth.js'
 import { createError } from '../lib/errors.js'
-import { LoginSchema, CreateUserSchema, UpdateProfileSchema, ChangePasswordSchema, RegisterSchema, MagicLinkRequestSchema, MagicLinkVerifySchema } from '@haps/shared'
+import { LoginSchema, CreateUserSchema, UpdateProfileSchema, ChangePasswordSchema, RegisterSchema, MagicLinkRequestSchema, MagicLinkVerifySchema, SetupContactSchema } from '@haps/shared'
 import { config } from '../lib/config.js'
 import { sendEmail } from '../services/email.js'
 
@@ -263,7 +263,85 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       .returning({ id: users.id, email: users.email, displayName: users.displayName, role: users.role })
 
     if (!updated) throw createError(404, 'USER_NOT_FOUND', 'User not found.')
+
+    // Sync displayName change to the linked contact (if one exists)
+    await db
+      .update(contacts)
+      .set({ name: body.displayName, updatedAt: new Date() })
+      .where(eq(contacts.userId, user.sub))
+
     return { user: updated }
+  })
+
+  fastify.get('/api/auth/me/contact', {
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const user = request.user!
+    const [contact] = await db
+      .select({
+        id:              contacts.id,
+        name:            contacts.name,
+        email:           contacts.email,
+        phone:           contacts.phone,
+        instagramHandle: contacts.instagramHandle,
+      })
+      .from(contacts)
+      .where(eq(contacts.userId, user.sub))
+      .limit(1)
+    if (!contact) throw createError(404, 'CONTACT_NOT_FOUND', 'No guest identity linked yet.')
+    return { contact }
+  })
+
+  fastify.post('/api/auth/me/contact', {
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const user = request.user!
+    const body = SetupContactSchema.parse(request.body)
+
+    // Check that no OTHER contact already claims this email
+    const [emailConflict] = await db
+      .select({ id: contacts.id, userId: contacts.userId })
+      .from(contacts)
+      .where(eq(contacts.email, body.email.toLowerCase()))
+      .limit(1)
+    if (emailConflict && emailConflict.userId !== user.sub) {
+      throw createError(409, 'EMAIL_TAKEN', 'This email is already linked to another account.')
+    }
+
+    // Upsert contact by email, claiming it for this user
+    const [contact] = await db.insert(contacts)
+      .values({
+        name:            body.displayName,
+        email:           body.email.toLowerCase(),
+        phone:           body.phone ?? null,
+        instagramHandle: body.instagramHandle ?? null,
+        userId:          user.sub,
+      })
+      .onConflictDoUpdate({
+        target: contacts.email,
+        set: {
+          name:            body.displayName,
+          userId:          user.sub,
+          phone:           body.phone ?? null,
+          instagramHandle: body.instagramHandle ?? null,
+          updatedAt:       new Date(),
+        },
+      })
+      .returning({
+        id:              contacts.id,
+        name:            contacts.name,
+        email:           contacts.email,
+        phone:           contacts.phone,
+        instagramHandle: contacts.instagramHandle,
+      })
+    if (!contact) throw createError(500, 'INTERNAL_ERROR', 'Failed to upsert contact.')
+
+    // Also sync the user's displayName
+    await db.update(users)
+      .set({ displayName: body.displayName, updatedAt: new Date() })
+      .where(eq(users.id, user.sub))
+
+    return { contact }
   })
 
   fastify.post('/api/auth/change-password', {

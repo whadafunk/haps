@@ -9,25 +9,117 @@ import { ensureSession } from '../middleware/session.js'
 const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/api/events/:slug/rsvps', async (request, reply) => {
     const { slug } = request.params as { slug: string }
-    await ensureSession(request, reply)
 
     const body = CreateRsvpSchema.parse(request.body)
+    const isLoggedIn = !!request.user
 
+    // ── Logged-in path ────────────────────────────────────────────────────
+    if (isLoggedIn) {
+      const userId = request.user!.sub
+
+      // Look up the user's linked contact
+      const [userContact] = await db
+        .select({ id: contacts.id, name: contacts.name, email: contacts.email })
+        .from(contacts)
+        .where(eq(contacts.userId, userId))
+        .limit(1)
+
+      if (!userContact) {
+        throw createError(403, 'NO_IDENTITY_LINKED', 'Set up your guest identity in account settings before RSVPing.')
+      }
+
+      const lockedName = userContact.name
+      const lockedEmail = userContact.email
+
+      // Email blocklist check
+      const [blocked] = await db
+        .select({ id: emailBlocklist.id })
+        .from(emailBlocklist)
+        .where(eq(emailBlocklist.email, lockedEmail.toLowerCase()))
+        .limit(1)
+      if (blocked) throw createError(403, 'EMAIL_BLOCKED', 'This email address has been blocked.')
+
+      const eventRows = await db
+        .select({ id: events.id, status: events.status, eventType: events.eventType, maxCapacity: events.maxCapacity, rsvpDeadline: events.rsvpDeadline })
+        .from(events)
+        .where(eq(events.slug, slug))
+        .limit(1)
+
+      const event = eventRows[0]
+      if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
+      if (event.status !== 'published') throw createError(403, 'EVENT_NOT_PUBLISHED', 'Event is not open for RSVPs.')
+      if (event.rsvpDeadline && new Date() > event.rsvpDeadline) {
+        throw createError(403, 'RSVP_DEADLINE_PASSED', 'RSVP deadline has passed.')
+      }
+
+      let rsvpStatus: string = body.status
+      if (body.status === 'yes' && event.maxCapacity) {
+        const [countRow] = await db
+          .select({ yesCount: count() })
+          .from(rsvps)
+          .where(and(eq(rsvps.eventId, event.id), eq(rsvps.status, 'yes')))
+        const yesCount = Number(countRow?.yesCount ?? 0)
+        if (yesCount >= event.maxCapacity) rsvpStatus = 'waitlist'
+      }
+
+      // Find existing RSVP for this user
+      const [existingRsvp] = await db
+        .select({ id: rsvps.id })
+        .from(rsvps)
+        .where(and(eq(rsvps.eventId, event.id), eq(rsvps.userId, userId)))
+        .limit(1)
+
+      let rsvp
+      if (existingRsvp) {
+        const updated = await db.update(rsvps)
+          .set({
+            displayName: lockedName,
+            email:       lockedEmail,
+            status:      rsvpStatus,
+            headCount:   body.headCount,
+            note:        body.note ?? null,
+            contactId:   userContact.id,
+            updatedAt:   new Date(),
+          })
+          .where(eq(rsvps.id, existingRsvp.id))
+          .returning()
+        rsvp = updated[0]
+      } else {
+        const inserted = await db.insert(rsvps)
+          .values({
+            eventId:     event.id,
+            userId,
+            contactId:   userContact.id,
+            displayName: lockedName,
+            email:       lockedEmail,
+            status:      rsvpStatus,
+            headCount:   body.headCount,
+            note:        body.note ?? null,
+          })
+          .returning()
+        rsvp = inserted[0]
+      }
+      if (!rsvp) throw createError(500, 'INTERNAL_ERROR', 'Failed to create RSVP.')
+
+      return reply.code(201).send({ rsvp: serializeRsvp(rsvp) })
+    }
+
+    // ── Anonymous path ────────────────────────────────────────────────────
+    await ensureSession(request, reply)
     const session = request.session!
+
+    // Validate that anonymous users provide displayName and email
+    if (!body.displayName) throw createError(400, 'VALIDATION_ERROR', 'displayName is required.')
+    if (!body.email) throw createError(400, 'VALIDATION_ERROR', 'email is required.')
 
     // Blocked / removed sessions cannot RSVP
     if (session.status === 'blocked' || session.status === 'removed') {
       throw createError(403, 'GUEST_BLOCKED', session.statusReason ?? 'You have been blocked from this platform.')
     }
 
-    // Email blocklist check
-    const [blocked] = await db
-      .select({ id: emailBlocklist.id })
-      .from(emailBlocklist)
-      .where(eq(emailBlocklist.email, body.email.toLowerCase()))
-      .limit(1)
-    if (blocked) throw createError(403, 'EMAIL_BLOCKED', 'This email address has been blocked.')
+    const rsvpEmail = (session.email ?? body.email).toLowerCase()
 
+    // Event lookup first (before email checks) so 404 is returned for unknown events
     const eventRows = await db
       .select({ id: events.id, status: events.status, eventType: events.eventType, maxCapacity: events.maxCapacity, rsvpDeadline: events.rsvpDeadline })
       .from(events)
@@ -40,6 +132,31 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
     if (event.rsvpDeadline && new Date() > event.rsvpDeadline) {
       throw createError(403, 'RSVP_DEADLINE_PASSED', 'RSVP deadline has passed.')
     }
+
+    // Identity lock: if session has a cached email and body provides a different email → reject
+    if (session.email && body.email && session.email.toLowerCase() !== body.email.toLowerCase()) {
+      throw createError(403, 'IDENTITY_LOCKED', 'Your identity is locked to the email on your session.')
+    }
+
+    // Email clash: if session has NO cached email and submitted email already exists in contacts → reject
+    if (!session.email) {
+      const [existingContact] = await db
+        .select({ id: contacts.id })
+        .from(contacts)
+        .where(eq(contacts.email, rsvpEmail))
+        .limit(1)
+      if (existingContact) {
+        throw createError(409, 'EMAIL_CLAIMED', 'This email is already in our system. Use the browser where you previously responded, or log in if you have an account.')
+      }
+    }
+
+    // Email blocklist check
+    const [blockedEmail] = await db
+      .select({ id: emailBlocklist.id })
+      .from(emailBlocklist)
+      .where(eq(emailBlocklist.email, rsvpEmail))
+      .limit(1)
+    if (blockedEmail) throw createError(403, 'EMAIL_BLOCKED', 'This email address has been blocked.')
 
     // Invite-only events require an attendee token to have been claimed in this session
     if (event.eventType === 'invite_only') {
@@ -63,13 +180,12 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Identity lock: once a session has a display name, use that instead of what was submitted
     const lockedName = session.displayName ?? body.displayName
-    const lockedEmail = body.email.toLowerCase()
 
     // Persist display name and email on first RSVP
     if (!session.displayName) {
       await db
         .update(visitorSessions)
-        .set({ displayName: lockedName, email: lockedEmail })
+        .set({ displayName: lockedName, email: rsvpEmail })
         .where(eq(visitorSessions.id, session.id))
       session.displayName = lockedName
     }
@@ -78,7 +194,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
     const [contact] = await db.insert(contacts)
       .values({
         name:   lockedName,
-        email:  lockedEmail,
+        email:  rsvpEmail,
         userId: session.userId ?? null,
       })
       .onConflictDoUpdate({
@@ -104,7 +220,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
       const updated = await db.update(rsvps)
         .set({
           displayName: lockedName,
-          email:       lockedEmail,
+          email:       rsvpEmail,
           status:      rsvpStatus,
           headCount:   body.headCount,
           note:        body.note ?? null,
@@ -122,7 +238,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
           userId:      session.userId ?? null,
           contactId:   contact.id,
           displayName: lockedName,
-          email:       lockedEmail,
+          email:       rsvpEmail,
           status:      rsvpStatus,
           headCount:   body.headCount,
           note:        body.note ?? null,
@@ -236,7 +352,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
     const { slug } = request.params as { slug: string }
 
     const eventRows = await db
-      .select({ id: events.id, showGuests: events.showGuests })
+      .select({ id: events.id, showGuests: events.showGuests, organizerId: events.organizerId })
       .from(events)
       .where(eq(events.slug, slug))
       .limit(1)
@@ -261,6 +377,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
         checkedIn:   rsvps.checkedIn,
         email:       rsvps.email,
         sessionId:   rsvps.sessionId,
+        userId:      rsvps.userId,
         createdAt:   rsvps.createdAt,
         sessionStatus: visitorSessions.status,
       })
@@ -282,6 +399,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
         note:        r.note,
         checkedIn:   r.checkedIn,
         createdAt:   r.createdAt.toISOString(),
+        isHost:      r.userId !== null && r.userId === event.organizerId,
         ...(isEditor ? { email: r.email } : {}),
       })),
     }
