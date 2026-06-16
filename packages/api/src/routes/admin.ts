@@ -151,8 +151,8 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
         id:          contacts.id,
         type:        sql<string>`case
           when ${contacts.userId} is null then 'contact'
-          when u.role = 'admin' then 'admin'
-          when u.role = 'organizer' then 'organizer'
+          when ${users.role} = 'admin' then 'admin'
+          when ${users.role} = 'organizer' then 'organizer'
           else 'guest'
         end`,
         displayName: contacts.name,
