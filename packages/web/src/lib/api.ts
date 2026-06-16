@@ -1,4 +1,4 @@
-import type { Event, Rsvp, Comment } from '@haps/shared'
+import type { Event, Rsvp, Comment, Post, AlbumPhoto } from '@haps/shared'
 
 export class ApiError extends Error {
   constructor(
@@ -194,6 +194,32 @@ export const api = {
 
   deleteComment: (slug: string, commentId: string, editToken?: string) =>
     apiFetch<void>(`/events/${slug}/comments/${commentId}`, {
+      method: 'DELETE',
+      headers: editToken ? { 'x-edit-token': editToken } : {},
+    }),
+
+  // Wall posts
+  listPosts: (slug: string) =>
+    apiFetch<{ posts: Post[] }>(`/events/${slug}/posts`),
+
+  createPost: (slug: string, formData: FormData) =>
+    apiFetch<{ post: Post }>(`/events/${slug}/posts`, { method: 'POST', body: formData }),
+
+  deletePost: (slug: string, postId: string, editToken?: string) =>
+    apiFetch<void>(`/events/${slug}/posts/${postId}`, {
+      method: 'DELETE',
+      headers: editToken ? { 'x-edit-token': editToken } : {},
+    }),
+
+  // Album
+  listAlbum: (slug: string) =>
+    apiFetch<{ photos: (AlbumPhoto & { isOwn?: boolean })[] }>(`/events/${slug}/album`),
+
+  uploadToAlbum: (slug: string, formData: FormData) =>
+    apiFetch<{ photos: (AlbumPhoto & { isOwn?: boolean })[] }>(`/events/${slug}/album`, { method: 'POST', body: formData }),
+
+  deletePhoto: (slug: string, photoId: string, editToken?: string) =>
+    apiFetch<void>(`/events/${slug}/album/${photoId}`, {
       method: 'DELETE',
       headers: editToken ? { 'x-edit-token': editToken } : {},
     }),

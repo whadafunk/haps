@@ -120,6 +120,27 @@
       "when": 1781940000000,
       "tag": "0016_guests_table",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1781941000000,
+      "tag": "0017_guest_claimed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1781942000000,
+      "tag": "0018_guests_user_id_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1781637600000,
+      "tag": "0019_posts_album",
+      "breakpoints": true
     }
   ]
 }

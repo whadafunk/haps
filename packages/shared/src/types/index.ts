@@ -24,6 +24,7 @@ export interface Event {
   eventType: 'open' | 'invite_only'
   showGuests: boolean
   allowComments: boolean
+  showAlbum: boolean
   maxCapacity?: number | null
   rsvpDeadline?: string | null
   expiresAt?: string | null
@@ -62,6 +63,25 @@ export interface Comment {
   displayName: string
   body: string
   createdAt: string
+}
+
+export interface AlbumPhoto {
+  id: string
+  eventId: string
+  uploaderName: string
+  url: string
+  caption?: string | null
+  createdAt: string
+}
+
+export interface Post {
+  id: string
+  eventId: string
+  authorName: string
+  body?: string | null
+  photos: Array<{ id: string; url: string; caption?: string | null }>
+  createdAt: string
+  isOwn?: boolean
 }
 
 export interface VisitorSession {

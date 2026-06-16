@@ -71,6 +71,7 @@ export const events = pgTable('events', {
   status:        text('status').notNull().default('draft'), // 'draft'|'published'|'cancelled'|'archived'
   showGuests:    boolean('show_guests').notNull().default(true),
   allowComments: boolean('allow_comments').notNull().default(true),
+  showAlbum:     boolean('show_album').notNull().default(true),
   coordinates:   text('coordinates'),
   dressCode:     text('dress_code'),
   allowPlusOnes: boolean('allow_plus_ones').notNull().default(false),
@@ -205,6 +206,40 @@ export const magicLinks = pgTable('magic_links', {
   used:      boolean('used').notNull().default(false),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const albumPhotos = pgTable('album_photos', {
+  id:           uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  eventId:      uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  sessionId:    uuid('session_id').references(() => visitorSessions.id, { onDelete: 'set null' }),
+  userId:       uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  uploaderName: text('uploader_name').notNull(),
+  url:          text('url').notNull(),
+  caption:      text('caption'),
+  deletedAt:    timestamp('deleted_at', { withTimezone: true }),
+  createdAt:    timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  eventIdx: index('album_photos_event_idx').on(t.eventId),
+}))
+
+export const posts = pgTable('posts', {
+  id:         uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  eventId:    uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  sessionId:  uuid('session_id').references(() => visitorSessions.id, { onDelete: 'set null' }),
+  userId:     uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  authorName: text('author_name').notNull(),
+  body:       text('body'),
+  deletedAt:  timestamp('deleted_at', { withTimezone: true }),
+  createdAt:  timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  eventCreatedIdx: index('posts_event_created_idx').on(t.eventId, t.createdAt).where(sql`${t.deletedAt} is null`),
+}))
+
+export const postPhotos = pgTable('post_photos', {
+  id:        uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  postId:    uuid('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+  photoId:   uuid('photo_id').notNull().references(() => albumPhotos.id),
+  sortOrder: integer('sort_order').notNull().default(0),
 })
 
 export const comments = pgTable('comments', {

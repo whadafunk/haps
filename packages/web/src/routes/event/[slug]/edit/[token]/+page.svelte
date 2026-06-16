@@ -358,6 +358,7 @@
         theme: event.theme ?? undefined,
         showGuests: event.showGuests,
         allowComments: event.allowComments,
+        showAlbum: event.showAlbum,
       }, data.editToken)
       saveSuccess = true
       setTimeout(() => { saveSuccess = false }, 2000)
@@ -499,6 +500,7 @@
           <div class="checkboxes">
             <label class="checkbox"><input type="checkbox" bind:checked={event.showGuests} /> Show guest list publicly</label>
             <label class="checkbox"><input type="checkbox" bind:checked={event.allowComments} /> Allow comments</label>
+            <label class="checkbox"><input type="checkbox" bind:checked={event.showAlbum} /> Show wall &amp; album</label>
           </div>
           {#if publishError}
             <p class="publish-error">{publishError}</p>

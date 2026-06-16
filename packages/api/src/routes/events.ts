@@ -41,6 +41,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
         eventType: body.eventType,
         showGuests: body.showGuests,
         allowComments: body.allowComments,
+        showAlbum: body.showAlbum ?? true,
         maxCapacity: body.maxCapacity ?? null,
         rsvpDeadline: body.rsvpDeadline ? new Date(body.rsvpDeadline) : null,
         expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
@@ -202,6 +203,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     if (body.status !== undefined) updates['status'] = body.status
     if (body.showGuests !== undefined) updates['showGuests'] = body.showGuests
     if (body.allowComments !== undefined) updates['allowComments'] = body.allowComments
+    if (body.showAlbum !== undefined) updates['showAlbum'] = body.showAlbum
     if (body.maxCapacity !== undefined) updates['maxCapacity'] = body.maxCapacity ?? null
     if (body.rsvpDeadline !== undefined) updates['rsvpDeadline'] = body.rsvpDeadline ? new Date(body.rsvpDeadline) : null
     if (body.expiresAt !== undefined) updates['expiresAt'] = body.expiresAt ? new Date(body.expiresAt) : null
@@ -511,6 +513,7 @@ function serializeEvent(event: typeof events.$inferSelect) {
     status: event.status,
     showGuests: event.showGuests,
     allowComments: event.allowComments,
+    showAlbum: event.showAlbum,
     eventType: event.eventType as 'open' | 'invite_only',
     maxCapacity: event.maxCapacity,
     rsvpDeadline: event.rsvpDeadline?.toISOString() ?? null,
