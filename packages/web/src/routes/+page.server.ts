@@ -8,7 +8,7 @@ export const load: PageServerLoad = async ({ parent, cookies }) => {
 
   if (user) {
     if (user.role === 'admin' || user.role === 'organizer') redirect(302, '/admin')
-    if (user.role === 'member') redirect(302, '/my-events')
+    if (user.type === 'guest') redirect(302, '/my-events')
   }
 
   if (cookies.get('vsid')) {

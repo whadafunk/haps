@@ -4,7 +4,7 @@ import { serverGet } from '$lib/serverFetch'
 
 export const load: PageServerLoad = async ({ parent, cookies }) => {
   const { user, requireRsvpBeforeRegister } = await parent()
-  if (user) redirect(302, user.role === 'member' ? '/my-events' : '/dashboard')
+  if (user) redirect(302, user.type === 'guest' ? '/my-events' : '/dashboard')
 
   let sessionData: { displayName: string | null; email: string | null } | null = null
   let hasEvents = false

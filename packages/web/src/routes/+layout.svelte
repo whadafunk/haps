@@ -48,7 +48,7 @@
         </button>
         {#if menuOpen}
           <div class="user-menu-dropdown" role="menu">
-            {#if data.user.role === 'member'}
+            {#if data.user.type === 'guest'}
               <a href="/my-events" class="menu-item" onclick={() => (menuOpen = false)}>My events</a>
             {/if}
             <a href="/account" class="menu-item" onclick={() => (menuOpen = false)}>My account</a>

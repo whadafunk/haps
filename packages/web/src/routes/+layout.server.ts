@@ -11,10 +11,10 @@ export const load: LayoutServerLoad = async ({ cookies }) => {
     return { meta: null, session: null, user: null, setupRequired: false, requireRsvpBeforeRegister: true }
   }
 
-  let user: { id: string; email: string; displayName: string; role: string } | null = null
+  let user: { id: string; email: string; displayName: string; role: string | null; type: 'guest' | 'operator' } | null = null
   if (cookies.get('auth_token')) {
     try {
-      user = await serverGet<{ id: string; email: string; displayName: string; role: string }>('/auth/me', cookies)
+      user = await serverGet<{ id: string; email: string; displayName: string; role: string | null; type: 'guest' | 'operator' }>('/auth/me', cookies)
     } catch {
       // expired or invalid JWT — treat as anonymous
     }
