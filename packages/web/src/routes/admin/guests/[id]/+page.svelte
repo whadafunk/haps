@@ -175,69 +175,63 @@
       </div>
     </div>
 
-    {#if data.guest.type === 'contact'}
-      <!-- Invite history for contacts -->
-      <section class="section">
-        <h2>Invitations ({data.guest.invites?.length ?? 0})</h2>
-        {#if !data.guest.invites || data.guest.invites.length === 0}
-          <p class="empty">Not yet invited to any events.</p>
-        {:else}
-          <div class="event-list">
-            {#each data.guest.invites as invite}
-              <div class="event-row">
-                <div class="event-info">
-                  <a href="/event/{invite.eventSlug}" class="event-title">{invite.eventTitle}</a>
-                  <p class="event-date">{formatDate(invite.startsAt)}</p>
-                </div>
-                <div class="event-badges">
-                  {#if invite.tokenStatus === 'active' && !invite.visited}
-                    <span class="badge badge-pending">Pending</span>
-                  {:else if invite.visited && invite.rsvpStatus}
-                    <span class="badge {rsvpColors[invite.rsvpStatus] ?? ''}">{invite.rsvpStatus}</span>
-                    {#if invite.visited}
-                      <span class="badge badge-visited">Visited</span>
-                    {/if}
-                  {:else if invite.visited}
-                    <span class="badge badge-visited">Visited</span>
-                  {:else if invite.tokenStatus !== 'active'}
-                    <span class="badge badge-revoked">Revoked</span>
-                  {/if}
-                  {#if invite.headCount && invite.headCount > 1}
-                    <span class="head-count">×{invite.headCount}</span>
-                  {/if}
-                </div>
+    <!-- RSVP history (all types) -->
+    <section class="section">
+      <h2>RSVPs ({data.guest.events.length})</h2>
+      {#if data.guest.events.length === 0}
+        <p class="empty">No event responses yet.</p>
+      {:else}
+        <div class="event-list">
+          {#each data.guest.events as ev}
+            <div class="event-row">
+              <div class="event-info">
+                <a href="/event/{ev.eventSlug}" class="event-title">{ev.eventTitle}</a>
+                <p class="event-date">{formatDate(ev.startsAt)}</p>
               </div>
-            {/each}
-          </div>
-        {/if}
-      </section>
-    {:else}
-      <!-- RSVP history for users/sessions -->
-      <section class="section">
-        <h2>Events ({data.guest.events.length})</h2>
-        {#if data.guest.events.length === 0}
-          <p class="empty">No events to show.</p>
-        {:else}
-          <div class="event-list">
-            {#each data.guest.events as ev}
-              <div class="event-row">
-                <div class="event-info">
-                  <a href="/event/{ev.eventSlug}" class="event-title">{ev.eventTitle}</a>
-                  <p class="event-date">{formatDate(ev.startsAt)}</p>
-                </div>
-                <div class="event-badges">
-                  <span class="badge {rsvpColors[ev.rsvpStatus] ?? ''}">{ev.rsvpStatus}</span>
-                  {#if ev.checkedIn}
-                    <span class="badge badge-checkin">checked in</span>
-                  {/if}
-                  {#if ev.headCount > 1}
-                    <span class="head-count">×{ev.headCount}</span>
-                  {/if}
-                </div>
+              <div class="event-badges">
+                <span class="badge {rsvpColors[ev.rsvpStatus] ?? ''}">{ev.rsvpStatus}</span>
+                {#if ev.checkedIn}
+                  <span class="badge badge-checkin">checked in</span>
+                {/if}
+                {#if ev.headCount > 1}
+                  <span class="head-count">×{ev.headCount}</span>
+                {/if}
               </div>
-            {/each}
-          </div>
-        {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </section>
+
+    {#if data.guest.invites && data.guest.invites.length > 0}
+      <!-- Formal invitations sent to this contact -->
+      <section class="section">
+        <h2>Sent invitations ({data.guest.invites.length})</h2>
+        <div class="event-list">
+          {#each data.guest.invites as invite}
+            <div class="event-row">
+              <div class="event-info">
+                <a href="/event/{invite.eventSlug}" class="event-title">{invite.eventTitle}</a>
+                <p class="event-date">{formatDate(invite.startsAt)}</p>
+              </div>
+              <div class="event-badges">
+                {#if invite.tokenStatus === 'active' && !invite.visited}
+                  <span class="badge badge-pending">Pending</span>
+                {:else if invite.visited && invite.rsvpStatus}
+                  <span class="badge {rsvpColors[invite.rsvpStatus] ?? ''}">{invite.rsvpStatus}</span>
+                  <span class="badge badge-visited">Visited</span>
+                {:else if invite.visited}
+                  <span class="badge badge-visited">Visited</span>
+                {:else if invite.tokenStatus !== 'active'}
+                  <span class="badge badge-revoked">Revoked</span>
+                {/if}
+                {#if invite.headCount && invite.headCount > 1}
+                  <span class="head-count">×{invite.headCount}</span>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </div>
       </section>
     {/if}
   </div>

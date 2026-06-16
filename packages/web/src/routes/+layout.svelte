@@ -12,10 +12,9 @@
     if (menu && !menu.contains(e.target as Node)) menuOpen = false
   }
 
-  async function clearIdentity() {
+  function clearIdentity() {
     menuOpen = false
-    await api.clearIdentity()
-    await goto('/', { replaceState: true, invalidateAll: true })
+    goto('/clear-identity')
   }
 </script>
 
