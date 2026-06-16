@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
 import { users, events, instanceConfig, visitorSessions, rsvps, eventTokens, emailBlocklist, contacts } from '../db/schema.js'
-import { eq, count, sql, and, isNull, desc, ne } from 'drizzle-orm'
+import { eq, count, sql, and, isNull, desc, ne, inArray } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { CreateUserSchema, BlockGuestSchema, RemoveGuestSchema, CreateContactSchema, UpdateContactSchema } from '@haps/shared'
 import { hashPassword } from '../lib/crypto.js'
@@ -29,6 +29,7 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     const rows = await db
       .select({ id: users.id, email: users.email, displayName: users.displayName, role: users.role, active: users.active, createdAt: users.createdAt })
       .from(users)
+      .where(inArray(users.role, ['admin', 'organizer']))
     return { users: rows.map((u) => ({ ...u, createdAt: u.createdAt.toISOString() })) }
   })
 
