@@ -9,7 +9,7 @@
       <nav class="sidebar-nav">
         <a href="/admin">Dashboard</a>
         <a href="/admin/events">Events</a>
-        <a href="/admin/guests">People</a>
+        <a href="/admin/guests">Guests</a>
         {#if data.user.role === 'admin'}
           <div class="sidebar-divider"></div>
           <a href="/admin/users">Users</a>
