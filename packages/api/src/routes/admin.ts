@@ -151,9 +151,9 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
       .select({
         id:          guests.id,
         type:        sql<string>`case
-          when ${guests.passwordHash} is not null and ${guests.userId} is not null and ${users.role} = 'admin' then 'admin'
-          when ${guests.passwordHash} is not null and ${guests.userId} is not null and ${users.role} = 'organizer' then 'organizer'
-          when ${guests.passwordHash} is not null then 'claimed'
+          when ${guests.userId} is not null and ${users.role} = 'admin' then 'admin'
+          when ${guests.userId} is not null and ${users.role} = 'organizer' then 'organizer'
+          when ${guests.claimedAt} is not null then 'claimed'
           else 'unclaimed'
         end`,
         displayName: guests.name,
@@ -272,8 +272,18 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.delete('/api/guests/:guestId', { preHandler: staffPreHandler }, async (request, reply) => {
     const { guestId } = request.params as { guestId: string }
-    const [existing] = await db.select({ id: guests.id }).from(guests).where(eq(guests.id, guestId)).limit(1)
+    const [existing] = await db
+      .select({ id: guests.id, userId: guests.userId })
+      .from(guests)
+      .where(eq(guests.id, guestId))
+      .limit(1)
     if (!existing) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
+    if (existing.userId) {
+      const [linked] = await db.select({ role: users.role }).from(users).where(eq(users.id, existing.userId)).limit(1)
+      if (linked && (linked.role === 'admin' || linked.role === 'organizer')) {
+        throw createError(403, 'FORBIDDEN', 'Cannot delete a guest entry linked to an operator account.')
+      }
+    }
     await db.delete(guests).where(eq(guests.id, guestId))
     return reply.code(204).send()
   })
@@ -281,8 +291,14 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
   // Keep old route as alias
   fastify.delete('/api/contacts/:contactId', { preHandler: staffPreHandler }, async (request, reply) => {
     const { contactId } = request.params as { contactId: string }
-    const [existing] = await db.select({ id: guests.id }).from(guests).where(eq(guests.id, contactId)).limit(1)
+    const [existing] = await db.select({ id: guests.id, userId: guests.userId }).from(guests).where(eq(guests.id, contactId)).limit(1)
     if (!existing) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
+    if (existing.userId) {
+      const [linked] = await db.select({ role: users.role }).from(users).where(eq(users.id, existing.userId)).limit(1)
+      if (linked && (linked.role === 'admin' || linked.role === 'organizer')) {
+        throw createError(403, 'FORBIDDEN', 'Cannot delete a guest entry linked to an operator account.')
+      }
+    }
     await db.delete(guests).where(eq(guests.id, contactId))
     return reply.code(204).send()
   })

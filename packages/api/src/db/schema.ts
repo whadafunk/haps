@@ -23,7 +23,8 @@ export const guests = pgTable('guests', {
   phone:           text('phone'),
   instagramHandle: text('instagram_handle'),
   notes:           text('notes'),
-  passwordHash:    text('password_hash'),  // null = unclaimed; set = claimed account
+  passwordHash:    text('password_hash'),
+  claimedAt:       timestamp('claimed_at', { withTimezone: true }),
   userId:          uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
   status:          text('status').notNull().default('active'),
   statusReason:    text('status_reason'),

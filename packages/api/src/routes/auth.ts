@@ -247,16 +247,17 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     const passwordHash = await hashPassword(body.password)
 
     let guestId: string
+    const now = new Date()
     if (existingGuest) {
       // Claim existing guest entry
       await db.update(guests)
-        .set({ passwordHash, name: body.displayName, updatedAt: new Date() })
+        .set({ passwordHash, name: body.displayName, claimedAt: now, updatedAt: now })
         .where(eq(guests.id, existingGuest.id))
       guestId = existingGuest.id
     } else {
       // Create new guest entry
       const [newGuest] = await db.insert(guests)
-        .values({ name: body.displayName, email: body.email.toLowerCase(), passwordHash })
+        .values({ name: body.displayName, email: body.email.toLowerCase(), passwordHash, claimedAt: now })
         .returning({ id: guests.id })
       if (!newGuest) throw createError(500, 'INTERNAL_ERROR', 'Failed to create account.')
       guestId = newGuest.id
@@ -606,9 +607,9 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     const user = request.user!
 
     if (user.type === 'guest') {
-      // Unclaim: clear password_hash but preserve guest entry (has RSVP history)
+      // Unclaim: clear auth fields but preserve guest entry (has RSVP history)
       await db.update(guests)
-        .set({ passwordHash: null, updatedAt: new Date() })
+        .set({ passwordHash: null, claimedAt: null, updatedAt: new Date() })
         .where(eq(guests.id, user.sub))
 
       reply.clearCookie('auth_token', { path: '/' })

@@ -41,13 +41,16 @@
   }
 
   function selectAll() {
-    selected = new Set(filtered.map((g: GuestRow) => g.id))
+    selected = new Set(filtered.filter((g: GuestRow) => g.type !== 'admin' && g.type !== 'organizer').map((g: GuestRow) => g.id))
   }
 
   function clearSelection() {
     selected = new Set()
   }
 
+  const selectableGuests = $derived(
+    filtered.filter((g: GuestRow) => g.type !== 'admin' && g.type !== 'organizer')
+  )
   const selectedContacts = $derived(
     filtered.filter((g: GuestRow) => selected.has(g.id))
   )
@@ -186,9 +189,9 @@
         <input
           type="checkbox"
           class="check"
-          checked={selected.size > 0 && selected.size === filtered.length}
-          indeterminate={selected.size > 0 && selected.size < filtered.length}
-          onchange={() => selected.size === filtered.length ? clearSelection() : selectAll()}
+          checked={selected.size > 0 && selected.size === selectableGuests.length}
+          indeterminate={selected.size > 0 && selected.size < selectableGuests.length}
+          onchange={() => selected.size === selectableGuests.length ? clearSelection() : selectAll()}
         />
         <span class="select-all-label">All</span>
       </label>
@@ -229,15 +232,20 @@
     {:else}
       <div class="guest-list">
         {#each filtered as guest (guest.id)}
+          {@const isOperator = guest.type === 'admin' || guest.type === 'organizer'}
           <div class="guest-row-wrap" class:is-selected={selected.has(guest.id)}>
-            <label class="row-check" onclick={(e) => e.stopPropagation()}>
-              <input
-                type="checkbox"
-                class="check"
-                checked={selected.has(guest.id)}
-                onchange={() => toggleSelect(guest.id)}
-              />
-            </label>
+            {#if isOperator}
+              <div class="row-check row-check-placeholder"></div>
+            {:else}
+              <label class="row-check" onclick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  class="check"
+                  checked={selected.has(guest.id)}
+                  onchange={() => toggleSelect(guest.id)}
+                />
+              </label>
+            {/if}
             <a href={guestHref(guest)} class="guest-row">
               <div class="guest-info">
                 <span class="guest-name">{guest.displayName ?? 'Anonymous'}</span>
@@ -259,11 +267,8 @@
                   <span class="status-badge status-removed">Removed</span>
                 {/if}
                 <span class="type-badge type-{guest.type}">
-                  {guest.type === 'guest' ? 'Guest' : guest.type === 'admin' ? 'Admin' : guest.type === 'organizer' ? 'Organizer' : 'Contact'}
+                  {guest.type === 'admin' ? 'Admin' : guest.type === 'organizer' ? 'Organizer' : guest.type === 'claimed' ? 'Claimed' : 'Unclaimed'}
                 </span>
-                {#if guest.type === 'contact'}
-                  <span class="no-account-badge">no account</span>
-                {/if}
               </div>
             </a>
           </div>
@@ -509,12 +514,11 @@
   .first-seen { font-size: 0.8rem; color: #8a7a6e; white-space: nowrap; }
 
   .type-badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; white-space: nowrap; }
-  .type-guest { background: #e8f0fc; color: #2a4a7a; }
   .type-admin { background: #e8f0fc; color: #2a4a7a; }
   .type-organizer { background: #e8f0fc; color: #2a4a7a; }
-  .type-session { background: #ede8e0; color: #4e453e; }
-  .type-contact { background: #f4eddc; color: #6e4e1a; }
-  .no-account-badge { font-size: 0.65rem; font-weight: 500; color: #7a5a1a; background: #fef4e0; border: 1px solid #e0c870; border-radius: 4px; padding: 0.15rem 0.4rem; white-space: nowrap; }
+  .type-claimed { background: #e6f4ea; color: #1a5c30; }
+  .type-unclaimed { background: #f4eddc; color: #6e4e1a; }
+  .row-check-placeholder { width: 2.5rem; flex-shrink: 0; }
 
   .status-badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; white-space: nowrap; }
   .status-blocked { background: #fef3cd; color: #7a5a10; }
