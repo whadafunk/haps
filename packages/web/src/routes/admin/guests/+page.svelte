@@ -8,6 +8,22 @@
   let search = $state('')
 
   type GuestRow = typeof data.guests[number]
+  type SortKey = 'name' | 'type' | 'claimed'
+
+  let sortKey = $state<SortKey>('name')
+  let sortDir = $state<'asc' | 'desc'>('asc')
+
+  function setSort(key: SortKey) {
+    if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc'
+    else { sortKey = key; sortDir = 'asc' }
+  }
+
+  function typeWeight(type: string) {
+    if (type === 'admin')     return 0
+    if (type === 'organizer') return 1
+    if (type === 'claimed')   return 2
+    return 3 // unclaimed
+  }
 
   const filtered = $derived(
     search.trim() === ''
@@ -22,6 +38,18 @@
           )
         })
   )
+
+  const sorted = $derived.by(() => {
+    const dir = sortDir === 'asc' ? 1 : -1
+    return [...filtered].sort((a, b) => {
+      if (sortKey === 'name') {
+        return dir * (a.displayName ?? '').localeCompare(b.displayName ?? '')
+      }
+      // type and claimed both use typeWeight; name breaks ties
+      const diff = typeWeight(a.type) - typeWeight(b.type)
+      return dir * (diff !== 0 ? diff : (a.displayName ?? '').localeCompare(b.displayName ?? ''))
+    })
+  })
 
   function formatDate(iso: string) {
     return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -41,7 +69,7 @@
   }
 
   function selectAll() {
-    selected = new Set(filtered.filter((g: GuestRow) => g.type !== 'admin' && g.type !== 'organizer').map((g: GuestRow) => g.id))
+    selected = new Set(sorted.filter((g: GuestRow) => g.type !== 'admin' && g.type !== 'organizer').map((g: GuestRow) => g.id))
   }
 
   function clearSelection() {
@@ -49,10 +77,10 @@
   }
 
   const selectableGuests = $derived(
-    filtered.filter((g: GuestRow) => g.type !== 'admin' && g.type !== 'organizer')
+    sorted.filter((g: GuestRow) => g.type !== 'admin' && g.type !== 'organizer')
   )
   const selectedContacts = $derived(
-    filtered.filter((g: GuestRow) => selected.has(g.id))
+    sorted.filter((g: GuestRow) => selected.has(g.id))
   )
   const selectedNonContacts = $derived([] as GuestRow[])
 
@@ -221,7 +249,7 @@
       </div>
     {/if}
 
-    {#if filtered.length === 0}
+    {#if sorted.length === 0}
       <div class="empty">
         {#if search.trim()}
           <p>No guests match "{search}".</p>
@@ -230,8 +258,22 @@
         {/if}
       </div>
     {:else}
+      <div class="col-headers">
+        <div class="col-check-space"></div>
+        <button class="col-btn col-name" class:active={sortKey === 'name'} onclick={() => setSort('name')}>
+          Name {sortKey === 'name' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+        </button>
+        <div class="col-right">
+          <button class="col-btn" class:active={sortKey === 'type'} onclick={() => setSort('type')}>
+            Type {sortKey === 'type' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+          </button>
+          <button class="col-btn" class:active={sortKey === 'claimed'} onclick={() => setSort('claimed')}>
+            Claimed {sortKey === 'claimed' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+          </button>
+        </div>
+      </div>
       <div class="guest-list">
-        {#each filtered as guest (guest.id)}
+        {#each sorted as guest (guest.id)}
           {@const isOperator = guest.type === 'admin' || guest.type === 'organizer'}
           <div class="guest-row-wrap" class:is-selected={selected.has(guest.id)}>
             {#if isOperator}
@@ -479,6 +521,22 @@
   .empty p { margin: 0; }
 
   /* Row with checkbox */
+  .col-headers {
+    display: flex; align-items: center;
+    padding: 0.3rem 0; margin-bottom: 0.25rem;
+    border-bottom: 1px solid #cfc3b0;
+  }
+  .col-check-space { width: 2.5rem; flex-shrink: 0; }
+  .col-btn {
+    background: none; border: none; cursor: pointer; padding: 0.2rem 0.5rem;
+    font-size: 0.75rem; font-weight: 600; color: #7a6a5e; text-transform: uppercase;
+    letter-spacing: 0.04em; white-space: nowrap; border-radius: 4px;
+  }
+  .col-btn:hover { color: #3a2a1e; background: #ede8e0; }
+  .col-btn.active { color: #3a2a1e; }
+  .col-name { flex: 1; text-align: left; padding-left: 1rem; }
+  .col-right { display: flex; gap: 0.25rem; padding-right: 0.5rem; }
+
   .guest-list { display: flex; flex-direction: column; gap: 0.375rem; }
 
   .guest-row-wrap {

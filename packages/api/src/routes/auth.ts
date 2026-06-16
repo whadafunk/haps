@@ -461,6 +461,39 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.send({ contact: guest })
   })
 
+  // Shared handler for both /me/guest and /me/contact (alias)
+  async function upsertOperatorGuest(userId: string, body: { displayName: string; email: string; phone?: string | undefined; instagramHandle?: string | undefined }) {
+    const email = body.email.toLowerCase()
+
+    // Look up by userId — the stable link, never by email
+    const [existing] = await db
+      .select({ id: guests.id, email: guests.email })
+      .from(guests)
+      .where(eq(guests.userId, userId))
+      .limit(1)
+
+    if (existing) {
+      // Only check email conflict if the email is actually changing
+      if (existing.email !== email) {
+        const [conflict] = await db.select({ id: guests.id }).from(guests).where(eq(guests.email, email)).limit(1)
+        if (conflict) throw createError(409, 'EMAIL_TAKEN', 'This email is already linked to another account.')
+      }
+      const [updated] = await db.update(guests)
+        .set({ name: body.displayName, email, phone: body.phone ?? null, instagramHandle: body.instagramHandle ?? null, updatedAt: new Date() })
+        .where(eq(guests.id, existing.id))
+        .returning({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle })
+      return updated!
+    }
+
+    // No guest row for this operator yet — check email then insert
+    const [conflict] = await db.select({ id: guests.id }).from(guests).where(eq(guests.email, email)).limit(1)
+    if (conflict) throw createError(409, 'EMAIL_TAKEN', 'This email is already linked to another account.')
+    const [inserted] = await db.insert(guests)
+      .values({ name: body.displayName, email, phone: body.phone ?? null, instagramHandle: body.instagramHandle ?? null, userId })
+      .returning({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle })
+    return inserted!
+  }
+
   fastify.post('/api/auth/me/guest', {
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -468,7 +501,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     const body = SetupContactSchema.parse(request.body)
 
     if (user.type === 'guest') {
-      // Guest updates their own record
+      // Guest updates their own record directly by id
       const [emailConflict] = await db
         .select({ id: guests.id })
         .from(guests)
@@ -492,35 +525,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       return { contact: updated }
     }
 
-    // Operator: upsert their linked guest entry
-    const [emailConflict] = await db
-      .select({ id: guests.id, userId: guests.userId })
-      .from(guests)
-      .where(eq(guests.email, body.email.toLowerCase()))
-      .limit(1)
-    if (emailConflict && emailConflict.userId !== user.sub) {
-      throw createError(409, 'EMAIL_TAKEN', 'This email is already linked to another account.')
-    }
-
-    const [guest] = await db.insert(guests)
-      .values({
-        name:            body.displayName,
-        email:           body.email.toLowerCase(),
-        phone:           body.phone ?? null,
-        instagramHandle: body.instagramHandle ?? null,
-        userId:          user.sub,
-      })
-      .onConflictDoUpdate({
-        target: guests.email,
-        set: {
-          name:            body.displayName,
-          userId:          user.sub,
-          phone:           body.phone ?? null,
-          instagramHandle: body.instagramHandle ?? null,
-          updatedAt:       new Date(),
-        },
-      })
-      .returning({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle })
+    // Operator: update via userId, not email
+    const guest = await upsertOperatorGuest(user.sub, body)
     if (!guest) throw createError(500, 'INTERNAL_ERROR', 'Failed to upsert guest.')
 
     // Sync displayName to user
@@ -546,12 +552,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.send({ contact: updated })
     }
 
-    const [emailConflict] = await db.select({ id: guests.id, userId: guests.userId }).from(guests).where(eq(guests.email, body.email.toLowerCase())).limit(1)
-    if (emailConflict && emailConflict.userId !== user.sub) throw createError(409, 'EMAIL_TAKEN', 'This email is already linked to another account.')
-
-    const [guest] = await db.insert(guests).values({ name: body.displayName, email: body.email.toLowerCase(), phone: body.phone ?? null, instagramHandle: body.instagramHandle ?? null, userId: user.sub })
-      .onConflictDoUpdate({ target: guests.email, set: { name: body.displayName, userId: user.sub, phone: body.phone ?? null, instagramHandle: body.instagramHandle ?? null, updatedAt: new Date() } })
-      .returning({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle })
+    // Operator: update via userId, not email
+    const guest = await upsertOperatorGuest(user.sub, body)
     if (!guest) throw createError(500, 'INTERNAL_ERROR', 'Failed to upsert guest.')
     await db.update(users).set({ displayName: body.displayName, updatedAt: new Date() }).where(eq(users.id, user.sub))
     return reply.send({ contact: guest })

@@ -31,8 +31,8 @@ export const guests = pgTable('guests', {
   createdAt:       timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt:       timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
-  emailIdx: index('guests_email_idx').on(t.email),
-  userIdx:  index('guests_user_idx').on(t.userId).where(sql`${t.userId} is not null`),
+  emailIdx:  index('guests_email_idx').on(t.email),
+  userIdx:   uniqueIndex('guests_user_id_unique_idx').on(t.userId).where(sql`${t.userId} is not null`),
 }))
 
 export const visitorSessions = pgTable('visitor_sessions', {
