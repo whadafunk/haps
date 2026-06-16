@@ -81,7 +81,7 @@ export async function ensureSession(request: FastifyRequest, reply: FastifyReply
 
   const rows = await db
     .insert(visitorSessions)
-    .values({ userId: userId ?? undefined, guestId: guestId ?? undefined })
+    .values({ userId: userId ?? null, guestId: guestId ?? null })
     .returning({
       id:              visitorSessions.id,
       displayName:     visitorSessions.displayName,
