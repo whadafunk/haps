@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, posts, albumPhotos, postPhotos, users } from '../db/schema.js'
+import { events, posts, albumPhotos, postPhotos, users, guests } from '../db/schema.js'
 import { eq, and, isNull, asc, inArray } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { ensureSession } from '../middleware/session.js'
@@ -98,7 +98,14 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     let authorName: string
-    if (request.user) {
+    if (request.user?.type === 'guest') {
+      const guestRows = await db
+        .select({ name: guests.name })
+        .from(guests)
+        .where(eq(guests.id, request.user.sub))
+        .limit(1)
+      authorName = guestRows[0]?.name ?? session.displayName ?? 'Unknown'
+    } else if (request.user?.type === 'operator') {
       const userRows = await db
         .select({ displayName: users.displayName })
         .from(users)
