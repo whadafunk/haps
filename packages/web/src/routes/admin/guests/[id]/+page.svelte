@@ -66,6 +66,7 @@
   let editNotes = $state('')
   let editError = $state('')
   let editSaving = $state(false)
+  let editSuccess = $state(false)
 
   function openEditModal() {
     editName = data.guest.displayName ?? ''
@@ -88,8 +89,9 @@
         instagramHandle: editInstagram.trim() || null,
         notes:           editNotes.trim() || null,
       })
-      showEditModal = false
+      editSuccess = true
       await invalidateAll()
+      setTimeout(() => { editSuccess = false; showEditModal = false }, 600)
     } catch (e: unknown) {
       editError = e instanceof ApiError ? e.message : 'Failed to save changes.'
     } finally { editSaving = false }
@@ -276,8 +278,8 @@
       </div>
       <div class="modal-actions">
         <button class="btn-secondary" onclick={() => showEditModal = false} disabled={editSaving}>Cancel</button>
-        <button class="btn-primary" onclick={saveEdit} disabled={editSaving}>
-          {editSaving ? 'Saving…' : 'Save changes'}
+        <button class="btn-primary" class:btn-saved={editSuccess} onclick={saveEdit} disabled={editSaving || editSuccess}>
+          {editSaving ? 'Saving…' : editSuccess ? 'Saved ✓' : 'Save changes'}
         </button>
       </div>
     </div>
@@ -428,6 +430,7 @@
   /* Buttons */
   .btn-primary { background: #b05525; color: #fff; border: none; padding: 0.5rem 1.25rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
   .btn-primary:hover:not(:disabled) { background: #924418; }
+  .btn-primary.btn-saved { background: #2a5e28; }
   .btn-secondary { background: #ede8e0; color: #3d352e; border: 1px solid #c8bdb0; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.875rem; font-weight: 500; cursor: pointer; }
   .btn-secondary:hover:not(:disabled) { background: #e0d8cc; }
   .btn-danger { background: #b03016; color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }

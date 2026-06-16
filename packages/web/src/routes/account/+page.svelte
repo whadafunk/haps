@@ -41,6 +41,7 @@
     try {
       await api.updateProfile({ displayName: displayName.trim() })
       profileSuccess = true
+      setTimeout(() => { profileSuccess = false }, 2000)
       await invalidateAll()
     } catch (e: unknown) {
       profileError = e instanceof ApiError ? e.message : 'Failed to update profile.'
@@ -63,6 +64,7 @@
         instagramHandle: guestInstagram.trim() || undefined,
       })
       guestSuccess = true
+      setTimeout(() => { guestSuccess = false }, 2000)
       await invalidateAll()
     } catch (e: unknown) {
       guestError = e instanceof ApiError ? e.message : 'Failed to save guest identity.'
@@ -81,6 +83,7 @@
     try {
       await api.changePassword({ currentPassword, newPassword })
       passwordSuccess = true
+      setTimeout(() => { passwordSuccess = false }, 2000)
       currentPassword = ''
       newPassword = ''
       confirmPassword = ''
@@ -124,18 +127,14 @@
       {#if profileError}
         <div class="error-banner">{profileError}</div>
       {/if}
-      {#if profileSuccess}
-        <div class="success-banner">Profile updated.</div>
-      {/if}
-
       <div class="form">
         <label>
           Display name
           <input type="text" bind:value={displayName} maxlength="200" />
         </label>
         <div class="form-actions">
-          <button onclick={saveProfile} disabled={profileSaving} class="btn-primary">
-            {profileSaving ? 'Saving…' : 'Save'}
+          <button onclick={saveProfile} disabled={profileSaving} class="btn-primary" class:btn-saved={profileSuccess}>
+            {profileSaving ? 'Saving…' : profileSuccess ? 'Saved ✓' : 'Save'}
           </button>
         </div>
       </div>
@@ -152,10 +151,6 @@
       {#if guestError}
         <div class="error-banner">{guestError}</div>
       {/if}
-      {#if guestSuccess}
-        <div class="success-banner">Guest identity saved.</div>
-      {/if}
-
       <div class="form">
         <label>
           Name
@@ -174,8 +169,8 @@
           <input type="text" bind:value={guestInstagram} placeholder="@handle" />
         </label>
         <div class="form-actions">
-          <button onclick={saveGuestIdentity} disabled={guestSaving} class="btn-primary">
-            {guestSaving ? 'Saving…' : 'Save identity'}
+          <button onclick={saveGuestIdentity} disabled={guestSaving} class="btn-primary" class:btn-saved={guestSuccess}>
+            {guestSaving ? 'Saving…' : guestSuccess ? 'Saved ✓' : 'Save identity'}
           </button>
         </div>
       </div>
@@ -187,10 +182,6 @@
       {#if passwordError}
         <div class="error-banner">{passwordError}</div>
       {/if}
-      {#if passwordSuccess}
-        <div class="success-banner">Password changed successfully.</div>
-      {/if}
-
       <div class="form">
         <label>
           Current password
@@ -206,8 +197,8 @@
           <input type="password" bind:value={confirmPassword} autocomplete="new-password" />
         </label>
         <div class="form-actions">
-          <button onclick={changePassword} disabled={passwordSaving} class="btn-primary">
-            {passwordSaving ? 'Saving…' : 'Change password'}
+          <button onclick={changePassword} disabled={passwordSaving} class="btn-primary" class:btn-saved={passwordSuccess}>
+            {passwordSaving ? 'Saving…' : passwordSuccess ? 'Saved ✓' : 'Change password'}
           </button>
         </div>
       </div>
@@ -266,8 +257,8 @@
   .btn-primary { background: #b05525; color: #fff; border: none; padding: 0.5rem 1.125rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
   .btn-primary:hover:not(:disabled) { background: #924418; }
   .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-primary.btn-saved { background: #2a5e28; }
   .error-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.625rem 0.875rem; margin-bottom: 0.75rem; font-size: 0.875rem; }
-  .success-banner { background: #edf4ec; color: #2d5a2a; border: 1px solid #b8d9b4; border-radius: 8px; padding: 0.625rem 0.875rem; margin-bottom: 0.75rem; font-size: 0.875rem; }
   .section-hint { margin: 0 0 1rem; font-size: 0.85rem; color: #6b6058; line-height: 1.4; }
   .warn-banner { background: #fef4e0; color: #7a5a1a; border: 1px solid #e0c870; border-radius: 8px; padding: 0.625rem 0.875rem; margin-bottom: 0.75rem; font-size: 0.875rem; }
   .danger-zone { border-color: #e8b4a0; }

@@ -38,6 +38,7 @@
       }
       saveSuccess = true
       smtpPass = ''
+      setTimeout(() => { saveSuccess = false }, 2000)
     } finally {
       saving = false
     }
@@ -49,9 +50,6 @@
 
   {#if saveError}
     <div class="error-banner">{saveError}</div>
-  {/if}
-  {#if saveSuccess}
-    <div class="success-banner">Saved.</div>
   {/if}
 
   <section class="card">
@@ -126,8 +124,8 @@
     </div>
   </section>
 
-  <button class="btn-primary" onclick={save} disabled={saving}>
-    {saving ? 'Saving…' : 'Save changes'}
+  <button class="btn-primary" class:btn-saved={saveSuccess} onclick={save} disabled={saving}>
+    {saving ? 'Saving…' : saveSuccess ? 'Saved ✓' : 'Save changes'}
   </button>
 </div>
 
@@ -154,6 +152,6 @@
   .btn-primary { background: #b05525; color: #fff; border: none; padding: 0.625rem 1.5rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
   .btn-primary:hover:not(:disabled) { background: #924418; }
   .btn-primary:disabled { opacity: 0.6; }
+  .btn-primary.btn-saved { background: #2a5e28; }
   .error-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.875rem; }
-  .success-banner { background: #edf4ec; color: #2d5a2a; border: 1px solid #b8d9b4; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.875rem; }
 </style>
