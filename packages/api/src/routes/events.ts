@@ -151,10 +151,15 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
 
     let myRsvp = null
     if (request.session) {
+      // After guest login, mergeSessionIntoGuest clears sessionId and sets guestId on the RSVP.
+      // Look up by guestId when present, otherwise by sessionId.
+      const rsvpWhere = request.session.guestId
+        ? and(eq(rsvps.eventId, event.id), eq(rsvps.guestId, request.session.guestId))
+        : and(eq(rsvps.eventId, event.id), eq(rsvps.sessionId, request.session.id))
       const myRows = await db
         .select({ status: rsvps.status, headCount: rsvps.headCount, note: rsvps.note, displayName: rsvps.displayName })
         .from(rsvps)
-        .where(and(eq(rsvps.eventId, event.id), eq(rsvps.sessionId, request.session.id)))
+        .where(rsvpWhere)
         .limit(1)
       myRsvp = myRows[0] ?? null
     }
