@@ -14,7 +14,7 @@
 
   function clearIdentity() {
     menuOpen = false
-    goto('/clear-identity')
+    goto('/clear-identity', { invalidateAll: true })
   }
 </script>
 

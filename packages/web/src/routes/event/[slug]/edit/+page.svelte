@@ -114,6 +114,10 @@
   })
 
   $effect(() => {
+    if (activeTab === 'guests') {
+      refreshRsvps()
+      refreshTokens()
+    }
     if (activeTab === 'wall') {
       if (!postsLoaded) {
         api.listPosts(event.slug).then(res => { posts = res.posts; postsLoaded = true }).catch(() => { postsLoaded = true })
@@ -288,6 +292,13 @@
     try {
       const res = await api.listTokens(event.slug, data.editToken)
       inviteTokens = res.tokens.filter(t => t.type === 'attendee')
+    } catch { /* non-critical */ }
+  }
+
+  async function refreshRsvps() {
+    try {
+      const res = await api.listRsvps(event.slug)
+      rsvps = res.rsvps
     } catch { /* non-critical */ }
   }
 
