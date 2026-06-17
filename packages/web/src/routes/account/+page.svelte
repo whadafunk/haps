@@ -5,15 +5,18 @@
 
   let { data } = $props<{ data: PageData }>()
 
-  // Profile form
+  const isGuest = $derived(data.user?.type === 'guest')
+
+  // Profile form (operators only — display name separate from RSVP identity)
   let displayName = $state(data.user?.displayName ?? '')
   let profileSaving = $state(false)
   let profileError = $state('')
   let profileSuccess = $state(false)
 
-  // Guest identity form
+  // Guest identity form — for operators this is separate; for guests it IS the profile
   let guestName = $state(data.contact?.name ?? data.user?.displayName ?? '')
-  let guestEmail = $state(data.contact?.email ?? '')
+  // For guests, email is their login email and can't be changed here independently
+  let guestEmail = $state(data.contact?.email ?? data.user?.email ?? '')
   let guestPhone = $state(data.contact?.phone ?? '')
   let guestInstagram = $state(data.contact?.instagramHandle ?? '')
   let guestSaving = $state(false)
@@ -115,66 +118,102 @@
   <div class="container">
     <h1>My account</h1>
 
-    <section class="card">
-      <h2>Profile</h2>
-      <dl class="profile-fields">
-        <dt>Email</dt>
-        <dd>{data.user?.email ?? '—'}</dd>
-        <dt>Role</dt>
-        <dd class="role">{data.user?.role ?? '—'}</dd>
-      </dl>
+    {#if isGuest}
+      <!-- Guests: single profile card — login identity and RSVP identity are the same thing -->
+      <section class="card">
+        <h2>Profile</h2>
 
-      {#if profileError}
-        <div class="error-banner">{profileError}</div>
-      {/if}
-      <div class="form">
-        <label>
-          Display name
-          <input type="text" bind:value={displayName} maxlength="200" />
-        </label>
-        <div class="form-actions">
-          <button onclick={saveProfile} disabled={profileSaving} class="btn-primary" class:btn-saved={profileSuccess}>
-            {profileSaving ? 'Saving…' : profileSuccess ? 'Saved ✓' : 'Save'}
-          </button>
+        <dl class="profile-fields">
+          <dt>Email</dt>
+          <dd>{data.user?.email ?? '—'}</dd>
+        </dl>
+
+        {#if guestError}
+          <div class="error-banner">{guestError}</div>
+        {/if}
+        <div class="form">
+          <label>
+            Name
+            <input type="text" bind:value={guestName} maxlength="200" placeholder="Your name" />
+          </label>
+          <label>
+            Phone (optional)
+            <input type="tel" bind:value={guestPhone} placeholder="+1 555 000 0000" />
+          </label>
+          <label>
+            Instagram (optional)
+            <input type="text" bind:value={guestInstagram} placeholder="@handle" />
+          </label>
+          <div class="form-actions">
+            <button onclick={saveGuestIdentity} disabled={guestSaving} class="btn-primary" class:btn-saved={guestSuccess}>
+              {guestSaving ? 'Saving…' : guestSuccess ? 'Saved ✓' : 'Save'}
+            </button>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    {:else}
+      <!-- Operators: login profile separate from RSVP guest identity -->
+      <section class="card">
+        <h2>Profile</h2>
+        <dl class="profile-fields">
+          <dt>Email</dt>
+          <dd>{data.user?.email ?? '—'}</dd>
+          <dt>Role</dt>
+          <dd class="role">{data.user?.role ?? '—'}</dd>
+        </dl>
 
-    <section class="card">
-      <h2>Guest identity</h2>
-      <p class="section-hint">This is the name and email that appears on your RSVPs and in the guest list. It can be different from your login email.</p>
-
-      {#if !data.contact}
-        <div class="warn-banner">You haven't set up a guest identity yet. You won't be able to RSVP to events until you do.</div>
-      {/if}
-
-      {#if guestError}
-        <div class="error-banner">{guestError}</div>
-      {/if}
-      <div class="form">
-        <label>
-          Name
-          <input type="text" bind:value={guestName} maxlength="200" placeholder="Your name" />
-        </label>
-        <label>
-          Email
-          <input type="email" bind:value={guestEmail} placeholder="you@example.com" />
-        </label>
-        <label>
-          Phone (optional)
-          <input type="tel" bind:value={guestPhone} placeholder="+1 555 000 0000" />
-        </label>
-        <label>
-          Instagram (optional)
-          <input type="text" bind:value={guestInstagram} placeholder="@handle" />
-        </label>
-        <div class="form-actions">
-          <button onclick={saveGuestIdentity} disabled={guestSaving} class="btn-primary" class:btn-saved={guestSuccess}>
-            {guestSaving ? 'Saving…' : guestSuccess ? 'Saved ✓' : 'Save identity'}
-          </button>
+        {#if profileError}
+          <div class="error-banner">{profileError}</div>
+        {/if}
+        <div class="form">
+          <label>
+            Display name
+            <input type="text" bind:value={displayName} maxlength="200" />
+          </label>
+          <div class="form-actions">
+            <button onclick={saveProfile} disabled={profileSaving} class="btn-primary" class:btn-saved={profileSuccess}>
+              {profileSaving ? 'Saving…' : profileSuccess ? 'Saved ✓' : 'Save'}
+            </button>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+
+      <section class="card">
+        <h2>Guest identity</h2>
+        <p class="section-hint">This is the name and email that appears on your RSVPs and in the guest list. It can be different from your login email.</p>
+
+        {#if !data.contact}
+          <div class="warn-banner">You haven't set up a guest identity yet. You won't be able to RSVP to events until you do.</div>
+        {/if}
+
+        {#if guestError}
+          <div class="error-banner">{guestError}</div>
+        {/if}
+        <div class="form">
+          <label>
+            Name
+            <input type="text" bind:value={guestName} maxlength="200" placeholder="Your name" />
+          </label>
+          <label>
+            Email
+            <input type="email" bind:value={guestEmail} placeholder="you@example.com" />
+          </label>
+          <label>
+            Phone (optional)
+            <input type="tel" bind:value={guestPhone} placeholder="+1 555 000 0000" />
+          </label>
+          <label>
+            Instagram (optional)
+            <input type="text" bind:value={guestInstagram} placeholder="@handle" />
+          </label>
+          <div class="form-actions">
+            <button onclick={saveGuestIdentity} disabled={guestSaving} class="btn-primary" class:btn-saved={guestSuccess}>
+              {guestSaving ? 'Saving…' : guestSuccess ? 'Saved ✓' : 'Save identity'}
+            </button>
+          </div>
+        </div>
+      </section>
+    {/if}
 
     <section class="card">
       <h2>Change password</h2>
