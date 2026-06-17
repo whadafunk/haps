@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
 import { events, rsvps, visitorSessions, emailBlocklist, guests, notifications } from '../db/schema.js'
-import { eq, and, count, asc } from 'drizzle-orm'
+import { eq, and, ne, sql, asc } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { CreateRsvpSchema, UpdateRsvpSchema } from '@haps/shared'
 import { ensureSession } from '../middleware/session.js'
@@ -53,7 +53,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
       if (blocked) throw createError(403, 'EMAIL_BLOCKED', 'This email address has been blocked.')
 
       const eventRows = await db
-        .select({ id: events.id, status: events.status, eventType: events.eventType, maxCapacity: events.maxCapacity, rsvpDeadline: events.rsvpDeadline })
+        .select({ id: events.id, status: events.status, eventType: events.eventType, maxCapacity: events.maxCapacity, rsvpDeadline: events.rsvpDeadline, allowPlusOnes: events.allowPlusOnes, maxPlusOnes: events.maxPlusOnes })
         .from(events)
         .where(eq(events.slug, slug))
         .limit(1)
@@ -65,22 +65,27 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
         throw createError(403, 'RSVP_DEADLINE_PASSED', 'RSVP deadline has passed.')
       }
 
-      let rsvpStatus: string = body.status
-      if (body.status === 'yes' && event.maxCapacity) {
-        const [countRow] = await db
-          .select({ yesCount: count() })
-          .from(rsvps)
-          .where(and(eq(rsvps.eventId, event.id), eq(rsvps.status, 'yes')))
-        const yesCount = Number(countRow?.yesCount ?? 0)
-        if (yesCount >= event.maxCapacity) rsvpStatus = 'waitlist'
-      }
-
-      // Find existing RSVP for this guest
+      // Find existing RSVP before capacity check so we can exclude it from the sum
       const [existingRsvp] = await db
-        .select({ id: rsvps.id })
+        .select({ id: rsvps.id, status: rsvps.status, headCount: rsvps.headCount })
         .from(rsvps)
         .where(and(eq(rsvps.eventId, event.id), eq(rsvps.guestId, guestRecord.id)))
         .limit(1)
+
+      // Clamp headCount to what the event allows
+      const maxAllowedHead = event.allowPlusOnes ? (event.maxPlusOnes ?? 1) + 1 : 1
+      const effectiveHeadCount = Math.min(body.headCount, maxAllowedHead)
+
+      let rsvpStatus: string = body.status
+      if (body.status === 'yes' && event.maxCapacity) {
+        const capacityConditions = [eq(rsvps.eventId, event.id), eq(rsvps.status, 'yes')]
+        if (existingRsvp?.status === 'yes') capacityConditions.push(ne(rsvps.id, existingRsvp.id))
+        const [sumRow] = await db
+          .select({ total: sql<number>`coalesce(sum(${rsvps.headCount}), 0)` })
+          .from(rsvps)
+          .where(and(...capacityConditions))
+        if (Number(sumRow?.total ?? 0) + effectiveHeadCount > event.maxCapacity) rsvpStatus = 'waitlist'
+      }
 
       let rsvp
       if (existingRsvp) {
@@ -89,7 +94,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
             displayName: lockedName,
             email:       lockedEmail,
             status:      rsvpStatus,
-            headCount:   body.headCount,
+            headCount:   effectiveHeadCount,
             note:        body.note ?? null,
             guestId:     guestRecord.id,
             updatedAt:   new Date(),
@@ -106,7 +111,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
             displayName: lockedName,
             email:       lockedEmail,
             status:      rsvpStatus,
-            headCount:   body.headCount,
+            headCount:   effectiveHeadCount,
             note:        body.note ?? null,
           })
           .returning()
@@ -134,7 +139,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Event lookup first (before email checks) so 404 is returned for unknown events
     const eventRows = await db
-      .select({ id: events.id, status: events.status, eventType: events.eventType, maxCapacity: events.maxCapacity, rsvpDeadline: events.rsvpDeadline })
+      .select({ id: events.id, status: events.status, eventType: events.eventType, maxCapacity: events.maxCapacity, rsvpDeadline: events.rsvpDeadline, allowPlusOnes: events.allowPlusOnes, maxPlusOnes: events.maxPlusOnes })
       .from(events)
       .where(eq(events.slug, slug))
       .limit(1)
@@ -179,16 +184,26 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
+    // Find existing RSVP before capacity check so we can exclude its headCount from the sum
+    const [existingRsvp] = await db
+      .select({ id: rsvps.id, sessionId: rsvps.sessionId, status: rsvps.status, headCount: rsvps.headCount })
+      .from(rsvps)
+      .where(and(eq(rsvps.eventId, event.id), eq(rsvps.sessionId, session.id)))
+      .limit(1)
+
+    // Clamp headCount to what the event allows
+    const maxAllowedHead = event.allowPlusOnes ? (event.maxPlusOnes ?? 1) + 1 : 1
+    const effectiveHeadCount = Math.min(body.headCount, maxAllowedHead)
+
     let rsvpStatus: string = body.status
     if (body.status === 'yes' && event.maxCapacity) {
-      const [countRow] = await db
-        .select({ yesCount: count() })
+      const capacityConditions = [eq(rsvps.eventId, event.id), eq(rsvps.status, 'yes')]
+      if (existingRsvp?.status === 'yes') capacityConditions.push(ne(rsvps.id, existingRsvp.id))
+      const [sumRow] = await db
+        .select({ total: sql<number>`coalesce(sum(${rsvps.headCount}), 0)` })
         .from(rsvps)
-        .where(and(eq(rsvps.eventId, event.id), eq(rsvps.status, 'yes')))
-      const yesCount = Number(countRow?.yesCount ?? 0)
-      if (yesCount >= event.maxCapacity) {
-        rsvpStatus = 'waitlist'
-      }
+        .where(and(...capacityConditions))
+      if (Number(sumRow?.total ?? 0) + effectiveHeadCount > event.maxCapacity) rsvpStatus = 'waitlist'
     }
 
     // Identity lock: once a session has a display name, use that instead of what was submitted
@@ -221,13 +236,6 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
       .returning({ id: guests.id })
     if (!guest) throw createError(500, 'INTERNAL_ERROR', 'Failed to upsert guest.')
 
-    // Select-then-upsert: find existing RSVP for this session/user first
-    const [existingRsvp] = await db
-      .select({ id: rsvps.id, sessionId: rsvps.sessionId })
-      .from(rsvps)
-      .where(and(eq(rsvps.eventId, event.id), eq(rsvps.sessionId, session.id)))
-      .limit(1)
-
     let rsvp
     if (existingRsvp) {
       const updated = await db.update(rsvps)
@@ -235,7 +243,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
           displayName: lockedName,
           email:       rsvpEmail,
           status:      rsvpStatus,
-          headCount:   body.headCount,
+          headCount:   effectiveHeadCount,
           note:        body.note ?? null,
           guestId:     guest.id,
           updatedAt:   new Date(),
@@ -253,7 +261,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
           displayName: lockedName,
           email:       rsvpEmail,
           status:      rsvpStatus,
-          headCount:   body.headCount,
+          headCount:   effectiveHeadCount,
           note:        body.note ?? null,
         })
         .returning()
@@ -280,7 +288,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
     const body = UpdateRsvpSchema.parse(request.body)
 
     const rows = await db
-      .select({ id: rsvps.id, sessionId: rsvps.sessionId, userId: rsvps.userId, guestId: rsvps.guestId, status: rsvps.status, eventId: rsvps.eventId })
+      .select({ id: rsvps.id, sessionId: rsvps.sessionId, userId: rsvps.userId, guestId: rsvps.guestId, status: rsvps.status, headCount: rsvps.headCount, eventId: rsvps.eventId })
       .from(rsvps)
       .where(eq(rsvps.id, rsvpId))
       .limit(1)
@@ -302,6 +310,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
     let finalStatus: string | undefined = body.status
 
     if (body.status === 'yes' && existing.status !== 'yes') {
+      // Changing to 'yes': check if the new headCount fits in remaining capacity
       const [eventRow] = await db
         .select({ maxCapacity: events.maxCapacity })
         .from(events)
@@ -309,13 +318,28 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
         .limit(1)
 
       if (eventRow?.maxCapacity) {
-        const [countRow] = await db
-          .select({ yesCount: count() })
+        const newHead = body.headCount ?? existing.headCount
+        const [sumRow] = await db
+          .select({ total: sql<number>`coalesce(sum(${rsvps.headCount}), 0)` })
           .from(rsvps)
           .where(and(eq(rsvps.eventId, existing.eventId), eq(rsvps.status, 'yes')))
+        if (Number(sumRow?.total ?? 0) + newHead > eventRow.maxCapacity) finalStatus = 'waitlist'
+      }
+    } else if (existing.status === 'yes' && body.headCount !== undefined && body.headCount > existing.headCount) {
+      // Already 'yes', increasing headCount: check the delta fits
+      const [eventRow] = await db
+        .select({ maxCapacity: events.maxCapacity })
+        .from(events)
+        .where(eq(events.id, existing.eventId))
+        .limit(1)
 
-        if (Number(countRow?.yesCount ?? 0) >= eventRow.maxCapacity) {
-          finalStatus = 'waitlist'
+      if (eventRow?.maxCapacity) {
+        const [sumRow] = await db
+          .select({ total: sql<number>`coalesce(sum(${rsvps.headCount}), 0)` })
+          .from(rsvps)
+          .where(and(eq(rsvps.eventId, existing.eventId), eq(rsvps.status, 'yes'), ne(rsvps.id, rsvpId)))
+        if (Number(sumRow?.total ?? 0) + body.headCount > eventRow.maxCapacity) {
+          throw createError(400, 'CAPACITY_EXCEEDED', 'Not enough spots remaining for that many plus ones.')
         }
       }
     }
@@ -440,21 +464,22 @@ async function promoteFromWaitlist(eventId: string, eventSlug: string) {
 
   if (!eventRow?.maxCapacity) return
 
-  const [countRow] = await db
-    .select({ yesCount: count() })
+  const [sumRow] = await db
+    .select({ total: sql<number>`coalesce(sum(${rsvps.headCount}), 0)` })
     .from(rsvps)
     .where(and(eq(rsvps.eventId, eventId), eq(rsvps.status, 'yes')))
 
-  const yesCount = Number(countRow?.yesCount ?? 0)
-  if (yesCount >= eventRow.maxCapacity) return
+  const spotsLeft = eventRow.maxCapacity - Number(sumRow?.total ?? 0)
+  if (spotsLeft <= 0) return
 
-  const [waitlisted] = await db
-    .select({ id: rsvps.id, sessionId: rsvps.sessionId, userId: rsvps.userId })
+  // Promote the first waitlisted RSVP whose headCount fits in remaining capacity
+  const waitlistedRows = await db
+    .select({ id: rsvps.id, headCount: rsvps.headCount, sessionId: rsvps.sessionId, userId: rsvps.userId })
     .from(rsvps)
     .where(and(eq(rsvps.eventId, eventId), eq(rsvps.status, 'waitlist')))
     .orderBy(asc(rsvps.createdAt))
-    .limit(1)
 
+  const waitlisted = waitlistedRows.find(r => r.headCount <= spotsLeft)
   if (!waitlisted) return
 
   await db.update(rsvps)

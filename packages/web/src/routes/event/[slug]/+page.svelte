@@ -10,7 +10,11 @@
   let rsvpName = $state(data.lockedIdentity?.displayName ?? data.myRsvp?.displayName ?? '')
   let rsvpEmail = $state(data.lockedIdentity?.email ?? '')
   let rsvpNote = $state(data.myRsvp?.note ?? '')
-  let rsvpHeadCount = $state(data.myRsvp?.headCount ?? 1)
+  let rsvpHeadCount = $state(
+    data.event.allowPlusOnes
+      ? Math.min(data.myRsvp?.headCount ?? 1, (data.event.maxPlusOnes ?? 1) + 1)
+      : 1
+  )
   let rsvpLoading = $state(false)
   let rsvpError = $state('')
 
@@ -325,7 +329,7 @@
             <div class="rsvp-summary">
               <div class="rsvp-summary-status rsvp-summary-{data.myRsvp.status}">
                 {data.myRsvp.status === 'yes' ? 'Going' : data.myRsvp.status === 'maybe' ? 'Maybe' : data.myRsvp.status === 'waitlist' ? 'Waitlisted' : 'Not going'}
-                {#if data.myRsvp.headCount > 1} · party of {data.myRsvp.headCount}{/if}
+                {#if data.myRsvp.headCount > 1} · +{data.myRsvp.headCount - 1}{/if}
               </div>
               <div class="rsvp-summary-name">{data.myRsvp.displayName}</div>
             </div>
@@ -379,7 +383,7 @@
           <div class="rsvp-summary">
             <div class="rsvp-summary-status rsvp-summary-{data.myRsvp.status}">
               {data.myRsvp.status === 'yes' ? 'Going' : data.myRsvp.status === 'maybe' ? 'Maybe' : data.myRsvp.status === 'waitlist' ? 'Waitlisted' : 'Not going'}
-              {#if data.myRsvp.headCount > 1} · party of {data.myRsvp.headCount}{/if}
+              {#if data.myRsvp.headCount > 1} · +{data.myRsvp.headCount - 1}{/if}
             </div>
             <div class="rsvp-summary-name">{data.myRsvp.displayName}</div>
             {#if data.myRsvp.note}
@@ -430,10 +434,16 @@
                   </button>
                 {/each}
               </div>
-              <label>
-                Party size
-                <input type="number" min="1" max="20" bind:value={rsvpHeadCount} />
-              </label>
+              {#if event.allowPlusOnes}
+                <label>
+                  Plus ones
+                  <select bind:value={rsvpHeadCount}>
+                    {#each Array.from({ length: (event.maxPlusOnes ?? 1) + 1 }, (_, i) => i) as n}
+                      <option value={n + 1}>{n === 0 ? 'None' : n === 1 ? '1 plus one' : `${n} plus ones`}</option>
+                    {/each}
+                  </select>
+                </label>
+              {/if}
               <label>
                 Note (optional)
                 <input type="text" bind:value={rsvpNote} placeholder="Any notes…" />

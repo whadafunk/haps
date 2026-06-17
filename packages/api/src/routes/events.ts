@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
 import { events, eventTokens, rsvps, visitorSessions, guests, users, albumPhotos } from '../db/schema.js'
-import { eq, and, count, sql } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import { generateToken, hashToken, verifyToken } from '../lib/crypto.js'
 import { generateSlug } from '../lib/slug.js'
 import { createError } from '../lib/errors.js'
@@ -135,9 +135,9 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     const [countRows, organizerRows] = await Promise.all([
       db
         .select({
-          guestCount: count(),
-          yesCount: sql<number>`count(*) filter (where ${rsvps.status} = 'yes')`,
-          maybeCount: sql<number>`count(*) filter (where ${rsvps.status} = 'maybe')`,
+          guestCount: sql<number>`coalesce(sum(${rsvps.headCount}), 0)`,
+          yesCount: sql<number>`coalesce(sum(${rsvps.headCount}) filter (where ${rsvps.status} = 'yes'), 0)`,
+          maybeCount: sql<number>`coalesce(sum(${rsvps.headCount}) filter (where ${rsvps.status} = 'maybe'), 0)`,
           waitlistCount: sql<number>`count(*) filter (where ${rsvps.status} = 'waitlist')`,
         })
         .from(rsvps)

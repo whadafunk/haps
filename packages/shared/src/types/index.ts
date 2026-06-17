@@ -26,6 +26,8 @@ export interface Event {
   showGuests: boolean
   allowComments: boolean
   showAlbum: boolean
+  allowPlusOnes: boolean
+  maxPlusOnes?: number | null
   maxCapacity?: number | null
   rsvpDeadline?: string | null
   expiresAt?: string | null
