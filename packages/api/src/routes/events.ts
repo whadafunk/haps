@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, eventTokens, rsvps, visitorSessions, guests } from '../db/schema.js'
+import { events, eventTokens, rsvps, visitorSessions, guests, users } from '../db/schema.js'
 import { eq, and, count, sql } from 'drizzle-orm'
 import { generateToken, hashToken, verifyToken } from '../lib/crypto.js'
 import { generateSlug } from '../lib/slug.js'
@@ -132,22 +132,26 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    const countRows = await db
-      .select({
-        guestCount: count(),
-        yesCount: sql<number>`count(*) filter (where ${rsvps.status} = 'yes')`,
-        maybeCount: sql<number>`count(*) filter (where ${rsvps.status} = 'maybe')`,
-        waitlistCount: sql<number>`count(*) filter (where ${rsvps.status} = 'waitlist')`,
-      })
-      .from(rsvps)
-      .leftJoin(visitorSessions, eq(rsvps.sessionId, visitorSessions.id))
-      .where(and(
-        eq(rsvps.eventId, event.id),
-        // exclude blocked/removed session-based RSVPs from counts
-        sql`(${rsvps.sessionId} is null or coalesce(${visitorSessions.status}, 'active') = 'active')`,
-      ))
+    const [countRows, organizerRows] = await Promise.all([
+      db
+        .select({
+          guestCount: count(),
+          yesCount: sql<number>`count(*) filter (where ${rsvps.status} = 'yes')`,
+          maybeCount: sql<number>`count(*) filter (where ${rsvps.status} = 'maybe')`,
+          waitlistCount: sql<number>`count(*) filter (where ${rsvps.status} = 'waitlist')`,
+        })
+        .from(rsvps)
+        .leftJoin(visitorSessions, eq(rsvps.sessionId, visitorSessions.id))
+        .where(and(
+          eq(rsvps.eventId, event.id),
+          // exclude blocked/removed session-based RSVPs from counts
+          sql`(${rsvps.sessionId} is null or coalesce(${visitorSessions.status}, 'active') = 'active')`,
+        )),
+      db.select({ displayName: users.displayName }).from(users).where(eq(users.id, event.organizerId)).limit(1),
+    ])
 
     const counts = countRows[0]
+    const organizerName = organizerRows[0]?.displayName ?? null
 
     let myRsvp = null
     if (request.session) {
@@ -170,6 +174,7 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     return {
       event: {
         ...serializeEvent(event),
+        organizerName,
         guestCount: Number(counts?.guestCount ?? 0),
         yesCount: Number(counts?.yesCount ?? 0),
         maybeCount: Number(counts?.maybeCount ?? 0),

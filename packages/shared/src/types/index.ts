@@ -12,6 +12,7 @@ export interface Event {
   id: string
   slug: string
   organizerId: string
+  organizerName?: string | null
   title: string
   description?: string | null
   location?: string | null

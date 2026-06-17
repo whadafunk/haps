@@ -4,7 +4,17 @@
   let { data } = $props<{ data: PageData }>()
 
   function formatDate(iso: string) {
-    return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+    const d = new Date(iso)
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) +
+      ' · ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  }
+
+  function statusLabel(s: string) {
+    if (s === 'yes') return 'Going'
+    if (s === 'maybe') return 'Maybe'
+    if (s === 'no') return 'Declined'
+    if (s === 'waitlist') return 'Waitlisted'
+    return s
   }
 
   const showRegisterNudge = $derived(!data.user && data.events.length > 0)
@@ -43,14 +53,11 @@
               <h3>{event.title}</h3>
               <p class="event-date">{formatDate(event.startsAt)}</p>
             </div>
-            <div class="event-badges">
-              {#if event.isEditor}
-                <span class="badge host">Host</span>
-              {/if}
-              {#if event.myStatus}
-                <span class="badge status-{event.myStatus}">{event.myStatus}</span>
-              {/if}
-            </div>
+            {#if event.myStatus}
+              <div class="event-badges">
+                <span class="badge status-{event.myStatus}">{statusLabel(event.myStatus)}</span>
+              </div>
+            {/if}
           </a>
         {/each}
       </div>
@@ -99,14 +106,15 @@
 
   .empty { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 2rem; text-align: center; color: #6b6058; }
   .event-list { display: flex; flex-direction: column; gap: 0.625rem; }
-  .event-card { display: flex; align-items: center; justify-content: space-between; background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1rem 1.25rem; text-decoration: none; color: inherit; }
+  .event-card { display: flex; align-items: center; justify-content: space-between; background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 12px; padding: 1rem 1.25rem; text-decoration: none; color: inherit; gap: 0.75rem; }
   .event-card:hover { border-color: #b05525; }
+  .event-info { flex: 1; min-width: 0; }
   .event-info h3 { margin: 0 0 0.25rem; font-size: 1rem; color: #1a1510; }
   .event-date { margin: 0; font-size: 0.8rem; color: #6b6058; }
-  .event-badges { display: flex; gap: 0.375rem; align-items: center; }
-  .badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; }
-  .badge.host { background: #f0ddd0; color: #9a3f1a; }
+  .event-badges { display: flex; gap: 0.375rem; align-items: center; flex-shrink: 0; }
+  .badge { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px; white-space: nowrap; }
   .badge.status-yes { background: #e8f4e4; color: #2a5e28; }
   .badge.status-maybe { background: #fef4e0; color: #7a5a1a; }
   .badge.status-no { background: #ede8e0; color: #4e453e; }
+  .badge.status-waitlist { background: #edf3fb; color: #1a4070; }
 </style>

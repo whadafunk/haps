@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { PageData } from './$types'
   import { api, ApiError } from '$lib/api'
-  import { invalidateAll } from '$app/navigation'
+  import { invalidateAll, goto } from '$app/navigation'
 
   let { data } = $props<{ data: PageData }>()
 
@@ -72,6 +72,7 @@
 
   let guestList = $state<Array<{ id: string; displayName: string; status: string; headCount: number; isHost?: boolean }>>([])
   let guestListLoaded = $state(false)
+  let guestListExpanded = $state(false)
 
   const event = $derived(data.event)
   const rsvpDeadlinePassed = $derived(!!event.rsvpDeadline && new Date() > new Date(event.rsvpDeadline))
@@ -125,13 +126,7 @@
         ? { status: rsvpStatus, headCount: rsvpHeadCount, note: rsvpNote || undefined }
         : { displayName: rsvpName, status: rsvpStatus, headCount: rsvpHeadCount, note: rsvpNote || undefined, email: rsvpEmail }
       await api.submitRsvp(event.slug, rsvpPayload)
-      await invalidateAll()
-      editingRsvp = false
-      // Reload guest list after RSVP
-      if (event.showGuests) {
-        const res = await api.listRsvps(event.slug)
-        guestList = res.rsvps
-      }
+      goto('/my-events')
     } catch (e: unknown) {
       if (e instanceof ApiError && e.statusCode === 428) {
         if (rsvpName && rsvpEmail) {
@@ -145,12 +140,7 @@
               note: rsvpNote || undefined,
               email: rsvpEmail,
             })
-            await invalidateAll()
-            editingRsvp = false
-            if (event.showGuests) {
-              const res = await api.listRsvps(event.slug)
-              guestList = res.rsvps
-            }
+            goto('/my-events')
           } catch (e2: unknown) {
             rsvpError = e2 instanceof ApiError ? e2.message : 'Failed to submit RSVP.'
           }
@@ -242,17 +232,27 @@
 </svelte:head>
 
 <main class="event-page" data-theme={event.theme ?? 'default'} style={themeStyle(event.theme)}>
+  {#if data.user?.type === 'guest' || data.lockedIdentity}
+    <div class="back-nav">
+      <a href="/my-events" class="back-link">← My events</a>
+    </div>
+  {/if}
+
   {#if event.coverImageUrl}
     <div class="cover" style="background-image: url({event.coverImageUrl})"></div>
   {/if}
 
   <div class="content">
     <div class="event-header">
-      <div class="header-badges">
-        <span class="status-badge status-{event.status}">{event.status}</span>
-        <span class="type-badge type-{event.eventType}">{event.eventType === 'invite_only' ? 'Invite-Only' : 'Open'}</span>
-      </div>
+      {#if event.eventType === 'invite_only'}
+        <div class="header-badges">
+          <span class="type-badge type-invite_only">Invite-Only</span>
+        </div>
+      {/if}
       <h1>{event.title}</h1>
+      {#if event.organizerName}
+        <p class="organizer-name">Hosted by {event.organizerName}</p>
+      {/if}
 
       <div class="event-meta">
         <div class="meta-item">
@@ -276,6 +276,9 @@
           rel="noopener"
           class="cal-link"
         >🗓 Add to Google Calendar</a>
+        {#if event.showAlbum}
+          <a href="/event/{event.slug}/album" class="cal-link">📷 Photo album</a>
+        {/if}
       </div>
     </div>
 
@@ -464,25 +467,36 @@
     <!-- Guest list -->
     {#if event.showGuests}
       <section class="section">
-        <h2>Guests ({event.yesCount} going)</h2>
-        {#if guestListLoaded && guestList.filter(r => r.status === 'yes').length > 0}
-          <div class="guest-list">
-            {#each guestList.filter(r => r.status === 'yes') as guest (guest.id)}
-              <div class="guest-row">
-                <span class="guest-name">{guest.displayName}</span>
-                {#if guest.isHost}
-                  <span class="host-badge">host</span>
-                {/if}
-                {#if guest.headCount > 1}
-                  <span class="guest-count">+{guest.headCount - 1}</span>
-                {/if}
-              </div>
-            {/each}
-          </div>
-        {:else if guestListLoaded}
-          <p class="muted">No confirmed guests yet.</p>
-        {:else}
-          <p class="muted">Loading…</p>
+        <div class="guest-list-header">
+          <h2>
+            Guests — {event.yesCount} going
+            {#if event.maxCapacity && event.maxCapacity > event.yesCount}
+              ({event.maxCapacity - event.yesCount} spots left)
+            {/if}
+          </h2>
+          {#if event.yesCount > 0}
+            <button class="expand-toggle" onclick={() => guestListExpanded = !guestListExpanded}>
+              {guestListExpanded ? 'Hide' : 'Show'}
+            </button>
+          {/if}
+        </div>
+        {#if guestListExpanded}
+          {#if guestListLoaded && guestList.filter(r => r.status === 'yes').length > 0}
+            <div class="guest-list">
+              {#each guestList.filter(r => r.status === 'yes') as guest (guest.id)}
+                <div class="guest-row">
+                  <span class="guest-name">{guest.displayName}</span>
+                  {#if guest.headCount > 1}
+                    <span class="guest-count">+{guest.headCount - 1}</span>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {:else if guestListLoaded}
+            <p class="muted">No confirmed guests yet.</p>
+          {:else}
+            <p class="muted">Loading…</p>
+          {/if}
         {/if}
         {#if event.yesCount === 0 && event.maybeCount > 0}
           <p class="muted">{event.maybeCount} tentative.</p>
@@ -493,10 +507,7 @@
     <!-- Wall -->
     {#if event.showAlbum}
       <section class="section">
-        <div class="wall-header">
-          <h2>Wall</h2>
-          <a href="/event/{event.slug}/album" class="album-link">Photo album →</a>
-        </div>
+        <h2>Wall</h2>
 
         {#if event.status === 'published'}
           <div class="post-composer">
@@ -581,16 +592,16 @@
     background-color: var(--page-bg, transparent);
     min-height: 100vh;
   }
+  .back-nav { padding: 0.75rem 0 0; }
+  .back-link { font-size: 0.85rem; color: #6b6058; text-decoration: none; font-weight: 500; }
+  .back-link:hover { color: var(--accent, #b05525); }
   .cover { height: 240px; background-size: cover; background-position: center; border-radius: 0 0 12px 12px; margin-bottom: 1.5rem; }
   .event-header { margin-bottom: 1.5rem; }
   .header-badges { display: flex; gap: 0.375rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
-  .status-badge, .type-badge { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 0.2rem 0.5rem; border-radius: 4px; }
-  .status-badge { background: #ede8e0; color: #4e453e; }
-  .status-badge.status-published { background: #e8f4e4; color: #2a5e28; }
-  .status-badge.status-cancelled { background: #f8e8e2; color: #7a2a1a; }
-  .type-badge.type-open { background: #e8f4e4; color: #2a5e28; }
+  .type-badge { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 0.2rem 0.5rem; border-radius: 4px; }
   .type-badge.type-invite_only { background: #fef4e0; color: #7a5a1a; }
-  h1 { font-size: 1.75rem; font-weight: 800; margin: 0.5rem 0 1rem; color: #1a1510; }
+  h1 { font-size: 1.75rem; font-weight: 800; margin: 0.5rem 0 0.25rem; color: #1a1510; }
+  .organizer-name { margin: 0 0 1rem; font-size: 0.875rem; color: #6b6058; }
   .event-meta { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
   .meta-item { font-size: 0.9rem; color: #3d352e; }
   .cal-links { display: flex; gap: 1rem; flex-wrap: wrap; }
@@ -602,6 +613,7 @@
   .editor-banner a { color: var(--accent, #b05525); text-decoration: none; font-weight: 600; }
   .section { background: var(--card-bg, #f0e8da); border: 1px solid var(--border, #cfc3b0); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
   .section h2 { margin: 0 0 1rem; font-size: 1.1rem; color: #1a1510; }
+  .section > h2:only-child, .section > h2 { margin-bottom: 0.75rem; }
   .deadline-notice { margin: 0 0 0.875rem; font-size: 0.85rem; color: #7a5a1a; background: #fef4e0; border: 1px solid #e0c870; border-radius: 6px; padding: 0.375rem 0.75rem; display: inline-block; }
   .deadline-closed { background: #ede8e0; border: 1px solid #c8bdb0; border-radius: 8px; padding: 0.875rem 1rem; margin-bottom: 1rem; }
   .deadline-closed strong { display: block; color: #1a1510; margin-bottom: 0.25rem; }
@@ -647,18 +659,17 @@
   .submit-btn:hover:not(:disabled) { background: var(--accent-hover, #924418); }
   .submit-btn:disabled { opacity: 0.6; }
   .error-banner { background: #fdf2ee; color: #8b3016; border: 1px solid #f0c8b8; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
+  .guest-list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+  .guest-list-header h2 { margin: 0; }
+  .expand-toggle { background: none; border: 1px solid var(--border, #cfc3b0); border-radius: 6px; padding: 0.25rem 0.625rem; font-size: 0.8rem; font-weight: 500; color: #3d352e; cursor: pointer; flex-shrink: 0; }
+  .expand-toggle:hover { border-color: var(--accent, #b05525); color: var(--accent, #b05525); }
   .guest-list { display: flex; flex-direction: column; gap: 0.375rem; }
   .guest-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: var(--card-inner, #e8ddd0); border-radius: 8px; }
   .guest-name { font-size: 0.9rem; color: #1a1510; font-weight: 500; }
   .guest-count { font-size: 0.8rem; color: #6b6058; }
-  .host-badge { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; background: #fef4e0; color: #7a5a1a; border: 1px solid #e0c870; border-radius: 4px; padding: 0.1rem 0.375rem; }
   .no-identity-banner { background: #fef4e0; color: #7a5a1a; border: 1px solid #e0c870; border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.9rem; }
   .no-identity-banner a { color: #b05525; font-weight: 600; text-decoration: none; }
   .no-identity-banner a:hover { text-decoration: underline; }
-  .wall-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
-  .wall-header h2 { margin: 0; }
-  .album-link { font-size: 0.875rem; font-weight: 600; color: var(--accent, #b05525); text-decoration: none; }
-  .album-link:hover { text-decoration: underline; }
   .post-composer { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border, #cfc3b0); }
   .post-textarea { padding: 0.5rem 0.75rem; border: 1px solid var(--border, #c8bdb0); border-radius: 8px; font-size: 0.95rem; font-family: inherit; background: #fff; color: #1a1510; resize: none; }
   .post-composer-actions { display: flex; gap: 0.5rem; align-items: center; }

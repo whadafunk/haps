@@ -10,7 +10,7 @@ export const load: PageServerLoad = async ({ params, url, cookies, parent }) => 
   const [layoutData, apiData] = await Promise.all([
     parent(),
     serverGet<{
-      event: Event & { guestCount: number; yesCount: number; maybeCount: number }
+      event: Event & { guestCount: number; yesCount: number; maybeCount: number; waitlistCount: number; organizerName: string | null }
       myRsvp: { status: string; headCount: number; note?: string | null; displayName: string } | null
       isEditor: boolean
       sessionProfileRequired: boolean
