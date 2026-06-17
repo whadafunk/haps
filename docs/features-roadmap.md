@@ -168,6 +168,28 @@ Post-event experience; turns the app into a place people return to.
 - [ ] Wall visibility on "My events" page: past events link directly to
       their wall
 
+**Photo Archive**
+
+Persistent album browsing after an event ends or is archived. Distinct
+from deletion: archiving an event preserves its photos; deleting removes
+them from disk (already implemented in Phase 1 fix).
+
+- [ ] Archival intent: when an organizer sets status = 'archived', album
+      photos are preserved on disk (not cleaned up). Deletion is still the
+      path that removes files.
+- [ ] Operator archive view (`/admin/archive`): grid of all archived
+      events with their albums. Per-event: photo count, download ZIP,
+      delete individual photos, toggle public access.
+- [ ] Guest archive page (`/archive/[slug]`): browsable photo grid for a
+      single archived event. Access mirrors the live event — public albums
+      are open to anyone; invite-only albums require an attendee token in
+      session (same check as the live event page, no new auth needed).
+- [ ] "My Events" links: past/archived events link to `/archive/[slug]`
+      instead of the live event page once the event is archived.
+- [ ] Public archive index (`/archive`): optional page listing all events
+      with public albums, organised by date. Toggled per-event by the
+      organizer. Off by default.
+
 ---
 
 ## Phase 4 — Mobile & White-label

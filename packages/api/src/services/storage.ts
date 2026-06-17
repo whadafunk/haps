@@ -1,5 +1,5 @@
 import { createWriteStream, createReadStream, existsSync } from 'fs'
-import { mkdir } from 'fs/promises'
+import { mkdir, unlink } from 'fs/promises'
 import { join } from 'path'
 import { pipeline } from 'stream/promises'
 import type { Readable } from 'stream'
@@ -37,4 +37,14 @@ export function getLocalFileStream(filename: string): Readable | null {
   const filePath = join(config.STORAGE_PATH, filename)
   if (!existsSync(filePath)) return null
   return createReadStream(filePath)
+}
+
+// Extracts the filename from a stored URL and deletes the file.
+// Silently ignores missing files — idempotent for already-cleaned paths.
+export async function deleteLocalFile(url: string): Promise<void> {
+  const prefix = `${config.APP_URL}/api/uploads/`
+  if (!url.startsWith(prefix)) return
+  const filename = url.slice(prefix.length)
+  const filePath = join(config.STORAGE_PATH, filename)
+  await unlink(filePath).catch(() => {})
 }

@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, eventTokens, rsvps, visitorSessions, guests, users } from '../db/schema.js'
+import { events, eventTokens, rsvps, visitorSessions, guests, users, albumPhotos } from '../db/schema.js'
 import { eq, and, count, sql } from 'drizzle-orm'
 import { generateToken, hashToken, verifyToken } from '../lib/crypto.js'
 import { generateSlug } from '../lib/slug.js'
@@ -9,7 +9,7 @@ import { CreateEventSchema, UpdateEventSchema, CreateTokenSchema, InviteContacts
 import { ensureSession } from '../middleware/session.js'
 import { config } from '../lib/config.js'
 import { nanoid } from 'nanoid'
-import { detectMimeType, getAllowedExtension, saveLocalFile } from '../services/storage.js'
+import { detectMimeType, getAllowedExtension, saveLocalFile, deleteLocalFile } from '../services/storage.js'
 import { sendEmail } from '../services/email.js'
 
 const eventsRoutes: FastifyPluginAsync = async (fastify) => {
@@ -229,7 +229,25 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     preHandler: [fastify.requireEditToken],
   }, async (request, reply) => {
     const { slug } = request.params as { slug: string }
-    await db.delete(events).where(eq(events.slug, slug))
+
+    const [event] = await db
+      .select({ id: events.id, coverImageUrl: events.coverImageUrl })
+      .from(events)
+      .where(eq(events.slug, slug))
+      .limit(1)
+    if (!event) return reply.code(204).send()
+
+    const photos = await db
+      .select({ url: albumPhotos.url })
+      .from(albumPhotos)
+      .where(eq(albumPhotos.eventId, event.id))
+
+    await db.delete(events).where(eq(events.id, event.id))
+
+    const fileUrls = photos.map(p => p.url)
+    if (event.coverImageUrl) fileUrls.push(event.coverImageUrl)
+    await Promise.all(fileUrls.map(deleteLocalFile))
+
     return reply.code(204).send()
   })
 
