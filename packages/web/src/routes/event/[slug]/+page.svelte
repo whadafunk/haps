@@ -70,9 +70,14 @@
   type LightboxPhoto = { id: string; url: string; caption?: string | null; uploaderName: string; isOwn?: boolean }
   let lightboxPhoto = $state<LightboxPhoto | null>(null)
 
-  let guestList = $state<Array<{ id: string; displayName: string; status: string; headCount: number; isHost?: boolean }>>([])
+  type GuestProfile = { avatarUrl: string | null; bio: string | null; vibe: string | null }
+  type GuestRow = { id: string; displayName: string; status: string; headCount: number; isHost?: boolean; profile: GuestProfile | null }
+  let guestList = $state<GuestRow[]>([])
   let guestListLoaded = $state(false)
   let guestListExpanded = $state(false)
+
+  // Profile modal
+  let profileModal = $state<{ name: string; profile: GuestProfile } | null>(null)
 
   const event = $derived(data.event)
   const rsvpDeadlinePassed = $derived(!!event.rsvpDeadline && new Date() > new Date(event.rsvpDeadline))
@@ -484,7 +489,19 @@
           {#if guestListLoaded && guestList.filter(r => r.status === 'yes').length > 0}
             <div class="guest-list">
               {#each guestList.filter(r => r.status === 'yes') as guest (guest.id)}
-                <div class="guest-row">
+                <div
+                  class="guest-row"
+                  class:guest-row-clickable={!!guest.profile}
+                  role={guest.profile ? 'button' : undefined}
+                  tabindex={guest.profile ? 0 : undefined}
+                  onclick={() => guest.profile && (profileModal = { name: guest.displayName, profile: guest.profile })}
+                  onkeydown={(e) => e.key === 'Enter' && guest.profile && (profileModal = { name: guest.displayName, profile: guest.profile })}
+                >
+                  {#if guest.profile?.avatarUrl}
+                    <img src={guest.profile.avatarUrl} alt="" class="guest-avatar" />
+                  {:else if guest.profile}
+                    <div class="guest-avatar-placeholder">{(guest.displayName[0] ?? '?').toUpperCase()}</div>
+                  {/if}
                   <span class="guest-name">{guest.displayName}</span>
                   {#if guest.headCount > 1}
                     <span class="guest-count">+{guest.headCount - 1}</span>
@@ -584,6 +601,29 @@
   </div>
 </main>
 
+<!-- Guest profile modal -->
+{#if profileModal}
+  <div class="modal-backdrop" onclick={() => profileModal = null} role="presentation">
+    <div class="modal-card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Guest profile">
+      <button class="modal-close" onclick={() => profileModal = null} aria-label="Close">✕</button>
+      <div class="modal-avatar-wrap">
+        {#if profileModal.profile.avatarUrl}
+          <img src={profileModal.profile.avatarUrl} alt="" class="modal-avatar" />
+        {:else}
+          <div class="modal-avatar-placeholder">{(profileModal.name[0] ?? '?').toUpperCase()}</div>
+        {/if}
+      </div>
+      <h3 class="modal-name">{profileModal.name}</h3>
+      {#if profileModal.profile.vibe}
+        <p class="modal-vibe">"{profileModal.profile.vibe}"</p>
+      {/if}
+      {#if profileModal.profile.bio}
+        <p class="modal-bio">{profileModal.profile.bio}</p>
+      {/if}
+    </div>
+  </div>
+{/if}
+
 <style>
   .event-page {
     max-width: 680px;
@@ -665,8 +705,22 @@
   .expand-toggle:hover { border-color: var(--accent, #b05525); color: var(--accent, #b05525); }
   .guest-list { display: flex; flex-direction: column; gap: 0.375rem; }
   .guest-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: var(--card-inner, #e8ddd0); border-radius: 8px; }
+  .guest-row-clickable { cursor: pointer; }
+  .guest-row-clickable:hover { background: var(--border, #cfc3b0); }
+  .guest-avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+  .guest-avatar-placeholder { width: 28px; height: 28px; border-radius: 50%; background: #c8bdb0; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; color: #6b5a48; flex-shrink: 0; }
   .guest-name { font-size: 0.9rem; color: #1a1510; font-weight: 500; }
   .guest-count { font-size: 0.8rem; color: #6b6058; }
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
+  .modal-card { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 16px; padding: 2rem 1.5rem 1.5rem; width: 100%; max-width: 320px; position: relative; text-align: center; }
+  .modal-close { position: absolute; top: 0.75rem; right: 0.875rem; background: none; border: none; font-size: 1rem; color: #6b6058; cursor: pointer; padding: 0.25rem; }
+  .modal-close:hover { color: #1a1510; }
+  .modal-avatar-wrap { margin: 0 auto 0.875rem; width: 80px; height: 80px; }
+  .modal-avatar { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid #cfc3b0; }
+  .modal-avatar-placeholder { width: 80px; height: 80px; border-radius: 50%; background: #d4c4b0; border: 3px solid #cfc3b0; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 700; color: #6b5a48; }
+  .modal-name { margin: 0 0 0.375rem; font-size: 1.1rem; color: #1a1510; }
+  .modal-vibe { margin: 0 0 0.75rem; font-size: 0.9rem; color: #b05525; font-style: italic; }
+  .modal-bio { margin: 0; font-size: 0.875rem; color: #3d352e; line-height: 1.5; }
   .no-identity-banner { background: #fef4e0; color: #7a5a1a; border: 1px solid #e0c870; border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.9rem; }
   .no-identity-banner a { color: #b05525; font-weight: 600; text-decoration: none; }
   .no-identity-banner a:hover { text-decoration: underline; }

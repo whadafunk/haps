@@ -386,21 +386,26 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
 
     const rows = await db
       .select({
-        id:          rsvps.id,
-        displayName: rsvps.displayName,
-        status:      rsvps.status,
-        headCount:   rsvps.headCount,
-        note:        rsvps.note,
-        checkedIn:   rsvps.checkedIn,
-        email:       rsvps.email,
-        sessionId:   rsvps.sessionId,
-        userId:      rsvps.userId,
-        guestId:     rsvps.guestId,
-        createdAt:   rsvps.createdAt,
+        id:            rsvps.id,
+        displayName:   rsvps.displayName,
+        status:        rsvps.status,
+        headCount:     rsvps.headCount,
+        note:          rsvps.note,
+        checkedIn:     rsvps.checkedIn,
+        email:         rsvps.email,
+        sessionId:     rsvps.sessionId,
+        userId:        rsvps.userId,
+        guestId:       rsvps.guestId,
+        createdAt:     rsvps.createdAt,
         sessionStatus: visitorSessions.status,
+        guestClaimedAt: guests.claimedAt,
+        guestAvatarUrl: guests.avatarUrl,
+        guestBio:       guests.bio,
+        guestVibe:      guests.vibe,
       })
       .from(rsvps)
       .leftJoin(visitorSessions, eq(rsvps.sessionId, visitorSessions.id))
+      .leftJoin(guests, eq(rsvps.guestId, guests.id))
       .where(eq(rsvps.eventId, event.id))
 
     // Filter out blocked/removed session guests from the public list
@@ -419,6 +424,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
         guestId:     r.guestId,
         createdAt:   r.createdAt.toISOString(),
         isHost:      r.userId !== null && r.userId === event.organizerId,
+        profile:     r.guestClaimedAt ? { avatarUrl: r.guestAvatarUrl, bio: r.guestBio, vibe: r.guestVibe } : null,
         ...(isEditor ? { email: r.email } : {}),
       })),
     }

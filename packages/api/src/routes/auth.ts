@@ -8,6 +8,8 @@ import { createError } from '../lib/errors.js'
 import { LoginSchema, CreateUserSchema, UpdateProfileSchema, ChangePasswordSchema, RegisterSchema, MagicLinkRequestSchema, MagicLinkVerifySchema, SetupContactSchema } from '@haps/shared'
 import { config } from '../lib/config.js'
 import { sendEmail } from '../services/email.js'
+import { detectMimeType, getAllowedExtension, saveLocalFile } from '../services/storage.js'
+import { nanoid } from 'nanoid'
 
 /** Atomically claim a visitor session's RSVPs and comments into a guest account. */
 async function mergeSessionIntoGuest(sessionId: string, guestId: string): Promise<void> {
@@ -415,6 +417,9 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
           email:           guests.email,
           phone:           guests.phone,
           instagramHandle: guests.instagramHandle,
+          avatarUrl:       guests.avatarUrl,
+          bio:             guests.bio,
+          vibe:            guests.vibe,
         })
         .from(guests)
         .where(eq(guests.id, user.sub))
@@ -431,6 +436,9 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         email:           guests.email,
         phone:           guests.phone,
         instagramHandle: guests.instagramHandle,
+        avatarUrl:       guests.avatarUrl,
+        bio:             guests.bio,
+        vibe:            guests.vibe,
       })
       .from(guests)
       .where(eq(guests.userId, user.sub))
@@ -448,21 +456,21 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
 
     if (user.type === 'guest') {
       const [guest] = await db
-        .select({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle })
+        .select({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle, avatarUrl: guests.avatarUrl, bio: guests.bio, vibe: guests.vibe })
         .from(guests).where(eq(guests.id, user.sub)).limit(1)
       if (!guest) throw createError(404, 'GUEST_NOT_FOUND', 'Guest not found.')
       return reply.send({ contact: guest })
     }
 
     const [guest] = await db
-      .select({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle })
+      .select({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle, avatarUrl: guests.avatarUrl, bio: guests.bio, vibe: guests.vibe })
       .from(guests).where(eq(guests.userId, user.sub)).limit(1)
     if (!guest) throw createError(404, 'GUEST_NOT_FOUND', 'No guest identity linked yet.')
     return reply.send({ contact: guest })
   })
 
   // Shared handler for both /me/guest and /me/contact (alias)
-  async function upsertOperatorGuest(userId: string, body: { displayName: string; email: string; phone?: string | undefined; instagramHandle?: string | undefined }) {
+  async function upsertOperatorGuest(userId: string, body: { displayName: string; email: string; phone?: string | undefined; instagramHandle?: string | undefined; bio?: string | undefined; vibe?: string | undefined }) {
     const email = body.email.toLowerCase()
 
     // Look up by userId — the stable link, never by email
@@ -479,9 +487,9 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         if (conflict) throw createError(409, 'EMAIL_TAKEN', 'This email is already linked to another account.')
       }
       const [updated] = await db.update(guests)
-        .set({ name: body.displayName, email, phone: body.phone ?? null, instagramHandle: body.instagramHandle ?? null, updatedAt: new Date() })
+        .set({ name: body.displayName, email, phone: body.phone ?? null, instagramHandle: body.instagramHandle ?? null, bio: body.bio ?? null, vibe: body.vibe ?? null, updatedAt: new Date() })
         .where(eq(guests.id, existing.id))
-        .returning({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle })
+        .returning({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle, avatarUrl: guests.avatarUrl, bio: guests.bio, vibe: guests.vibe })
       return updated!
     }
 
@@ -489,8 +497,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     const [conflict] = await db.select({ id: guests.id }).from(guests).where(eq(guests.email, email)).limit(1)
     if (conflict) throw createError(409, 'EMAIL_TAKEN', 'This email is already linked to another account.')
     const [inserted] = await db.insert(guests)
-      .values({ name: body.displayName, email, phone: body.phone ?? null, instagramHandle: body.instagramHandle ?? null, userId })
-      .returning({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle })
+      .values({ name: body.displayName, email, phone: body.phone ?? null, instagramHandle: body.instagramHandle ?? null, bio: body.bio ?? null, vibe: body.vibe ?? null, userId })
+      .returning({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle, avatarUrl: guests.avatarUrl, bio: guests.bio, vibe: guests.vibe })
     return inserted!
   }
 
@@ -517,10 +525,12 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
           email:           body.email.toLowerCase(),
           phone:           body.phone ?? null,
           instagramHandle: body.instagramHandle ?? null,
+          bio:             body.bio ?? null,
+          vibe:            body.vibe ?? null,
           updatedAt:       new Date(),
         })
         .where(eq(guests.id, user.sub))
-        .returning({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle })
+        .returning({ id: guests.id, name: guests.name, email: guests.email, phone: guests.phone, instagramHandle: guests.instagramHandle, avatarUrl: guests.avatarUrl, bio: guests.bio, vibe: guests.vibe })
       if (!updated) throw createError(500, 'INTERNAL_ERROR', 'Failed to update guest.')
       return { contact: updated }
     }
@@ -725,6 +735,52 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     })
 
     return { user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, type: 'operator' } }
+  })
+
+  fastify.post('/api/auth/me/avatar', {
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const user = request.user!
+
+    // Resolve the guest id — for registered guests it's user.sub; for operators it's their linked guest row
+    let guestId: string | null = null
+    if (user.type === 'guest') {
+      guestId = user.sub
+    } else {
+      const [g] = await db
+        .select({ id: guests.id })
+        .from(guests)
+        .where(eq(guests.userId, user.sub))
+        .limit(1)
+      guestId = g?.id ?? null
+    }
+    if (!guestId) throw createError(404, 'GUEST_NOT_FOUND', 'No guest identity linked. Set up your guest identity first.')
+
+    const data = await request.file()
+    if (!data) throw createError(400, 'NO_FILE', 'No file uploaded.')
+
+    const chunks: Buffer[] = []
+    for await (const chunk of data.file) {
+      chunks.push(chunk)
+      if (Buffer.concat(chunks).length > 5 * 1024 * 1024) {
+        throw createError(413, 'FILE_TOO_LARGE', 'Avatar exceeds 5 MB limit.')
+      }
+    }
+    const buffer = Buffer.concat(chunks)
+
+    const mimeType = detectMimeType(buffer)
+    if (!mimeType) throw createError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Only JPEG, PNG, WebP, and GIF images are allowed.')
+
+    const ext = getAllowedExtension(mimeType)!
+    const filename = `avatar_${nanoid()}.${ext}`
+
+    const { Readable } = await import('stream')
+    await saveLocalFile(Readable.from(buffer), filename)
+
+    const avatarUrl = `${config.APP_URL}/api/uploads/${filename}`
+    await db.update(guests).set({ avatarUrl, updatedAt: new Date() }).where(eq(guests.id, guestId))
+
+    return reply.code(200).send({ avatarUrl })
   })
 }
 

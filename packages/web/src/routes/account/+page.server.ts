@@ -6,7 +6,7 @@ export const load: PageServerLoad = async ({ parent, cookies }) => {
   const { user } = await parent()
   if (!user) redirect(302, '/login')
 
-  let contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null } | null = null
+  let contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null; avatarUrl: string | null; bio: string | null; vibe: string | null } | null = null
   try {
     const res = await serverGet<{ contact: typeof contact }>('/auth/me/guest', cookies)
     contact = res.contact

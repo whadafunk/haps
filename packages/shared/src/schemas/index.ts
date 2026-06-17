@@ -70,6 +70,8 @@ export const SetupContactSchema = z.object({
   email:           z.string().email(),
   phone:           z.string().max(50).optional(),
   instagramHandle: z.string().max(100).optional(),
+  bio:             z.string().max(200).optional(),
+  vibe:            z.string().max(80).optional(),
 }).strict()
 
 export const UpdateRsvpSchema = z.object({

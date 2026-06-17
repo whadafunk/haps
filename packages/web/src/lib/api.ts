@@ -80,17 +80,23 @@ export const api = {
     apiFetch<void>('/auth/change-password', { method: 'POST', body: JSON.stringify(body) }),
 
   getMyGuestIdentity: () =>
-    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null } }>('/auth/me/guest'),
+    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null; avatarUrl: string | null; bio: string | null; vibe: string | null } }>('/auth/me/guest'),
 
-  setupGuestIdentity: (body: { displayName: string; email: string; phone?: string; instagramHandle?: string }) =>
-    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null } }>('/auth/me/guest', { method: 'POST', body: JSON.stringify(body) }),
+  setupGuestIdentity: (body: { displayName: string; email: string; phone?: string; instagramHandle?: string; bio?: string; vibe?: string }) =>
+    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null; avatarUrl: string | null; bio: string | null; vibe: string | null } }>('/auth/me/guest', { method: 'POST', body: JSON.stringify(body) }),
+
+  uploadAvatar: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return apiFetch<{ avatarUrl: string }>('/auth/me/avatar', { method: 'POST', body: form })
+  },
 
   // Deprecated aliases kept for backward compat
   getContact: () =>
-    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null } }>('/auth/me/guest'),
+    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null; avatarUrl: string | null; bio: string | null; vibe: string | null } }>('/auth/me/guest'),
 
-  setupContact: (body: { displayName: string; email: string; phone?: string; instagramHandle?: string }) =>
-    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null } }>('/auth/me/guest', { method: 'POST', body: JSON.stringify(body) }),
+  setupContact: (body: { displayName: string; email: string; phone?: string; instagramHandle?: string; bio?: string; vibe?: string }) =>
+    apiFetch<{ contact: { id: string; name: string; email: string; phone: string | null; instagramHandle: string | null; avatarUrl: string | null; bio: string | null; vibe: string | null } }>('/auth/me/guest', { method: 'POST', body: JSON.stringify(body) }),
 
   deleteAccount: () =>
     apiFetch<void>('/auth/me', { method: 'DELETE' }),
@@ -183,7 +189,7 @@ export const api = {
     }),
 
   listRsvps: (slug: string) =>
-    apiFetch<{ rsvps: Array<Rsvp & { email?: string }> }>(`/events/${slug}/rsvps`),
+    apiFetch<{ rsvps: Array<Rsvp & { email?: string; guestId?: string | null; isHost?: boolean; profile: { avatarUrl: string | null; bio: string | null; vibe: string | null } | null }> }>(`/events/${slug}/rsvps`),
 
   // Comments
   listComments: (slug: string) =>
