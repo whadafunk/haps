@@ -28,6 +28,24 @@ const editTokenPlugin: FastifyPluginAsync = async (fastify) => {
     const slug = params['slug']
     if (!slug) return
 
+    // Operators already have editor access via JWT. Scrub any stale 'editor' entries
+    // that may have leaked into their vsid from before this guard was in place.
+    if (request.user?.type === 'operator' && request.session) {
+      const staleEditorSlugs = Object.entries(request.session.eventAccess)
+        .filter(([, v]) => v === 'editor')
+        .map(([k]) => k)
+      if (staleEditorSlugs.length > 0) {
+        const cleaned: Record<string, 'attendee' | 'editor'> = {}
+        for (const [k, v] of Object.entries(request.session.eventAccess)) {
+          if (v !== 'editor') cleaned[k] = v
+        }
+        request.session.eventAccess = cleaned
+        await db.update(visitorSessions).set({ eventAccess: cleaned }).where(eq(visitorSessions.id, request.session.id))
+      }
+      request.isEditor = true
+      return
+    }
+
     if (request.session?.eventAccess?.[slug] === 'editor') {
       request.isEditor = true
       return
@@ -57,7 +75,8 @@ const editTokenPlugin: FastifyPluginAsync = async (fastify) => {
     request.isEditor = true
     request.editTokenId = row.id
 
-    if (request.session) {
+    // Operators get editor access from their JWT — don't pollute the vsid with it.
+    if (request.session && request.user?.type !== 'operator') {
       const updatedAccess: Record<string, 'attendee' | 'editor'> = {
         ...request.session.eventAccess,
         [slug]: 'editor',
@@ -103,7 +122,8 @@ const editTokenPlugin: FastifyPluginAsync = async (fastify) => {
     request.isEditor = true
     request.editTokenId = row.id
 
-    if (request.session) {
+    // Operators get editor access from their JWT — don't pollute the vsid with it.
+    if (request.session && request.user?.type !== 'operator') {
       const updatedAccess: Record<string, 'attendee' | 'editor'> = {
         ...request.session.eventAccess,
         [slug]: 'editor',
