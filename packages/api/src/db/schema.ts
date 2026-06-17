@@ -238,7 +238,7 @@ export const posts = pgTable('posts', {
 export const postPhotos = pgTable('post_photos', {
   id:        uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   postId:    uuid('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
-  photoId:   uuid('photo_id').notNull().references(() => albumPhotos.id),
+  photoId:   uuid('photo_id').notNull().references(() => albumPhotos.id, { onDelete: 'cascade' }),
   sortOrder: integer('sort_order').notNull().default(0),
 })
 
