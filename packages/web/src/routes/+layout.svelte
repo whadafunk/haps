@@ -56,10 +56,10 @@
           </div>
         {/if}
       </div>
-    {:else if data.session?.displayName}
+    {:else if data.session}
       <div class="user-menu">
         <button class="user-menu-btn" onclick={() => (menuOpen = !menuOpen)}>
-          {data.session.displayName}<span class="chevron" class:open={menuOpen}>▾</span>
+          {data.session.displayName ?? 'My account'}<span class="chevron" class:open={menuOpen}>▾</span>
         </button>
         {#if menuOpen}
           <div class="user-menu-dropdown" role="menu">

@@ -62,6 +62,13 @@
         {/each}
       </div>
     {/if}
+
+    {#if !data.user && data.session}
+      <p class="session-hint">
+        Browsing as {data.session.displayName ?? 'a guest'} ·
+        <a href="/">Edit session identity</a>
+      </p>
+    {/if}
   </div>
 </main>
 
@@ -117,4 +124,6 @@
   .badge.status-maybe { background: #fef4e0; color: #7a5a1a; }
   .badge.status-no { background: #ede8e0; color: #4e453e; }
   .badge.status-waitlist { background: #edf3fb; color: #1a4070; }
+
+  .session-hint { margin-top: 1.5rem; font-size: 0.8rem; color: #6b6058; text-align: center; }
 </style>
