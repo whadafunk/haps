@@ -171,14 +171,15 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     const sessionBlocked = request.session?.status === 'blocked' || request.session?.status === 'removed'
     const sessionProfileRequired = !!(request.session && !request.session.email && !request.session.userId)
 
+    const showCounts = event.showGuests || !!isEditor
     return {
       event: {
         ...serializeEvent(event),
         organizerName,
-        guestCount: Number(counts?.guestCount ?? 0),
-        yesCount: Number(counts?.yesCount ?? 0),
-        maybeCount: Number(counts?.maybeCount ?? 0),
-        waitlistCount: Number(counts?.waitlistCount ?? 0),
+        guestCount: showCounts ? Number(counts?.guestCount ?? 0) : 0,
+        yesCount: showCounts ? Number(counts?.yesCount ?? 0) : 0,
+        maybeCount: showCounts ? Number(counts?.maybeCount ?? 0) : 0,
+        waitlistCount: showCounts ? Number(counts?.waitlistCount ?? 0) : 0,
       },
       myRsvp,
       isEditor: isEditor ?? false,

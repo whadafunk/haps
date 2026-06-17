@@ -267,10 +267,12 @@
         {#if event.location}
           <div class="meta-item">📍 {event.location}</div>
         {/if}
-        <div class="meta-item">
-          {event.yesCount} going · {event.maybeCount} maybe{event.waitlistCount > 0 ? ` · ${event.waitlistCount} waitlisted` : ''}
-          {#if event.maxCapacity} · {event.maxCapacity} capacity{/if}
-        </div>
+        {#if event.showGuests || data.isEditor}
+          <div class="meta-item">
+            {event.yesCount} going · {event.maybeCount} maybe{event.waitlistCount > 0 ? ` · ${event.waitlistCount} waitlisted` : ''}
+            {#if event.maxCapacity} · {event.maxCapacity} capacity{/if}
+          </div>
+        {/if}
       </div>
 
       <div class="cal-links">

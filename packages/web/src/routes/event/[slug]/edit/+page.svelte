@@ -565,9 +565,14 @@
             </select>
           </label>
           <div class="checkboxes">
-            <label class="checkbox"><input type="checkbox" bind:checked={event.showGuests} /> Show guest list publicly</label>
             <label class="checkbox"><input type="checkbox" bind:checked={event.allowComments} /> Allow comments</label>
-            <label class="checkbox"><input type="checkbox" bind:checked={event.showAlbum} /> Show wall &amp; album</label>
+          </div>
+          <div class="visibility-group">
+            <p class="channel-section-label">Visible to anonymous guests</p>
+            <div class="checkboxes">
+              <label class="checkbox"><input type="checkbox" bind:checked={event.showGuests} /> Guest list &amp; RSVP numbers</label>
+              <label class="checkbox"><input type="checkbox" bind:checked={event.showAlbum} /> Wall &amp; album</label>
+            </div>
           </div>
           {#if publishError}
             <p class="publish-error">{publishError}</p>
@@ -1175,6 +1180,7 @@
   label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; font-weight: 500; color: #3d352e; }
   label.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; font-weight: 400; }
   .checkboxes { display: flex; flex-direction: column; gap: 0.5rem; }
+  .visibility-group { margin-top: 0.75rem; }
   input, textarea, select { padding: 0.5rem 0.75rem; border: 1px solid #c8bdb0; border-radius: 8px; font-size: 1rem; font-family: inherit; background: #fff; color: #1a1510; }
   textarea { resize: vertical; }
   input:focus, textarea:focus, select:focus { outline: 2px solid #b05525; outline-offset: -1px; }
