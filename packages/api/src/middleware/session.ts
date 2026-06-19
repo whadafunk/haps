@@ -4,6 +4,17 @@ import { visitorSessions } from '../db/schema.js'
 import { eq } from 'drizzle-orm'
 import fp from 'fastify-plugin'
 
+export type EventAccessValue = 'attendee' | 'editor' | { role: 'attendee'; tokenId: string }
+
+export function hasAttendeeAccess(access: EventAccessValue | undefined): boolean {
+  return access === 'attendee' || (typeof access === 'object' && access !== null && access.role === 'attendee')
+}
+
+export function getPendingTokenId(access: EventAccessValue | undefined): string | null {
+  if (typeof access === 'object' && access !== null && access.role === 'attendee') return access.tokenId
+  return null
+}
+
 declare module 'fastify' {
   interface FastifyRequest {
     session: {
@@ -14,7 +25,7 @@ declare module 'fastify' {
       instagramHandle: string | null
       status: string
       statusReason: string | null
-      eventAccess: Record<string, 'attendee' | 'editor'>
+      eventAccess: Record<string, EventAccessValue>
       userId: string | null
       guestId: string | null
     } | null
@@ -59,7 +70,7 @@ const sessionPlugin: FastifyPluginAsync = async (fastify) => {
       instagramHandle: session.instagramHandle,
       status:          session.status,
       statusReason:    session.statusReason,
-      eventAccess:     (session.eventAccess as Record<string, 'attendee' | 'editor'>) ?? {},
+      eventAccess:     (session.eventAccess as Record<string, EventAccessValue>) ?? {},
       userId:          session.userId,
       guestId:         session.guestId,
     }
@@ -115,7 +126,7 @@ export async function ensureSession(request: FastifyRequest, reply: FastifyReply
     instagramHandle: session.instagramHandle,
     status:          session.status ?? 'active',
     statusReason:    session.statusReason,
-    eventAccess:     (session.eventAccess as Record<string, 'attendee' | 'editor'>) ?? {},
+    eventAccess:     (session.eventAccess as Record<string, EventAccessValue>) ?? {},
     userId:          session.userId,
     guestId:         session.guestId,
   }

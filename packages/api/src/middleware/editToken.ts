@@ -5,6 +5,7 @@ import { eventTokens, events, visitorSessions } from '../db/schema.js'
 import { eq, and } from 'drizzle-orm'
 import { verifyToken } from '../lib/crypto.js'
 import { createError } from '../lib/errors.js'
+import type { EventAccessValue } from './session.js'
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -35,7 +36,7 @@ const editTokenPlugin: FastifyPluginAsync = async (fastify) => {
         .filter(([, v]) => v === 'editor')
         .map(([k]) => k)
       if (staleEditorSlugs.length > 0) {
-        const cleaned: Record<string, 'attendee' | 'editor'> = {}
+        const cleaned: Record<string, EventAccessValue> = {}
         for (const [k, v] of Object.entries(request.session.eventAccess)) {
           if (v !== 'editor') cleaned[k] = v
         }
@@ -77,7 +78,7 @@ const editTokenPlugin: FastifyPluginAsync = async (fastify) => {
 
     // Operators get editor access from their JWT — don't pollute the vsid with it.
     if (request.session && request.user?.type !== 'operator') {
-      const updatedAccess: Record<string, 'attendee' | 'editor'> = {
+      const updatedAccess: Record<string, EventAccessValue> = {
         ...request.session.eventAccess,
         [slug]: 'editor',
       }
@@ -124,7 +125,7 @@ const editTokenPlugin: FastifyPluginAsync = async (fastify) => {
 
     // Operators get editor access from their JWT — don't pollute the vsid with it.
     if (request.session && request.user?.type !== 'operator') {
-      const updatedAccess: Record<string, 'attendee' | 'editor'> = {
+      const updatedAccess: Record<string, EventAccessValue> = {
         ...request.session.eventAccess,
         [slug]: 'editor',
       }

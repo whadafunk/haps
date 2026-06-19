@@ -112,15 +112,18 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
               inviteAlreadyUsed = true
               break
             }
-            if (tokenRow.claimedBySessionId === null) {
-              fastify.log.info({ tokenId: tokenRow.id, sessionId }, 'single-use invite token claimed')
-              await db.update(eventTokens).set({ claimedBySessionId: sessionId }).where(eq(eventTokens.id, tokenRow.id))
-            }
           }
 
-          const updatedAccess: Record<string, 'attendee' | 'editor'> = {
+          // For single-use tokens, store a pending claim in the session rather than
+          // claiming immediately — prevents link-preview bots from consuming the token
+          // before the real user arrives. The claim is finalised atomically on RSVP.
+          const accessValue = tokenRow.singleUse && tokenRow.claimedBySessionId === null
+            ? { role: 'attendee' as const, tokenId: tokenRow.id }
+            : 'attendee' as const
+
+          const updatedAccess = {
             ...request.session!.eventAccess,
-            [slug]: 'attendee',
+            [slug]: accessValue,
           }
           request.session!.eventAccess = updatedAccess
           await db

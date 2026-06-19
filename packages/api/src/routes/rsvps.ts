@@ -1,10 +1,10 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, rsvps, visitorSessions, emailBlocklist, guests, notifications } from '../db/schema.js'
-import { eq, and, ne, sql, asc } from 'drizzle-orm'
+import { events, rsvps, visitorSessions, emailBlocklist, guests, notifications, eventTokens } from '../db/schema.js'
+import { eq, and, ne, sql, asc, isNull } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { CreateRsvpSchema, UpdateRsvpSchema } from '@haps/shared'
-import { ensureSession } from '../middleware/session.js'
+import { ensureSession, hasAttendeeAccess, getPendingTokenId } from '../middleware/session.js'
 
 const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/api/events/:slug/rsvps', async (request, reply) => {
@@ -176,10 +176,30 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
       .limit(1)
     if (blockedEmail) throw createError(403, 'EMAIL_BLOCKED', 'This email address has been blocked.')
 
-    // Invite-only events require an attendee token to have been claimed in this session
+    // Invite-only events require a valid attendee token in session.
+    // Single-use tokens are claimed atomically here (not on GET) to prevent
+    // link-preview bots from consuming the token before the real user RSVPs.
     if (event.eventType === 'invite_only') {
       const access = session.eventAccess?.[slug]
-      if (access !== 'attendee' && access !== 'editor') {
+      if (access === 'editor') {
+        // editors always allowed
+      } else if (access === 'attendee') {
+        // previously claimed token, allow through
+      } else if (hasAttendeeAccess(access)) {
+        const pendingTokenId = getPendingTokenId(access)!
+        const claimed = await db
+          .update(eventTokens)
+          .set({ claimedBySessionId: session.id })
+          .where(and(eq(eventTokens.id, pendingTokenId), isNull(eventTokens.claimedBySessionId)))
+          .returning({ id: eventTokens.id })
+        if (claimed.length === 0) {
+          throw createError(409, 'INVITE_ALREADY_USED', 'This invite link has already been used by someone else.')
+        }
+        // Upgrade session access from pending to fully claimed
+        const updatedAccess = { ...session.eventAccess, [slug]: 'attendee' as const }
+        session.eventAccess = updatedAccess
+        await db.update(visitorSessions).set({ eventAccess: updatedAccess }).where(eq(visitorSessions.id, session.id))
+      } else {
         throw createError(403, 'TOKEN_REQUIRED', 'An invite link is required to RSVP to this event.')
       }
     }
