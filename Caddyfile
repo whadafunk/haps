@@ -1,7 +1,4 @@
-# Replace {$APP_DOMAIN} with your domain, e.g. events.example.com
-# For local development: localhost or http://localhost
-
-{$APP_DOMAIN} {
+:80 {
     # API — Fastify backend
     handle /api/* {
         reverse_proxy api:3000
