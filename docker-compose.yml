@@ -14,6 +14,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    networks:
+      - internal
 
   api:
     build:
@@ -30,6 +32,8 @@ services:
       STORAGE_PATH: /uploads
     volumes:
       - uploads:/uploads
+    networks:
+      - internal
 
   web:
     build:
@@ -42,6 +46,8 @@ services:
     environment:
       NODE_ENV: production
       INTERNAL_API_URL: http://api:3000
+    networks:
+      - internal
 
   proxy:
     image: caddy:2-alpine
@@ -49,10 +55,20 @@ services:
     depends_on:
       - api
       - web
-    ports:
-      - "80:80"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      - internal
+      - dmz:
+          ipv4_address: 192.168.40.67
+
+networks:
+  internal:
+    driver: bridge
+    internal: true
+  dmz:
+    external: true
+    name: macnet-40
 
 volumes:
   db_data:
