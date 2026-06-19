@@ -31,6 +31,7 @@ export async function buildApp() {
       config.NODE_ENV === 'production'
         ? true
         : { transport: { target: 'pino-pretty', options: { colorize: true } } },
+    trustProxy: true,
   })
 
   // Run migrations on startup
