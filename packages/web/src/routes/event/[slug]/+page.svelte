@@ -404,159 +404,160 @@
 
     <!-- RSVP section -->
     {#if event.status === 'published'}
-      <section class="section">
-        <h2>RSVP</h2>
-
-        {#if event.rsvpDeadline && !rsvpDeadlinePassed}
-          <p class="deadline-notice">RSVP closes {formatDeadline(event.rsvpDeadline)}</p>
+      {#if data.myRsvp && !editingRsvp}
+        {#if data.myRsvp.status === 'waitlist'}
+          <div class="waitlist-banner">
+            <strong>You're on the waitlist.</strong>
+            <p>We'll notify you if a spot opens up.</p>
+          </div>
         {/if}
-
-        {#if rsvpDeadlinePassed}
-          <div class="deadline-closed">
-            <strong>RSVP is closed.</strong>
-            <p>The deadline was {formatDeadline(event.rsvpDeadline!)}.</p>
-          </div>
-        {:else if data.inviteAlreadyUsed}
-          <div class="invite-used-banner">
-            <strong>This invite link has already been used.</strong>
-            <p>Contact the host for a new invite link.</p>
-          </div>
-        {:else if data.sessionBlocked}
-          <div class="blocked-banner">
-            <strong>You have been blocked from RSVPing.</strong>
-            {#if data.sessionBlockReason}
-              <p>{data.sessionBlockReason}</p>
-            {/if}
-          </div>
-        {:else if profileRequired}
-          <p class="profile-intro">Please introduce yourself before RSVPing.</p>
-          {#if profileError}
-            <div class="error-banner">{profileError}</div>
-          {/if}
-          <div class="rsvp-form">
-            <label>
-              Full name <span class="req">*</span>
-              <input type="text" bind:value={profileName} placeholder="Your name" />
-            </label>
-            <label>
-              Email <span class="req">*</span>
-              <input type="email" bind:value={profileEmail} placeholder="you@example.com" />
-            </label>
-            <label>
-              Phone (optional)
-              <input type="tel" bind:value={profilePhone} placeholder="+1 555 000 0000" />
-            </label>
-            <label>
-              Instagram (optional)
-              <input type="text" bind:value={profileInstagram} placeholder="@handle" />
-            </label>
-            <button class="submit-btn" onclick={submitProfile} disabled={profileLoading}>
-              {profileLoading ? 'Saving…' : 'Continue to RSVP'}
-            </button>
-          </div>
-        {:else if data.myRsvp && !editingRsvp}
-          {#if data.myRsvp.status === 'waitlist'}
-            <div class="waitlist-banner">
-              <strong>You're on the waitlist.</strong>
-              <p>We'll notify you if a spot opens up.</p>
-            </div>
-          {/if}
-          <div class="rsvp-confirmed">
-            <span class="rsvp-confirmed-status rsvp-chip-{data.myRsvp.status}">
-              {data.myRsvp.status === 'yes' ? 'Going' : data.myRsvp.status === 'maybe' ? 'Maybe' : data.myRsvp.status === 'waitlist' ? 'Waitlisted' : "Can't go"}{#if data.myRsvp.headCount > 1} · +{data.myRsvp.headCount - 1}{/if}
-            </span>
-            <span class="rsvp-confirmed-sep">·</span>
-            <span class="rsvp-confirmed-name">{data.myRsvp.displayName}</span>
+        <div class="rsvp-confirmed">
+          <span class="rsvp-confirmed-status rsvp-chip-{data.myRsvp.status}">
+            {data.myRsvp.status === 'yes' ? 'Going' : data.myRsvp.status === 'maybe' ? 'Maybe' : data.myRsvp.status === 'waitlist' ? 'Waitlisted' : "Can't go"}{#if data.myRsvp.headCount > 1} · +{data.myRsvp.headCount - 1}{/if}
+          </span>
+          <span class="rsvp-confirmed-sep">·</span>
+          <span class="rsvp-confirmed-name">{data.myRsvp.displayName}</span>
+          {#if !rsvpDeadlinePassed}
             <button class="rsvp-confirmed-change" onclick={() => { editingRsvp = true; rsvpError = '' }}>
               {data.myRsvp.status === 'waitlist' ? 'Cancel / change' : 'Change RSVP'}
             </button>
-          </div>
-        {:else}
-          {#if rsvpError}
-            <div class="error-banner">{rsvpError}</div>
+          {/if}
+        </div>
+      {:else}
+        <section class="section">
+          <h2>RSVP</h2>
+
+          {#if event.rsvpDeadline && !rsvpDeadlinePassed}
+            <p class="deadline-notice">RSVP closes {formatDeadline(event.rsvpDeadline)}</p>
           {/if}
 
-          {#if data.user && !data.lockedIdentity?.displayName}
-            <!-- Logged-in user with no linked contact -->
-            <div class="no-identity-banner">
-              You need to set up a guest identity before RSVPing.
-              <a href="/account">Go to account settings →</a>
+          {#if rsvpDeadlinePassed}
+            <div class="deadline-closed">
+              <strong>RSVP is closed.</strong>
+              <p>The deadline was {formatDeadline(event.rsvpDeadline!)}.</p>
+            </div>
+          {:else if data.inviteAlreadyUsed}
+            <div class="invite-used-banner">
+              <strong>This invite link has already been used.</strong>
+              <p>Contact the host for a new invite link.</p>
+            </div>
+          {:else if data.sessionBlocked}
+            <div class="blocked-banner">
+              <strong>You have been blocked from RSVPing.</strong>
+              {#if data.sessionBlockReason}
+                <p>{data.sessionBlockReason}</p>
+              {/if}
+            </div>
+          {:else if profileRequired}
+            <p class="profile-intro">Please introduce yourself before RSVPing.</p>
+            {#if profileError}
+              <div class="error-banner">{profileError}</div>
+            {/if}
+            <div class="rsvp-form">
+              <label>
+                Full name <span class="req">*</span>
+                <input type="text" bind:value={profileName} placeholder="Your name" />
+              </label>
+              <label>
+                Email <span class="req">*</span>
+                <input type="email" bind:value={profileEmail} placeholder="you@example.com" />
+              </label>
+              <label>
+                Phone (optional)
+                <input type="tel" bind:value={profilePhone} placeholder="+1 555 000 0000" />
+              </label>
+              <label>
+                Instagram (optional)
+                <input type="text" bind:value={profileInstagram} placeholder="@handle" />
+              </label>
+              <button class="submit-btn" onclick={submitProfile} disabled={profileLoading}>
+                {profileLoading ? 'Saving…' : 'Continue to RSVP'}
+              </button>
             </div>
           {:else}
-            <div class="rsvp-form">
-              {#if data.user}
-                <!-- Logged-in: show name/email as read-only from contact -->
-                <div class="locked-field">
-                  <span class="locked-label">Your name</span>
-                  <span class="locked-value">{data.lockedIdentity?.displayName}</span>
-                </div>
-              {:else if data.lockedIdentity?.displayName}
-                <div class="locked-field">
-                  <span class="locked-label">Your name</span>
-                  <span class="locked-value">{data.lockedIdentity.displayName}</span>
-                </div>
-              {:else}
-                <label>
-                  Your name <span class="req">*</span>
-                  <input type="text" bind:value={rsvpName} placeholder="Name" required />
-                </label>
-              {/if}
-              <div class="rsvp-buttons">
-                {#each ['yes', 'maybe', 'no'] as status}
-                  <button
-                    class="rsvp-btn rsvp-{status}"
-                    class:active={rsvpStatus === status}
-                    onclick={() => rsvpStatus = status}
-                  >
-                    {status === 'yes' ? '✓ Going' : status === 'maybe' ? '? Maybe' : '✗ Can\'t go'}
-                  </button>
-                {/each}
+            {#if rsvpError}
+              <div class="error-banner">{rsvpError}</div>
+            {/if}
+
+            {#if data.user && !data.lockedIdentity?.displayName}
+              <div class="no-identity-banner">
+                You need to set up a guest identity before RSVPing.
+                <a href="/account">Go to account settings →</a>
               </div>
-              {#if event.allowPlusOnes}
-                <label>
-                  Plus ones
-                  <select bind:value={rsvpHeadCount}>
-                    {#each Array.from({ length: (event.maxPlusOnes ?? 1) + 1 }, (_, i) => i) as n}
-                      <option value={n + 1}>{n === 0 ? 'None' : n === 1 ? '1 plus one' : `${n} plus ones`}</option>
-                    {/each}
-                  </select>
-                </label>
-              {/if}
-              <label>
-                Note (optional)
-                <input type="text" bind:value={rsvpNote} placeholder="Any notes…" />
-              </label>
-              {#if data.user}
-                <!-- Logged-in: show email as read-only from contact -->
-                <div class="locked-field">
-                  <span class="locked-label">Email</span>
-                  <span class="locked-value">{data.lockedIdentity?.email}</span>
-                </div>
-              {:else if data.lockedIdentity?.email}
-                <div class="locked-field">
-                  <span class="locked-label">Email</span>
-                  <span class="locked-value">{data.lockedIdentity.email}</span>
-                </div>
-              {:else}
-                <label>
-                  Email <span class="req">*</span>
-                  <input type="email" bind:value={rsvpEmail} placeholder="you@example.com" required />
-                </label>
-              {/if}
-              <div class="rsvp-actions">
-                <button class="submit-btn" onclick={submitRsvp} disabled={rsvpLoading || (data.user && !data.lockedIdentity?.displayName)}>
-                  {rsvpLoading ? 'Saving…' : data.myRsvp ? 'Update RSVP' : 'Submit RSVP'}
-                </button>
-                {#if data.myRsvp}
-                  <button class="cancel-btn" onclick={() => { editingRsvp = false; rsvpError = '' }}>
-                    Cancel
-                  </button>
+            {:else}
+              <div class="rsvp-form">
+                {#if data.user}
+                  <div class="locked-field">
+                    <span class="locked-label">Your name</span>
+                    <span class="locked-value">{data.lockedIdentity?.displayName}</span>
+                  </div>
+                {:else if data.lockedIdentity?.displayName}
+                  <div class="locked-field">
+                    <span class="locked-label">Your name</span>
+                    <span class="locked-value">{data.lockedIdentity.displayName}</span>
+                  </div>
+                {:else}
+                  <label>
+                    Your name <span class="req">*</span>
+                    <input type="text" bind:value={rsvpName} placeholder="Name" required />
+                  </label>
                 {/if}
+                <div class="rsvp-buttons">
+                  {#each ['yes', 'maybe', 'no'] as status}
+                    <button
+                      class="rsvp-btn rsvp-{status}"
+                      class:active={rsvpStatus === status}
+                      onclick={() => rsvpStatus = status}
+                    >
+                      {status === 'yes' ? '✓ Going' : status === 'maybe' ? '? Maybe' : '✗ Can\'t go'}
+                    </button>
+                  {/each}
+                </div>
+                {#if event.allowPlusOnes}
+                  <label>
+                    Plus ones
+                    <select bind:value={rsvpHeadCount}>
+                      {#each Array.from({ length: (event.maxPlusOnes ?? 1) + 1 }, (_, i) => i) as n}
+                        <option value={n + 1}>{n === 0 ? 'None' : n === 1 ? '1 plus one' : `${n} plus ones`}</option>
+                      {/each}
+                    </select>
+                  </label>
+                {/if}
+                <label>
+                  Note (optional)
+                  <input type="text" bind:value={rsvpNote} placeholder="Any notes…" />
+                </label>
+                {#if data.user}
+                  <div class="locked-field">
+                    <span class="locked-label">Email</span>
+                    <span class="locked-value">{data.lockedIdentity?.email}</span>
+                  </div>
+                {:else if data.lockedIdentity?.email}
+                  <div class="locked-field">
+                    <span class="locked-label">Email</span>
+                    <span class="locked-value">{data.lockedIdentity.email}</span>
+                  </div>
+                {:else}
+                  <label>
+                    Email <span class="req">*</span>
+                    <input type="email" bind:value={rsvpEmail} placeholder="you@example.com" required />
+                  </label>
+                {/if}
+                <div class="rsvp-actions">
+                  <button class="submit-btn" onclick={submitRsvp} disabled={rsvpLoading || (data.user && !data.lockedIdentity?.displayName)}>
+                    {rsvpLoading ? 'Saving…' : data.myRsvp ? 'Update RSVP' : 'Submit RSVP'}
+                  </button>
+                  {#if data.myRsvp}
+                    <button class="cancel-btn" onclick={() => { editingRsvp = false; rsvpError = '' }}>
+                      Cancel
+                    </button>
+                  {/if}
+                </div>
               </div>
-            </div>
+            {/if}
           {/if}
-        {/if}
-      </section>
+        </section>
+      {/if}
     {/if}
 
     <!-- Guest list -->
