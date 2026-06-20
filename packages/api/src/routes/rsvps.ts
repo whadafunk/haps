@@ -6,6 +6,23 @@ import { createError } from '../lib/errors.js'
 import { CreateRsvpSchema, UpdateRsvpSchema } from '@haps/shared'
 import { sendPushToSession } from '../services/push.js'
 import { ensureSession, hasAttendeeAccess, getPendingTokenId } from '../middleware/session.js'
+import { broadcast } from '../lib/sse.js'
+
+async function getRsvpCounts(eventId: string) {
+  const [row] = await db
+    .select({
+      yesCount:      sql<number>`coalesce(sum(${rsvps.headCount}) filter (where ${rsvps.status} = 'yes'), 0)::int`,
+      maybeCount:    sql<number>`coalesce(sum(${rsvps.headCount}) filter (where ${rsvps.status} = 'maybe'), 0)::int`,
+      waitlistCount: sql<number>`coalesce(count(*) filter (where ${rsvps.status} = 'waitlist'), 0)::int`,
+    })
+    .from(rsvps)
+    .where(eq(rsvps.eventId, eventId))
+  return {
+    yesCount:      Number(row?.yesCount ?? 0),
+    maybeCount:    Number(row?.maybeCount ?? 0),
+    waitlistCount: Number(row?.waitlistCount ?? 0),
+  }
+}
 
 const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/api/events/:slug/rsvps', async (request, reply) => {
@@ -135,6 +152,13 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
         }
       }
       if (!rsvp) throw createError(500, 'INTERNAL_ERROR', 'Failed to create RSVP.')
+
+      const counts = await getRsvpCounts(event.id)
+      broadcast(slug, 'rsvp_count', counts)
+      broadcast(slug, 'rsvp_list', {
+        action: existingRsvp ? 'updated' : 'added',
+        rsvp: { id: rsvp.id, displayName: rsvp.displayName, status: rsvp.status, headCount: rsvp.headCount, guestId: guestRecord.id, profile: null },
+      })
 
       return reply.code(201).send({ rsvp: serializeRsvp(rsvp) })
     }
@@ -336,6 +360,13 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
       session.eventAccess = updatedAccess as Record<string, 'attendee' | 'editor'>
     }
 
+    const anonCounts = await getRsvpCounts(event.id)
+    broadcast(slug, 'rsvp_count', anonCounts)
+    broadcast(slug, 'rsvp_list', {
+      action: existingRsvp ? 'updated' : 'added',
+      rsvp: { id: rsvp.id, displayName: rsvp.displayName, status: rsvp.status, headCount: rsvp.headCount, guestId: session.guestId ?? null, profile: null },
+    })
+
     return reply.code(201).send({ rsvp: serializeRsvp(rsvp) })
   })
 
@@ -412,6 +443,13 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
       await promoteFromWaitlist(existing.eventId, slug)
     }
 
+    const patchCounts = await getRsvpCounts(existing.eventId)
+    broadcast(slug, 'rsvp_count', patchCounts)
+    broadcast(slug, 'rsvp_list', {
+      action: 'updated',
+      rsvp: { id: rsvp.id, displayName: rsvp.displayName, status: rsvp.status, headCount: rsvp.headCount, guestId: existing.guestId ?? null, profile: null },
+    })
+
     return { rsvp: serializeRsvp(rsvp) }
   })
 
@@ -441,6 +479,10 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
     if (existing.status === 'yes') {
       await promoteFromWaitlist(existing.eventId, slug)
     }
+
+    const delCounts = await getRsvpCounts(existing.eventId)
+    broadcast(slug, 'rsvp_count', delCounts)
+    broadcast(slug, 'rsvp_list', { action: 'removed', rsvpId })
 
     return reply.code(204).send()
   })

@@ -12,6 +12,7 @@ import { nanoid } from 'nanoid'
 import { detectMimeType, getAllowedExtension, saveLocalFile, deleteLocalFile } from '../services/storage.js'
 import { sendEmail } from '../services/email.js'
 import { sendPushToSession } from '../services/push.js'
+import { broadcast } from '../lib/sse.js'
 
 const eventsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/api/events', {
@@ -272,6 +273,14 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
         }
       }
     }
+
+    broadcast(slug, 'event_update', {
+      status: event.status,
+      title: event.title,
+      startsAt: event.startsAt.toISOString(),
+      endsAt: event.endsAt?.toISOString() ?? null,
+      location: event.location ?? null,
+    })
 
     return { event: serializeEvent(event) }
   })

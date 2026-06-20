@@ -271,16 +271,20 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
       return { post, insertedPhotos }
     })
 
-    return reply.code(201).send({
-      post: {
-        id: result.post.id,
-        authorName: result.post.authorName,
-        body: result.post.body,
-        photos: photoRecords.map((p, i) => ({ id: result.insertedPhotos[i]?.id ?? '', url: p.url, caption: null })),
-        createdAt: result.post.createdAt.toISOString(),
-        isOwn: true,
-      },
-    })
+    const responsePost = {
+      id: result.post.id,
+      authorName: result.post.authorName,
+      body: result.post.body,
+      photos: photoRecords.map((p, i) => ({ id: result.insertedPhotos[i]?.id ?? '', url: p.url, caption: null })),
+      createdAt: result.post.createdAt.toISOString(),
+      guestId: session.guestId ?? null,
+      reactions: {} as Record<string, number>,
+      myReactions: [] as string[],
+    }
+    // Broadcast to other connected clients (isOwn is always false for others)
+    broadcast(slug, 'new_post', { ...responsePost, isOwn: false })
+
+    return reply.code(201).send({ post: { ...responsePost, isOwn: true } })
   })
 
   fastify.post('/api/events/:slug/posts/:postId/reactions', async (request, reply) => {

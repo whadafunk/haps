@@ -111,6 +111,16 @@
   const rsvpDeadlinePassed = $derived(!!event.rsvpDeadline && new Date() > new Date(event.rsvpDeadline))
   const hasQualifyingRsvp = $derived(data.myRsvp?.status === 'yes' || data.myRsvp?.status === 'maybe')
 
+  // Mutable live fields — updated by SSE without a full page reload
+  let liveYesCount      = $state(data.event.yesCount)
+  let liveMaybeCount    = $state(data.event.maybeCount)
+  let liveWaitlistCount = $state(data.event.waitlistCount ?? 0)
+  let liveStatus        = $state(data.event.status)
+  let liveTitle         = $state(data.event.title)
+  let liveStartsAt      = $state(data.event.startsAt)
+  let liveEndsAt        = $state<string | null | undefined>(data.event.endsAt)
+  let liveLocation      = $state<string | null | undefined>(data.event.location)
+
   function formatDeadline(iso: string) {
     return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
   }
@@ -342,6 +352,42 @@
       posts = posts.map((p) => p.id === postId ? { ...p, reactions } : p)
     })
 
+    source.addEventListener('rsvp_count', (e: MessageEvent) => {
+      const { yesCount, maybeCount, waitlistCount } = JSON.parse(e.data)
+      liveYesCount = yesCount
+      liveMaybeCount = maybeCount
+      liveWaitlistCount = waitlistCount
+    })
+
+    source.addEventListener('rsvp_list', (e: MessageEvent) => {
+      if (!guestListLoaded) return
+      const payload = JSON.parse(e.data) as
+        | { action: 'added' | 'updated'; rsvp: GuestRow }
+        | { action: 'removed'; rsvpId: string }
+      if (payload.action === 'added') {
+        if (!guestList.some((g) => g.id === payload.rsvp.id)) guestList = [...guestList, payload.rsvp]
+      } else if (payload.action === 'updated') {
+        guestList = guestList.map((g) => g.id === payload.rsvp.id ? { ...g, ...payload.rsvp } : g)
+      } else {
+        guestList = guestList.filter((g) => g.id !== payload.rsvpId)
+      }
+    })
+
+    source.addEventListener('new_post', (e: MessageEvent) => {
+      if (!postsLoaded) return
+      const post = JSON.parse(e.data) as Post
+      if (!posts.some((p) => p.id === post.id)) posts = [...posts, post]
+    })
+
+    source.addEventListener('event_update', (e: MessageEvent) => {
+      const patch = JSON.parse(e.data) as { status: string; title: string; startsAt: string; endsAt: string | null; location: string | null }
+      liveStatus   = patch.status
+      liveTitle    = patch.title
+      liveStartsAt = patch.startsAt
+      liveEndsAt   = patch.endsAt
+      liveLocation = patch.location
+    })
+
     return () => source.close()
   })
 </script>
@@ -376,22 +422,22 @@
           <span class="type-badge type-invite_only">Invite-Only</span>
         </div>
       {/if}
-      <h1>{event.title}</h1>
+      <h1>{liveTitle}</h1>
       {#if event.organizerName}
         <p class="organizer-name">Hosted by {event.organizerName}</p>
       {/if}
 
       <div class="event-meta">
         <div class="meta-item">
-          📅 {formatDate(event.startsAt)} at {formatTime(event.startsAt)}
-          {#if event.endsAt} – {formatTime(event.endsAt)}{/if}
+          📅 {formatDate(liveStartsAt)} at {formatTime(liveStartsAt)}
+          {#if liveEndsAt} – {formatTime(liveEndsAt)}{/if}
         </div>
-        {#if event.location}
-          <div class="meta-item">📍 {event.location}</div>
+        {#if liveLocation}
+          <div class="meta-item">📍 {liveLocation}</div>
         {/if}
         {#if event.showGuests || data.isEditor}
           <div class="meta-item">
-            {event.yesCount} going · {event.maybeCount} maybe{event.waitlistCount > 0 ? ` · ${event.waitlistCount} waitlisted` : ''}
+            {liveYesCount} going · {liveMaybeCount} maybe{liveWaitlistCount > 0 ? ` · ${liveWaitlistCount} waitlisted` : ''}
             {#if event.maxCapacity} · {event.maxCapacity} capacity{/if}
           </div>
         {/if}
@@ -400,7 +446,7 @@
       <div class="cal-links">
         <a href="/api/events/{event.slug}/ics" class="cal-link">📆 Download .ics</a>
         <a
-          href="https://calendar.google.com/calendar/render?action=TEMPLATE&text={encodeURIComponent(event.title)}&dates={new Date(event.startsAt).toISOString().replace(/[-:]/g,'').replace('.000','')}/{new Date(event.endsAt ?? event.startsAt).toISOString().replace(/[-:]/g,'').replace('.000','')}&details={encodeURIComponent(event.description ?? '')}&location={encodeURIComponent(event.location ?? '')}"
+          href="https://calendar.google.com/calendar/render?action=TEMPLATE&text={encodeURIComponent(liveTitle)}&dates={new Date(liveStartsAt).toISOString().replace(/[-:]/g,'').replace('.000','')}/{new Date(liveEndsAt ?? liveStartsAt).toISOString().replace(/[-:]/g,'').replace('.000','')}&details={encodeURIComponent(event.description ?? '')}&location={encodeURIComponent(liveLocation ?? '')}"
           target="_blank"
           rel="noopener"
           class="cal-link"
@@ -417,7 +463,7 @@
       </div>
     {/if}
 
-    {#if event.status === 'cancelled'}
+    {#if liveStatus === 'cancelled'}
       <div class="cancelled-banner">
         This event has been cancelled.
       </div>
@@ -430,7 +476,7 @@
     {/if}
 
     <!-- RSVP section -->
-    {#if event.status === 'published'}
+    {#if liveStatus === 'published'}
       {#if data.myRsvp && !editingRsvp}
         <section class="section">
           {#if data.myRsvp.status === 'waitlist'}
@@ -599,12 +645,12 @@
       <section class="section">
         <div class="guest-list-header">
           <h2>
-            Guests — {event.yesCount} going
-            {#if event.maxCapacity && event.maxCapacity > event.yesCount}
-              ({event.maxCapacity - event.yesCount} spots left)
+            Guests — {liveYesCount} going
+            {#if event.maxCapacity && event.maxCapacity > liveYesCount}
+              ({event.maxCapacity - liveYesCount} spots left)
             {/if}
           </h2>
-          {#if event.yesCount > 0}
+          {#if liveYesCount > 0}
             <button class="expand-toggle" onclick={() => guestListExpanded = !guestListExpanded}>
               {guestListExpanded ? 'Hide' : 'Show'}
             </button>
@@ -640,8 +686,8 @@
             <p class="muted">Loading…</p>
           {/if}
         {/if}
-        {#if event.yesCount === 0 && event.maybeCount > 0}
-          <p class="muted">{event.maybeCount} tentative.</p>
+        {#if liveYesCount === 0 && liveMaybeCount > 0}
+          <p class="muted">{liveMaybeCount} tentative.</p>
         {/if}
       </section>
       {/if}
@@ -655,7 +701,7 @@
       <section class="section">
         <h2>Wall</h2>
 
-        {#if event.status === 'published'}
+        {#if liveStatus === 'published'}
           <div class="post-composer">
             {#if postError}
               <div class="error-banner">{postError}</div>
