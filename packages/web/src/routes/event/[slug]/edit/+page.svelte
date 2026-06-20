@@ -26,7 +26,7 @@
   const yesCount = $derived(rsvps.filter(r => r.status === 'yes').length)
   const maybeCount = $derived(rsvps.filter(r => r.status === 'maybe').length)
   const waitlistCount = $derived(rsvps.filter(r => r.status === 'waitlist').length)
-  let showGuestModal = $state(false)
+
 
   // Wall + Album
   let wallTab = $state<'wall' | 'album'>('wall')
@@ -660,10 +660,7 @@
   {#if activeTab === 'guests'}
     <div class="cards">
       <section class="card">
-        <div class="card-header">
-          <h2>Guests</h2>
-          <button class="btn-manage-invites" onclick={() => showGuestModal = true}>Manage →</button>
-        </div>
+        <h2>Guests</h2>
         <p class="invite-counter">
           {#if rsvps.length === 0}
             No RSVPs yet
@@ -671,6 +668,21 @@
             {rsvps.length} RSVP{rsvps.length !== 1 ? 's' : ''} · {yesCount} going{maybeCount > 0 ? ` · ${maybeCount} maybe` : ''}{waitlistCount > 0 ? ` · ${waitlistCount} waitlisted` : ''}{event.maxCapacity ? ` · ${event.maxCapacity} capacity` : ''}
           {/if}
         </p>
+        {#if rsvps.length > 0}
+          <div class="rsvp-list">
+            {#each rsvps as rsvp (rsvp.id)}
+              <div class="rsvp-row">
+                <div class="rsvp-info">
+                  <strong>{rsvp.displayName}</strong>
+                  <span class="badge badge-{rsvp.status}">{rsvp.status}</span>
+                  {#if rsvp.headCount > 1}<span class="muted">+{rsvp.headCount - 1}</span>{/if}
+                </div>
+                {#if rsvp.note}<p class="note">{rsvp.note}</p>{/if}
+                <button class="btn-remove" onclick={() => removeRsvp(rsvp.id)}>Remove</button>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </section>
     </div>
   {/if}
@@ -853,35 +865,6 @@
   </div>
 {/if}
 
-{#if showGuestModal}
-  <div class="modal-backdrop" onclick={() => showGuestModal = false} role="presentation">
-    <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Manage guests">
-      <div class="modal-header">
-        <h3>Guests ({rsvps.length})</h3>
-        <button class="modal-close" onclick={() => showGuestModal = false} aria-label="Close">×</button>
-      </div>
-      <div class="modal-body">
-        {#if rsvps.length === 0}
-          <p class="muted">No RSVPs yet.</p>
-        {:else}
-          <div class="rsvp-list">
-            {#each rsvps as rsvp (rsvp.id)}
-              <div class="rsvp-row">
-                <div class="rsvp-info">
-                  <strong>{rsvp.displayName}</strong>
-                  <span class="badge badge-{rsvp.status}">{rsvp.status}</span>
-                  {#if rsvp.headCount > 1}<span class="muted">+{rsvp.headCount - 1}</span>{/if}
-                </div>
-                {#if rsvp.note}<p class="note">{rsvp.note}</p>{/if}
-                <button class="btn-remove" onclick={() => removeRsvp(rsvp.id)}>Remove</button>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    </div>
-  </div>
-{/if}
 
 {#if showInviteModal}
   <div class="modal-backdrop" onclick={() => showInviteModal = false} role="presentation">
