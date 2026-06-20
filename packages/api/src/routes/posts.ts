@@ -4,6 +4,7 @@ import { events, posts, albumPhotos, postPhotos, users, guests, rsvps, visitorSe
 import { eq, and, isNull, asc, inArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { createError } from '../lib/errors.js'
+import { broadcast } from '../lib/sse.js'
 import { ensureSession } from '../middleware/session.js'
 import { detectMimeType, getAllowedExtension, saveLocalFile } from '../services/storage.js'
 import { nanoid } from 'nanoid'
@@ -352,6 +353,8 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     const myReactions = myRows.map((r) => r.emoji)
 
     void ALLOWED_EMOJIS // suppress unused warning
+    // Broadcast updated counts to all connected clients (myReactions is per-user, excluded)
+    broadcast(slug, 'post_reaction', { postId, reactions })
     return reply.send({ reactions, myReactions })
   })
 

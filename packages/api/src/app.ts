@@ -28,6 +28,7 @@ import notificationsRoutes from './routes/notifications.js'
 import pushRoutes from './routes/push.js'
 import signalsRoutes from './routes/signals.js'
 import dmsRoutes from './routes/dms.js'
+import streamRoutes from './routes/stream.js'
 import { sendPushToSession } from './services/push.js'
 
 export async function buildApp() {
@@ -73,6 +74,7 @@ export async function buildApp() {
   await app.register(pushRoutes)
   await app.register(signalsRoutes)
   await app.register(dmsRoutes)
+  await app.register(streamRoutes)
 
   app.get('/api/health', async () => ({ status: 'ok' }))
 

@@ -332,6 +332,18 @@
       }).catch(() => { guestListLoaded = true })
     }
   })
+
+  $effect(() => {
+    if (typeof EventSource === 'undefined') return
+    const source = new EventSource(`/api/events/${event.slug}/stream`)
+
+    source.addEventListener('post_reaction', (e: MessageEvent) => {
+      const { postId, reactions } = JSON.parse(e.data) as { postId: string; reactions: Record<string, number> }
+      posts = posts.map((p) => p.id === postId ? { ...p, reactions } : p)
+    })
+
+    return () => source.close()
+  })
 </script>
 
 <svelte:document onclick={() => { reactionPickerPostId = null }} />
