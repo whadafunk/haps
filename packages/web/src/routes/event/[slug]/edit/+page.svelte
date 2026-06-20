@@ -29,7 +29,7 @@
 
 
   // Wall + Album
-  let wallTab = $state<'wall' | 'album'>('wall')
+
   let posts = $state<Post[]>([])
   let postsLoaded = $state(false)
   let approvingPostId = $state<string | null>(null)
@@ -124,6 +124,8 @@
       if (!postsLoaded) {
         api.listPosts(event.slug).then(res => { posts = res.posts; postsLoaded = true }).catch(() => { postsLoaded = true })
       }
+    }
+    if (activeTab === 'album') {
       if (!albumLoaded) {
         api.listAlbum(event.slug).then(res => { albumPhotos = res.photos; albumLoaded = true }).catch(() => { albumLoaded = true })
       }
@@ -523,6 +525,7 @@
     <button class="tab-btn" class:active={activeTab === 'guests'} onclick={() => activeTab = 'guests'}>Guests</button>
     <button class="tab-btn" class:active={activeTab === 'updates'} onclick={() => activeTab = 'updates'}>Updates</button>
     <button class="tab-btn" class:active={activeTab === 'wall'} onclick={() => activeTab = 'wall'}>Wall</button>
+    <button class="tab-btn" class:active={activeTab === 'album'} onclick={() => activeTab = 'album'}>Album{albumPhotos.length > 0 ? ` (${albumPhotos.length})` : ''}</button>
   </div>
 
   {#if activeTab === 'details'}
@@ -719,14 +722,6 @@
   {#if activeTab === 'wall'}
     <div class="cards">
       <section class="card">
-        <div class="wall-tabs">
-          <button class="wall-tab" class:active={wallTab === 'wall'} onclick={() => wallTab = 'wall'}>Wall</button>
-          <button class="wall-tab" class:active={wallTab === 'album'} onclick={() => wallTab = 'album'}>
-            Album{albumPhotos.length > 0 ? ` (${albumPhotos.length})` : ''}
-          </button>
-        </div>
-
-        {#if wallTab === 'wall'}
           {#if event.status === 'published'}
             <div class="post-composer">
               {#if postError}<div class="error-banner">{postError}</div>{/if}
@@ -810,37 +805,42 @@
           {:else}
             <p class="muted">Loading…</p>
           {/if}
-        {:else}
-          {#if event.status === 'published'}
-            <div class="album-upload">
-              {#if albumUploadError}<div class="error-banner">{albumUploadError}</div>{/if}
-              <label class="photo-pick-btn">
-                {albumFiles && albumFiles.length > 0 ? `${albumFiles.length} photo${albumFiles.length > 1 ? 's' : ''} selected` : 'Upload photos'}
-                <input type="file" accept="image/*" multiple onchange={(e) => { albumFiles = (e.target as HTMLInputElement).files }} style="display:none" />
-              </label>
-              {#if albumFiles && albumFiles.length > 0}
-                <button onclick={uploadToAlbum} disabled={albumUploadLoading} class="btn-primary-sm" style="margin-left:0.5rem">
-                  {albumUploadLoading ? 'Uploading…' : `Upload ${albumFiles.length} photo${albumFiles.length > 1 ? 's' : ''}`}
+      </section>
+    </div>
+  {/if}
+
+  {#if activeTab === 'album'}
+    <div class="cards">
+      <section class="card">
+        <h2>Album</h2>
+        {#if event.status === 'published'}
+          <div class="album-upload">
+            {#if albumUploadError}<div class="error-banner">{albumUploadError}</div>{/if}
+            <label class="photo-pick-btn">
+              {albumFiles && albumFiles.length > 0 ? `${albumFiles.length} photo${albumFiles.length > 1 ? 's' : ''} selected` : 'Upload photos'}
+              <input type="file" accept="image/*" multiple onchange={(e) => { albumFiles = (e.target as HTMLInputElement).files }} style="display:none" />
+            </label>
+            {#if albumFiles && albumFiles.length > 0}
+              <button onclick={uploadToAlbum} disabled={albumUploadLoading} class="btn-primary-sm" style="margin-left:0.5rem">
+                {albumUploadLoading ? 'Uploading…' : `Upload ${albumFiles.length} photo${albumFiles.length > 1 ? 's' : ''}`}
+              </button>
+            {/if}
+          </div>
+        {/if}
+        {#if albumLoaded}
+          {#if albumPhotos.length === 0}
+            <p class="muted">No photos yet.</p>
+          {:else}
+            <div class="album-grid">
+              {#each albumPhotos as photo (photo.id)}
+                <button class="album-cell-btn" onclick={() => lightboxPhoto = photo}>
+                  <img src={photo.url} alt={photo.caption ?? ''} class="album-img" loading="lazy" />
                 </button>
-              {/if}
+              {/each}
             </div>
           {/if}
-
-          {#if albumLoaded}
-            {#if albumPhotos.length === 0}
-              <p class="muted">No photos yet.</p>
-            {:else}
-              <div class="album-grid">
-                {#each albumPhotos as photo (photo.id)}
-                  <button class="album-cell-btn" onclick={() => lightboxPhoto = photo}>
-                    <img src={photo.url} alt={photo.caption ?? ''} class="album-img" loading="lazy" />
-                  </button>
-                {/each}
-              </div>
-            {/if}
-          {:else}
-            <p class="muted">Loading…</p>
-          {/if}
+        {:else}
+          <p class="muted">Loading…</p>
         {/if}
       </section>
     </div>
@@ -1264,10 +1264,6 @@
   .btn-remove { background: none; border: none; color: #9a8f86; font-size: 0.75rem; cursor: pointer; padding: 0; align-self: flex-end; margin-top: 0.25rem; }
   .btn-remove:hover { color: #8b3016; }
 
-  .wall-tabs { display: flex; gap: 0; border-bottom: 1px solid #cfc3b0; margin-bottom: 1rem; }
-  .wall-tab { background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 600; color: #6b6058; cursor: pointer; font-family: inherit; }
-  .wall-tab:hover { color: #1a1510; }
-  .wall-tab.active { color: #b05525; border-bottom-color: #b05525; }
 
   .post-composer { margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
   .post-textarea { padding: 0.5rem 0.75rem; border: 1px solid #c8bdb0; border-radius: 8px; font-size: 0.9rem; font-family: inherit; background: #fff; color: #1a1510; resize: vertical; }
