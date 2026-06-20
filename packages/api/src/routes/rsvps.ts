@@ -498,7 +498,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
         guestId:     r.guestId,
         createdAt:   r.createdAt.toISOString(),
         isHost:      r.userId !== null && r.userId === event.organizerId,
-        profile:     r.guestClaimedAt ? { avatarUrl: r.guestAvatarUrl, bio: r.guestBio, vibe: r.guestVibe } : null,
+        profile:     r.guestId ? { avatarUrl: r.guestAvatarUrl, bio: r.guestBio, vibe: r.guestVibe } : null,
         ...(isEditor ? { email: r.email } : {}),
       })),
     }

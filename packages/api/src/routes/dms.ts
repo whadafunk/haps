@@ -23,13 +23,13 @@ const dmsRoutes: FastifyPluginAsync = async (fastify) => {
     const fromGuestId = request.session.guestId ?? (request.user?.type === 'guest' ? request.user.sub : null)
     if (!fromGuestId) throw createError(403, 'PROFILE_REQUIRED', 'Set up your guest profile to send messages.')
 
-    // Verify sender has a claimed profile
+    // Verify sender's guest record exists
     const [fromGuest] = await db
-      .select({ id: guests.id, name: guests.name, claimedAt: guests.claimedAt })
+      .select({ id: guests.id, name: guests.name })
       .from(guests)
       .where(eq(guests.id, fromGuestId))
       .limit(1)
-    if (!fromGuest?.claimedAt) throw createError(403, 'PROFILE_REQUIRED', 'Complete your guest profile to send messages.')
+    if (!fromGuest) throw createError(403, 'PROFILE_REQUIRED', 'Set up your guest profile to send messages.')
 
     if (body.toGuestId === fromGuestId) throw createError(400, 'SELF_MESSAGE', 'Cannot message yourself.')
 
@@ -41,13 +41,13 @@ const dmsRoutes: FastifyPluginAsync = async (fastify) => {
       .limit(1)
     if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'Event not found.')
 
-    // Verify recipient exists and has claimed profile
+    // Verify recipient exists
     const [toGuest] = await db
-      .select({ id: guests.id, claimedAt: guests.claimedAt })
+      .select({ id: guests.id })
       .from(guests)
       .where(eq(guests.id, body.toGuestId))
       .limit(1)
-    if (!toGuest?.claimedAt) throw createError(404, 'RECIPIENT_NOT_FOUND', 'Recipient not found.')
+    if (!toGuest) throw createError(404, 'RECIPIENT_NOT_FOUND', 'Recipient not found.')
 
     // Check recipient hasn't blocked the sender
     const [block] = await db

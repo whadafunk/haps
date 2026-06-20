@@ -25,14 +25,14 @@ const signalsRoutes: FastifyPluginAsync = async (fastify) => {
       throw createError(403, 'PROFILE_REQUIRED', 'Set up your guest profile to send signals.')
     }
 
-    // Verify the sender's guest record exists and is claimed
+    // Verify the sender's guest record exists
     const [fromGuest] = await db
-      .select({ id: guests.id, name: guests.name, claimedAt: guests.claimedAt })
+      .select({ id: guests.id, name: guests.name })
       .from(guests)
       .where(eq(guests.id, fromGuestId))
       .limit(1)
-    if (!fromGuest?.claimedAt) {
-      throw createError(403, 'PROFILE_REQUIRED', 'Complete your guest profile to send signals.')
+    if (!fromGuest) {
+      throw createError(403, 'PROFILE_REQUIRED', 'Set up your guest profile to send signals.')
     }
 
     // Load event
@@ -56,13 +56,13 @@ const signalsRoutes: FastifyPluginAsync = async (fastify) => {
       throw createError(400, 'SELF_SIGNAL', 'Cannot send a signal to yourself.')
     }
 
-    // Verify recipient guest exists and is claimed
+    // Verify recipient guest exists
     const [toGuest] = await db
-      .select({ id: guests.id, claimedAt: guests.claimedAt })
+      .select({ id: guests.id })
       .from(guests)
       .where(eq(guests.id, body.toGuestId))
       .limit(1)
-    if (!toGuest?.claimedAt) {
+    if (!toGuest) {
       throw createError(404, 'RECIPIENT_NOT_FOUND', 'Recipient not found.')
     }
 

@@ -81,7 +81,7 @@
   let guestListExpanded = $state(false)
 
   // Profile modal
-  let profileModal = $state<{ name: string; guestId: string | null; profile: GuestProfile } | null>(null)
+  let profileModal = $state<{ name: string; guestId: string; profile: GuestProfile | null } | null>(null)
 
   // Signal state (per open modal)
   let signalSent = $state<'wink' | 'crush' | null>(null)
@@ -257,8 +257,8 @@
   }
 
   function openProfileModal(guest: GuestRow) {
-    if (!guest.profile) return
-    profileModal = { name: guest.displayName, guestId: guest.guestId ?? null, profile: guest.profile }
+    if (!guest.guestId) return
+    profileModal = { name: guest.displayName, guestId: guest.guestId, profile: guest.profile }
     signalSent = null
     signalError = ''
     signalMutual = false
@@ -594,15 +594,15 @@
               {#each guestList.filter(r => r.status === 'yes') as guest (guest.id)}
                 <div
                   class="guest-row"
-                  class:guest-row-clickable={!!guest.profile}
-                  role={guest.profile ? 'button' : undefined}
-                  tabindex={guest.profile ? 0 : undefined}
-                  onclick={() => guest.profile && openProfileModal(guest)}
-                  onkeydown={(e) => e.key === 'Enter' && guest.profile && openProfileModal(guest)}
+                  class:guest-row-clickable={!!guest.guestId}
+                  role={guest.guestId ? 'button' : undefined}
+                  tabindex={guest.guestId ? 0 : undefined}
+                  onclick={() => guest.guestId && openProfileModal(guest)}
+                  onkeydown={(e) => e.key === 'Enter' && guest.guestId && openProfileModal(guest)}
                 >
                   {#if guest.profile?.avatarUrl}
                     <img src={guest.profile.avatarUrl} alt="" class="guest-avatar" />
-                  {:else if guest.profile}
+                  {:else if guest.guestId}
                     <div class="guest-avatar-placeholder">{(guest.displayName[0] ?? '?').toUpperCase()}</div>
                   {/if}
                   <span class="guest-name">{guest.displayName}</span>
@@ -710,21 +710,21 @@
     <div class="modal-card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Guest profile">
       <button class="modal-close" onclick={() => profileModal = null} aria-label="Close">✕</button>
       <div class="modal-avatar-wrap">
-        {#if profileModal.profile.avatarUrl}
+        {#if profileModal.profile?.avatarUrl}
           <img src={profileModal.profile.avatarUrl} alt="" class="modal-avatar" />
         {:else}
           <div class="modal-avatar-placeholder">{(profileModal.name[0] ?? '?').toUpperCase()}</div>
         {/if}
       </div>
       <h3 class="modal-name">{profileModal.name}</h3>
-      {#if profileModal.profile.vibe}
+      {#if profileModal.profile?.vibe}
         <p class="modal-vibe">"{profileModal.profile.vibe}"</p>
       {/if}
-      {#if profileModal.profile.bio}
+      {#if profileModal.profile?.bio}
         <p class="modal-bio">{profileModal.profile.bio}</p>
       {/if}
 
-      {#if profileModal.guestId && currentGuestId && profileModal.guestId !== currentGuestId}
+      {#if currentGuestId && profileModal.guestId !== currentGuestId}
         {#if !dmOpen}
           <div class="signal-row">
             {#if signalMutual}
