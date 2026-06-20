@@ -246,15 +246,6 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
     // Identity lock: once a session has a display name, use that instead of what was submitted
     const lockedName = session.displayName ?? body.displayName
 
-    // Persist display name and email on first RSVP
-    if (!session.displayName) {
-      await db
-        .update(visitorSessions)
-        .set({ displayName: lockedName, email: rsvpEmail })
-        .where(eq(visitorSessions.id, session.id))
-      session.displayName = lockedName
-    }
-
     // Find-or-create guest by email
     const [guest] = await db.insert(guests)
       .values({
@@ -272,6 +263,21 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
       })
       .returning({ id: guests.id })
     if (!guest) throw createError(500, 'INTERNAL_ERROR', 'Failed to upsert guest.')
+
+    // Persist display name + email on first RSVP; always link guestId so
+    // notifications can reach this session by guestId lookup
+    if (!session.displayName) {
+      await db.update(visitorSessions)
+        .set({ displayName: lockedName, email: rsvpEmail, guestId: guest.id })
+        .where(eq(visitorSessions.id, session.id))
+      session.displayName = lockedName
+      session.guestId = guest.id
+    } else if (!session.guestId) {
+      await db.update(visitorSessions)
+        .set({ guestId: guest.id })
+        .where(eq(visitorSessions.id, session.id))
+      session.guestId = guest.id
+    }
 
     let rsvp
     if (existingRsvp) {

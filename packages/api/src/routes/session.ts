@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { visitorSessions, events, rsvps, emailBlocklist } from '../db/schema.js'
+import { visitorSessions, events, rsvps, emailBlocklist, guests } from '../db/schema.js'
 import { eq, and, inArray, or } from 'drizzle-orm'
 import { UpdateSessionSchema, SubmitProfileSchema } from '@haps/shared'
 import { createError } from '../lib/errors.js'
@@ -26,6 +26,21 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
         .set({ guestId: request.user.sub })
         .where(eq(visitorSessions.id, session.id))
         .execute()
+        .catch(() => {})
+    } else if (!session.guestId && session.email) {
+      // Backfill: anonymous session that RSVPed before guestId was written to sessions
+      db.select({ id: guests.id })
+        .from(guests)
+        .where(eq(guests.email, session.email))
+        .limit(1)
+        .then(([guest]) => {
+          if (!guest) return
+          session.guestId = guest.id
+          return db.update(visitorSessions)
+            .set({ guestId: guest.id })
+            .where(eq(visitorSessions.id, session.id))
+            .execute()
+        })
         .catch(() => {})
     }
 
