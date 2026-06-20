@@ -74,7 +74,7 @@
     return `${Math.floor(hrs / 24)}d ago`
   }
 
-  const hasSession = $derived(data.user || data.session)
+  const hasSession = $derived(data.user?.type === 'guest' ? data.user : !data.user && data.session)
 </script>
 
 <svelte:window onclick={handleWindowClick} />

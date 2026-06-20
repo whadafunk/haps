@@ -35,7 +35,7 @@ export const load: LayoutServerLoad = async ({ cookies }) => {
   }
 
   let unreadCount = 0
-  if ((user || session) && cookies.get('vsid')) {
+  if ((user?.type === 'guest' || (!user && session)) && cookies.get('vsid')) {
     try {
       const data = await serverGet<{ unreadCount: number }>('/notifications', cookies)
       unreadCount = data.unreadCount
