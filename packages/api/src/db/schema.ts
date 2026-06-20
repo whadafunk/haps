@@ -251,6 +251,18 @@ export const postPhotos = pgTable('post_photos', {
   sortOrder: integer('sort_order').notNull().default(0),
 })
 
+export const postReactions = pgTable('post_reactions', {
+  id:        uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  postId:    uuid('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+  sessionId: uuid('session_id').references(() => visitorSessions.id, { onDelete: 'cascade' }),
+  guestId:   uuid('guest_id').references(() => guests.id, { onDelete: 'cascade' }),
+  emoji:     text('emoji').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  sessionEmojiIdx: uniqueIndex('post_reactions_session_emoji_idx').on(t.postId, t.sessionId, t.emoji).where(sql`${t.sessionId} is not null`),
+  guestEmojiIdx:   uniqueIndex('post_reactions_guest_emoji_idx').on(t.postId, t.guestId, t.emoji).where(sql`${t.guestId} is not null`),
+}))
+
 export const pushSubscriptions = pgTable('push_subscriptions', {
   id:        uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   sessionId: uuid('session_id').notNull().references(() => visitorSessions.id, { onDelete: 'cascade' }),

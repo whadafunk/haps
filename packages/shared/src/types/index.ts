@@ -87,6 +87,8 @@ export interface Post {
   photos: Array<{ id: string; url: string; caption?: string | null }>
   createdAt: string
   guestId?: string | null
+  reactions?: Record<string, number>
+  myReactions?: string[]
   isOwn?: boolean
 }
 

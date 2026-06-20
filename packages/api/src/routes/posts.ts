@@ -1,7 +1,8 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, posts, albumPhotos, postPhotos, users, guests, rsvps, visitorSessions } from '../db/schema.js'
-import { eq, and, isNull, asc, inArray } from 'drizzle-orm'
+import { events, posts, albumPhotos, postPhotos, users, guests, rsvps, visitorSessions, postReactions } from '../db/schema.js'
+import { eq, and, isNull, asc, inArray, sql } from 'drizzle-orm'
+import { z } from 'zod'
 import { createError } from '../lib/errors.js'
 import { ensureSession } from '../middleware/session.js'
 import { detectMimeType, getAllowedExtension, saveLocalFile } from '../services/storage.js'
@@ -72,6 +73,7 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     const currentSessionId = request.session?.id
+    const currentGuestId = request.session?.guestId
     const currentUserId = request.user?.sub
 
     // Build sessionId → guestId and userId → guestId maps for profile linking
@@ -100,6 +102,41 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
+    // Batch-fetch reaction counts and current user's reactions
+    const reactionsMap: Record<string, Record<string, number>> = {}
+    const myReactionsMap: Record<string, string[]> = {}
+
+    if (postIds.length > 0) {
+      const reactionRows = await db
+        .select({
+          postId: postReactions.postId,
+          emoji: postReactions.emoji,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(postReactions)
+        .where(inArray(postReactions.postId, postIds))
+        .groupBy(postReactions.postId, postReactions.emoji)
+
+      for (const r of reactionRows) {
+        if (!reactionsMap[r.postId]) reactionsMap[r.postId] = {}
+        reactionsMap[r.postId]![r.emoji] = r.count
+      }
+
+      if (currentGuestId || currentSessionId) {
+        const myWhere = currentGuestId
+          ? and(inArray(postReactions.postId, postIds), eq(postReactions.guestId, currentGuestId))
+          : and(inArray(postReactions.postId, postIds), eq(postReactions.sessionId, currentSessionId!))
+        const myRows = await db
+          .select({ postId: postReactions.postId, emoji: postReactions.emoji })
+          .from(postReactions)
+          .where(myWhere)
+        for (const r of myRows) {
+          if (!myReactionsMap[r.postId]) myReactionsMap[r.postId] = []
+          myReactionsMap[r.postId]!.push(r.emoji)
+        }
+      }
+    }
+
     return {
       posts: postRows.map((p) => ({
         id: p.id,
@@ -108,6 +145,8 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
         photos: photosMap[p.id] ?? [],
         createdAt: p.createdAt.toISOString(),
         guestId: (p.sessionId && guestIdBySession[p.sessionId]) || (p.userId && guestIdByUser[p.userId]) || null,
+        reactions: reactionsMap[p.id] ?? {},
+        myReactions: myReactionsMap[p.id] ?? [],
         isOwn: !!(
           (currentSessionId && p.sessionId === currentSessionId) ||
           (currentUserId && p.userId === currentUserId)
@@ -241,6 +280,79 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
         isOwn: true,
       },
     })
+  })
+
+  fastify.post('/api/events/:slug/posts/:postId/reactions', async (request, reply) => {
+    const { slug, postId } = request.params as { slug: string; postId: string }
+    await ensureSession(request, reply)
+
+    const ALLOWED_EMOJIS = ['❤️', '😂', '🎉', '🔥']
+    const BodySchema = z.object({ emoji: z.enum(['❤️', '😂', '🎉', '🔥']) }).strict()
+    const { emoji } = BodySchema.parse(request.body)
+
+    // Verify post exists and belongs to this event
+    const eventRows = await db
+      .select({ id: events.id })
+      .from(events)
+      .where(eq(events.slug, slug))
+      .limit(1)
+    const event = eventRows[0]
+    if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
+
+    const postRows = await db
+      .select({ id: posts.id, eventId: posts.eventId })
+      .from(posts)
+      .where(and(eq(posts.id, postId), isNull(posts.deletedAt)))
+      .limit(1)
+    const post = postRows[0]
+    if (!post || post.eventId !== event.id) throw createError(404, 'POST_NOT_FOUND', 'Post not found.')
+
+    const session = request.session!
+    const guestId = session.guestId ?? null
+
+    // Toggle: delete if exists, insert if not
+    if (guestId) {
+      const existing = await db
+        .select({ id: postReactions.id })
+        .from(postReactions)
+        .where(and(eq(postReactions.postId, postId), eq(postReactions.guestId, guestId), eq(postReactions.emoji, emoji)))
+        .limit(1)
+      if (existing.length > 0) {
+        await db.delete(postReactions).where(eq(postReactions.id, existing[0]!.id))
+      } else {
+        await db.insert(postReactions).values({ postId, guestId, emoji })
+      }
+    } else {
+      const existing = await db
+        .select({ id: postReactions.id })
+        .from(postReactions)
+        .where(and(eq(postReactions.postId, postId), eq(postReactions.sessionId, session.id), eq(postReactions.emoji, emoji)))
+        .limit(1)
+      if (existing.length > 0) {
+        await db.delete(postReactions).where(eq(postReactions.id, existing[0]!.id))
+      } else {
+        await db.insert(postReactions).values({ postId, sessionId: session.id, emoji })
+      }
+    }
+
+    // Return updated counts + my reactions
+    const allReactions = await db
+      .select({ emoji: postReactions.emoji, count: sql<number>`count(*)::int` })
+      .from(postReactions)
+      .where(eq(postReactions.postId, postId))
+      .groupBy(postReactions.emoji)
+
+    const reactions: Record<string, number> = {}
+    for (const r of allReactions) reactions[r.emoji] = r.count
+
+    const myWhere = guestId
+      ? and(eq(postReactions.postId, postId), eq(postReactions.guestId, guestId))
+      : and(eq(postReactions.postId, postId), eq(postReactions.sessionId, session.id))
+    const myRows = await db.select({ emoji: postReactions.emoji }).from(postReactions).where(myWhere)
+    const myReactions = myRows.map((r) => r.emoji)
+
+    void ALLOWED_EMOJIS // suppress unused warning
+    return reply.send({ reactions, myReactions })
   })
 
   fastify.delete('/api/events/:slug/posts/:postId', async (request, reply) => {

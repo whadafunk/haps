@@ -217,6 +217,12 @@ export const api = {
       headers: editToken ? { 'x-edit-token': editToken } : {},
     }),
 
+  toggleReaction: (slug: string, postId: string, emoji: string) =>
+    apiFetch<{ reactions: Record<string, number>; myReactions: string[] }>(
+      `/events/${slug}/posts/${postId}/reactions`,
+      { method: 'POST', body: { emoji } },
+    ),
+
   // Album
   listAlbum: (slug: string) =>
     apiFetch<{ photos: (AlbumPhoto & { isOwn?: boolean })[] }>(`/events/${slug}/album`),

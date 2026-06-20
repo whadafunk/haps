@@ -233,6 +233,15 @@
     } catch { /**/ }
   }
 
+  async function toggleReaction(postId: string, emoji: string) {
+    try {
+      const res = await api.toggleReaction(event.slug, postId, emoji)
+      posts = posts.map((p) =>
+        p.id === postId ? { ...p, reactions: res.reactions, myReactions: res.myReactions } : p
+      )
+    } catch { /**/ }
+  }
+
   async function deletePhoto(photoId: string) {
     if (!confirm('Remove this photo?')) return
     try {
@@ -677,6 +686,18 @@
                       {/each}
                     </div>
                   {/if}
+                  <div class="post-reactions">
+                    {#each ['❤️', '😂', '🎉', '🔥'] as emoji}
+                      {@const count = post.reactions?.[emoji] ?? 0}
+                      {@const active = post.myReactions?.includes(emoji) ?? false}
+                      <button
+                        class="reaction-btn"
+                        class:reaction-active={active}
+                        onclick={() => toggleReaction(post.id, emoji)}
+                        title={active ? 'Remove reaction' : 'React'}
+                      >{emoji}{#if count > 0}<span class="reaction-count">{count}</span>{/if}</button>
+                    {/each}
+                  </div>
                 </div>
               {/each}
             </div>
@@ -971,6 +992,11 @@
   .post-photos.single { grid-template-columns: 1fr; max-width: 320px; }
   .photo-thumb-btn { padding: 0; border: none; background: none; cursor: pointer; aspect-ratio: 1; overflow: hidden; }
   .photo-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .post-reactions { display: flex; gap: 0.375rem; margin-top: 0.5rem; flex-wrap: wrap; }
+  .reaction-btn { display: flex; align-items: center; gap: 2px; background: #f5f0eb; border: 1px solid #e8e0d8; border-radius: 20px; padding: 2px 8px; font-size: 0.875rem; cursor: pointer; line-height: 1.4; transition: background 0.1s, border-color 0.1s; }
+  .reaction-btn:hover { background: #ede5db; border-color: #d4c8bc; }
+  .reaction-active { background: #fff0e6; border-color: var(--accent, #b05525); }
+  .reaction-count { font-size: 0.75rem; color: #6b5e54; font-variant-numeric: tabular-nums; }
   .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
   .lightbox-inner { background: #fff; border-radius: 12px; overflow: hidden; max-width: 560px; width: 100%; }
   .lightbox-img { width: 100%; max-height: 70vh; object-fit: contain; display: block; background: #111; }
