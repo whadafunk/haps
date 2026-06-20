@@ -66,6 +66,8 @@
   // Wall
   let posts = $state<Post[]>([])
   let postsLoaded = $state(false)
+  let reactionPickerPostId = $state<string | null>(null)
+  const REACTION_EMOJIS = ['❤️', '😂', '🎉', '🔥']
   let postBody = $state('')
   let postFiles = $state<FileList | null>(null)
   let postLoading = $state(false)
@@ -234,6 +236,7 @@
   }
 
   async function toggleReaction(postId: string, emoji: string) {
+    reactionPickerPostId = null
     try {
       const res = await api.toggleReaction(event.slug, postId, emoji)
       posts = posts.map((p) =>
@@ -330,6 +333,8 @@
     }
   })
 </script>
+
+<svelte:document onclick={() => { reactionPickerPostId = null }} />
 
 <svelte:head>
   <title>{data.meta.title} — Haps</title>
@@ -689,16 +694,38 @@
                     </div>
                   {/if}
                   <div class="post-reactions">
-                    {#each ['❤️', '😂', '🎉', '🔥'] as emoji}
+                    {#each REACTION_EMOJIS as emoji}
                       {@const count = post.reactions?.[emoji] ?? 0}
                       {@const active = post.myReactions?.includes(emoji) ?? false}
-                      <button
-                        class="reaction-btn"
-                        class:reaction-active={active}
-                        onclick={() => toggleReaction(post.id, emoji)}
-                        title={active ? 'Remove reaction' : 'React'}
-                      >{emoji}{#if count > 0}<span class="reaction-count">{count}</span>{/if}</button>
+                      {#if count > 0}
+                        <button
+                          class="reaction-btn"
+                          class:reaction-active={active}
+                          onclick={() => toggleReaction(post.id, emoji)}
+                          title={active ? 'Remove reaction' : `React with ${emoji}`}
+                        >{emoji} <span class="reaction-count">{count}</span></button>
+                      {/if}
                     {/each}
+                    <div class="reaction-add-wrap">
+                      <button
+                        class="reaction-add-btn"
+                        onclick={(e) => { e.stopPropagation(); reactionPickerPostId = reactionPickerPostId === post.id ? null : post.id }}
+                        title="Add reaction"
+                        aria-label="Add reaction"
+                      >+😊</button>
+                      {#if reactionPickerPostId === post.id}
+                        <div class="reaction-picker" role="menu">
+                          {#each REACTION_EMOJIS as emoji}
+                            <button
+                              class="reaction-picker-btn"
+                              class:reaction-active={post.myReactions?.includes(emoji)}
+                              onclick={() => toggleReaction(post.id, emoji)}
+                              title={emoji}
+                            >{emoji}</button>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
                   </div>
                 </div>
               {/each}
@@ -994,11 +1021,18 @@
   .post-photos.single { grid-template-columns: 1fr; max-width: 320px; }
   .photo-thumb-btn { padding: 0; border: none; background: none; cursor: pointer; aspect-ratio: 1; overflow: hidden; }
   .photo-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .post-reactions { display: flex; gap: 0.375rem; margin-top: 0.5rem; flex-wrap: wrap; }
-  .reaction-btn { display: flex; align-items: center; gap: 2px; background: #f5f0eb; border: 1px solid #e8e0d8; border-radius: 20px; padding: 2px 8px; font-size: 0.875rem; cursor: pointer; line-height: 1.4; transition: background 0.1s, border-color 0.1s; }
+  .post-reactions { display: flex; gap: 0.375rem; margin-top: 0.5rem; flex-wrap: wrap; align-items: center; }
+  .reaction-btn { display: inline-flex; align-items: center; gap: 3px; background: #f5f0eb; border: 1px solid #e8e0d8; border-radius: 20px; padding: 2px 8px; font-size: 0.875rem; cursor: pointer; line-height: 1.5; transition: background 0.1s, border-color 0.1s; }
   .reaction-btn:hover { background: #ede5db; border-color: #d4c8bc; }
   .reaction-active { background: #fff0e6; border-color: var(--accent, #b05525); }
-  .reaction-count { font-size: 0.75rem; color: #6b5e54; font-variant-numeric: tabular-nums; }
+  .reaction-count { font-size: 0.78rem; color: #6b5e54; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .reaction-add-wrap { position: relative; }
+  .reaction-add-btn { background: #f5f0eb; border: 1px solid #e8e0d8; border-radius: 20px; padding: 2px 8px; font-size: 0.8rem; cursor: pointer; line-height: 1.5; color: #6b5e54; transition: background 0.1s; }
+  .reaction-add-btn:hover { background: #ede5db; }
+  .reaction-picker { position: absolute; bottom: calc(100% + 4px); left: 0; display: flex; gap: 2px; background: #fff; border: 1px solid #ddd6cd; border-radius: 24px; padding: 4px 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); z-index: 10; }
+  .reaction-picker-btn { background: none; border: none; font-size: 1.2rem; cursor: pointer; border-radius: 50%; width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center; transition: background 0.1s; }
+  .reaction-picker-btn:hover { background: #f5f0eb; }
+  .reaction-picker-btn.reaction-active { background: #fff0e6; }
   .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
   .lightbox-inner { background: #fff; border-radius: 12px; overflow: hidden; max-width: 560px; width: 100%; }
   .lightbox-img { width: 100%; max-height: 70vh; object-fit: contain; display: block; background: #111; }
