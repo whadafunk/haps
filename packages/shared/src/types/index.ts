@@ -26,6 +26,8 @@ export interface Event {
   showGuests: boolean
   allowComments: boolean
   showAlbum: boolean
+  guestsRequireRsvp: boolean
+  wallRequiresRsvp: boolean
   allowPlusOnes: boolean
   maxPlusOnes?: number | null
   maxCapacity?: number | null

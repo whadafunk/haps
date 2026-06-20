@@ -449,7 +449,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
     const { slug } = request.params as { slug: string }
 
     const eventRows = await db
-      .select({ id: events.id, showGuests: events.showGuests, organizerId: events.organizerId })
+      .select({ id: events.id, showGuests: events.showGuests, guestsRequireRsvp: events.guestsRequireRsvp, organizerId: events.organizerId })
       .from(events)
       .where(eq(events.slug, slug))
       .limit(1)
@@ -462,6 +462,18 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
 
     if (!isEditor && !event.showGuests) {
       throw createError(403, 'FORBIDDEN', 'Guest list is not public for this event.')
+    }
+
+    if (!isEditor && event.guestsRequireRsvp) {
+      const session = request.session
+      const hasRsvp = session ? await (async () => {
+        const where = session.guestId
+          ? and(eq(rsvps.eventId, event.id), eq(rsvps.guestId, session.guestId))
+          : and(eq(rsvps.eventId, event.id), eq(rsvps.sessionId, session.id))
+        const rows = await db.select({ id: rsvps.id }).from(rsvps).where(where).limit(1)
+        return rows.length > 0
+      })() : false
+      if (!hasRsvp) throw createError(403, 'RSVP_REQUIRED', 'You must RSVP to view the guest list.')
     }
 
     const rows = await db

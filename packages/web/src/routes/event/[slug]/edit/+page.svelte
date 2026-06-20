@@ -374,6 +374,8 @@
         showGuests: event.showGuests,
         allowComments: event.allowComments,
         showAlbum: event.showAlbum,
+        guestsRequireRsvp: event.guestsRequireRsvp,
+        wallRequiresRsvp: event.wallRequiresRsvp,
         rsvpDeadline: event.rsvpDeadline ?? null,
         maxCapacity: event.maxCapacity ?? null,
         welcomeMessage: event.welcomeMessage ?? null,
@@ -574,10 +576,10 @@
             <label class="checkbox"><input type="checkbox" bind:checked={event.allowComments} /> Allow comments</label>
           </div>
           <div class="visibility-group">
-            <p class="channel-section-label">Visible to anonymous guests</p>
+            <p class="channel-section-label">Require RSVP to view</p>
             <div class="checkboxes">
-              <label class="checkbox"><input type="checkbox" bind:checked={event.showGuests} /> Guest list &amp; RSVP numbers</label>
-              <label class="checkbox"><input type="checkbox" bind:checked={event.showAlbum} /> Wall &amp; album</label>
+              <label class="checkbox"><input type="checkbox" bind:checked={event.guestsRequireRsvp} /> Guest list &amp; RSVP numbers</label>
+              <label class="checkbox"><input type="checkbox" bind:checked={event.wallRequiresRsvp} /> Wall &amp; album</label>
             </div>
           </div>
           {#if publishError}

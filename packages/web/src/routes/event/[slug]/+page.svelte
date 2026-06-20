@@ -107,6 +107,7 @@
 
   const event = $derived(data.event)
   const rsvpDeadlinePassed = $derived(!!event.rsvpDeadline && new Date() > new Date(event.rsvpDeadline))
+  const hasQualifyingRsvp = $derived(data.myRsvp?.status === 'yes' || data.myRsvp?.status === 'maybe')
 
   function formatDeadline(iso: string) {
     return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
@@ -311,8 +312,8 @@
   }
 
   $effect(() => {
-    if (event.showAlbum) { loadPosts() }
-    if (event.showGuests && !guestListLoaded) {
+    if (event.showAlbum && (!event.wallRequiresRsvp || hasQualifyingRsvp)) { loadPosts() }
+    if (event.showGuests && (!event.guestsRequireRsvp || hasQualifyingRsvp) && !guestListLoaded) {
       api.listRsvps(event.slug).then(res => {
         guestList = res.rsvps
         guestListLoaded = true
@@ -562,6 +563,11 @@
 
     <!-- Guest list -->
     {#if event.showGuests}
+      {#if event.guestsRequireRsvp && !hasQualifyingRsvp && !data.isEditor}
+        <div class="rsvp-gate-notice">
+          RSVP to see who's coming and other event details.
+        </div>
+      {:else}
       <section class="section">
         <div class="guest-list-header">
           <h2>
@@ -610,10 +616,14 @@
           <p class="muted">{event.maybeCount} tentative.</p>
         {/if}
       </section>
+      {/if}
     {/if}
 
     <!-- Wall -->
     {#if event.showAlbum}
+      {#if event.wallRequiresRsvp && !hasQualifyingRsvp && !data.isEditor}
+        <!-- gate notice already shown by the guest list block above; skip duplicate -->
+      {:else}
       <section class="section">
         <h2>Wall</h2>
 
@@ -669,6 +679,7 @@
           <p class="muted">Loading…</p>
         {/if}
       </section>
+      {/if}
     {/if}
 
     <!-- Lightbox -->
@@ -966,5 +977,6 @@
   .message-meta { display: flex; gap: 0.5rem; }
   .message-time { font-size: 0.75rem; color: #9a8f86; }
   .muted { color: #6b6058; font-size: 0.875rem; }
+  .rsvp-gate-notice { font-size: 0.875rem; color: #6b6058; font-style: italic; margin-bottom: 0.5rem; }
   button { cursor: pointer; }
 </style>

@@ -175,7 +175,8 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     const sessionBlocked = request.session?.status === 'blocked' || request.session?.status === 'removed'
     const sessionProfileRequired = !!(request.session && !request.session.email && !request.session.userId)
 
-    const showCounts = event.showGuests || !!isEditor
+    const hasRsvp = myRsvp !== null
+    const showCounts = (event.showGuests && (!event.guestsRequireRsvp || hasRsvp)) || !!isEditor
     return {
       event: {
         ...serializeEvent(event),
@@ -227,6 +228,8 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     if (body.showGuests !== undefined) updates['showGuests'] = body.showGuests
     if (body.allowComments !== undefined) updates['allowComments'] = body.allowComments
     if (body.showAlbum !== undefined) updates['showAlbum'] = body.showAlbum
+    if (body.guestsRequireRsvp !== undefined) updates['guestsRequireRsvp'] = body.guestsRequireRsvp
+    if (body.wallRequiresRsvp !== undefined) updates['wallRequiresRsvp'] = body.wallRequiresRsvp
     if (body.maxCapacity !== undefined) updates['maxCapacity'] = body.maxCapacity ?? null
     if (body.rsvpDeadline !== undefined) updates['rsvpDeadline'] = body.rsvpDeadline ? new Date(body.rsvpDeadline) : null
     if (body.expiresAt !== undefined) updates['expiresAt'] = body.expiresAt ? new Date(body.expiresAt) : null
@@ -592,6 +595,8 @@ function serializeEvent(event: typeof events.$inferSelect) {
     showGuests: event.showGuests,
     allowComments: event.allowComments,
     showAlbum: event.showAlbum,
+    guestsRequireRsvp: event.guestsRequireRsvp,
+    wallRequiresRsvp: event.wallRequiresRsvp,
     eventType: event.eventType as 'open' | 'invite_only',
     maxCapacity: event.maxCapacity,
     rsvpDeadline: event.rsvpDeadline?.toISOString() ?? null,

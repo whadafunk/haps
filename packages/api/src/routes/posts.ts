@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, posts, albumPhotos, postPhotos, users, guests } from '../db/schema.js'
+import { events, posts, albumPhotos, postPhotos, users, guests, rsvps } from '../db/schema.js'
 import { eq, and, isNull, asc, inArray } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { ensureSession } from '../middleware/session.js'
@@ -14,7 +14,7 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     const { slug } = request.params as { slug: string }
 
     const eventRows = await db
-      .select({ id: events.id, showAlbum: events.showAlbum })
+      .select({ id: events.id, showAlbum: events.showAlbum, wallRequiresRsvp: events.wallRequiresRsvp })
       .from(events)
       .where(eq(events.slug, slug))
       .limit(1)
@@ -22,6 +22,18 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     const event = eventRows[0]
     if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
     if (!event.showAlbum) throw createError(403, 'WALL_DISABLED', 'Wall is disabled for this event.')
+
+    if (event.wallRequiresRsvp) {
+      const session = request.session
+      const hasRsvp = session ? await (async () => {
+        const where = session.guestId
+          ? and(eq(rsvps.eventId, event.id), eq(rsvps.guestId, session.guestId))
+          : and(eq(rsvps.eventId, event.id), eq(rsvps.sessionId, session.id))
+        const rows = await db.select({ id: rsvps.id }).from(rsvps).where(where).limit(1)
+        return rows.length > 0
+      })() : false
+      if (!hasRsvp) throw createError(403, 'RSVP_REQUIRED', 'You must RSVP to view the wall.')
+    }
 
     const postRows = await db
       .select({
@@ -82,7 +94,7 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     await ensureSession(request, reply)
 
     const eventRows = await db
-      .select({ id: events.id, showAlbum: events.showAlbum, status: events.status })
+      .select({ id: events.id, showAlbum: events.showAlbum, wallRequiresRsvp: events.wallRequiresRsvp, status: events.status })
       .from(events)
       .where(eq(events.slug, slug))
       .limit(1)
@@ -93,6 +105,14 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     if (event.status !== 'published') throw createError(403, 'EVENT_NOT_PUBLISHED', 'Event is not published.')
 
     const session = request.session!
+    if (event.wallRequiresRsvp) {
+      const where = session.guestId
+        ? and(eq(rsvps.eventId, event.id), eq(rsvps.guestId, session.guestId))
+        : and(eq(rsvps.eventId, event.id), eq(rsvps.sessionId, session.id))
+      const rsvpRows = await db.select({ id: rsvps.id }).from(rsvps).where(where).limit(1)
+      if (rsvpRows.length === 0) throw createError(403, 'RSVP_REQUIRED', 'You must RSVP to post on the wall.')
+    }
+
     if (!session.displayName && !request.user) {
       throw createError(428, 'PROFILE_REQUIRED', 'Complete your profile before posting.')
     }
