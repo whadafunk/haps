@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { users, guests, visitorSessions, rsvps, comments, magicLinks, instanceConfig } from '../db/schema.js'
+import { users, guests, visitorSessions, rsvps, magicLinks, instanceConfig } from '../db/schema.js'
 import { eq, and, lt, count } from 'drizzle-orm'
 import { verifyPassword, hashPassword, generateToken, sha256hex } from '../lib/crypto.js'
 import { signJwt, signRefreshToken, verifyRefreshToken } from '../middleware/auth.js'
@@ -46,17 +46,13 @@ async function mergeSessionIntoGuest(sessionId: string, guestId: string): Promis
       }
     }
 
-    await tx.update(comments)
-      .set({ userId: null, sessionId: null })
-      .where(eq(comments.sessionId, sessionId))
-
     await tx.update(visitorSessions)
       .set({ guestId })
       .where(eq(visitorSessions.id, sessionId))
   })
 }
 
-/** Atomically claim a visitor session's RSVPs, comments, and event_access into a user account (operators). */
+/** Atomically claim a visitor session's RSVPs and event_access into a user account (operators). */
 async function mergeSessionIntoUser(sessionId: string, userId: string): Promise<void> {
   await db.transaction(async (tx) => {
     // RSVPs: claim uncontested ones; discard session copy where user already has one
@@ -80,11 +76,6 @@ async function mergeSessionIntoUser(sessionId: string, userId: string): Promise<
           .where(eq(rsvps.id, rsvp.id))
       }
     }
-
-    // Comments: claim all
-    await tx.update(comments)
-      .set({ userId, sessionId: null })
-      .where(eq(comments.sessionId, sessionId))
 
     // Link session to user
     await tx.update(visitorSessions)

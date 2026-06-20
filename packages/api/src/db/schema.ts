@@ -74,7 +74,6 @@ export const events = pgTable('events', {
   theme:         text('theme'),
   status:        text('status').notNull().default('draft'), // 'draft'|'published'|'cancelled'|'archived'
   showGuests:          boolean('show_guests').notNull().default(true),
-  allowComments:       boolean('allow_comments').notNull().default(true),
   showAlbum:           boolean('show_album').notNull().default(true),
   guestsRequireRsvp:   boolean('guests_require_rsvp').notNull().default(false),
   wallRequiresRsvp:    boolean('wall_requires_rsvp').notNull().default(false),
@@ -316,15 +315,3 @@ export const guestBlocks = pgTable('guest_blocks', {
   uniqueBlock: unique('guest_blocks_unique').on(t.eventId, t.blockingGuestId, t.blockedGuestId),
 }))
 
-export const comments = pgTable('comments', {
-  id:          uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-  eventId:     uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
-  sessionId:   uuid('session_id').references(() => visitorSessions.id, { onDelete: 'set null' }),
-  userId:      uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
-  displayName: text('display_name').notNull(),
-  body:        text('body').notNull(),
-  deletedAt:   timestamp('deleted_at', { withTimezone: true }),
-  createdAt:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => ({
-  eventCreatedIdx: index('comments_event_created_idx').on(t.eventId, t.createdAt).where(sql`${t.deletedAt} is null`),
-}))

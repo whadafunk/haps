@@ -41,7 +41,6 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
         theme: body.theme ?? null,
         eventType: body.eventType,
         showGuests: body.showGuests,
-        allowComments: body.allowComments,
         showAlbum: body.showAlbum ?? true,
         maxCapacity: body.maxCapacity ?? null,
         rsvpDeadline: body.rsvpDeadline ? new Date(body.rsvpDeadline) : null,
@@ -226,7 +225,6 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     if (body.theme !== undefined) updates['theme'] = body.theme ?? null
     if (body.status !== undefined) updates['status'] = body.status
     if (body.showGuests !== undefined) updates['showGuests'] = body.showGuests
-    if (body.allowComments !== undefined) updates['allowComments'] = body.allowComments
     if (body.showAlbum !== undefined) updates['showAlbum'] = body.showAlbum
     if (body.guestsRequireRsvp !== undefined) updates['guestsRequireRsvp'] = body.guestsRequireRsvp
     if (body.wallRequiresRsvp !== undefined) updates['wallRequiresRsvp'] = body.wallRequiresRsvp
@@ -593,7 +591,6 @@ function serializeEvent(event: typeof events.$inferSelect) {
     theme: event.theme,
     status: event.status,
     showGuests: event.showGuests,
-    allowComments: event.allowComments,
     showAlbum: event.showAlbum,
     guestsRequireRsvp: event.guestsRequireRsvp,
     wallRequiresRsvp: event.wallRequiresRsvp,

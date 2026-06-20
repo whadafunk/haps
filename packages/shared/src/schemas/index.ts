@@ -22,7 +22,6 @@ export const CreateEventSchema = z.object({
   theme: z.string().max(50).optional(),
   eventType: z.enum(['open', 'invite_only']).default('open'),
   showGuests: z.boolean().default(true),
-  allowComments: z.boolean().default(true),
   showAlbum: z.boolean().default(true),
   guestsRequireRsvp: z.boolean().default(false),
   wallRequiresRsvp: z.boolean().default(false),
@@ -49,7 +48,6 @@ export const UpdateEventSchema = z.object({
   theme: z.string().max(50).nullish(),
   status: z.enum(['draft', 'published', 'cancelled', 'archived']).optional(),
   showGuests: z.boolean().optional(),
-  allowComments: z.boolean().optional(),
   showAlbum: z.boolean().optional(),
   guestsRequireRsvp: z.boolean().optional(),
   wallRequiresRsvp: z.boolean().optional(),
@@ -84,12 +82,6 @@ export const UpdateRsvpSchema = z.object({
   status: z.enum(['yes', 'maybe', 'no']).optional(),
   headCount: z.number().int().positive().optional(),
   note: z.string().max(1000).optional(),
-}).strict()
-
-// Comments
-export const CreateCommentSchema = z.object({
-  displayName: z.string().min(1).max(200),
-  body: z.string().min(1).max(5000),
 }).strict()
 
 // Tokens

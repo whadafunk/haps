@@ -372,7 +372,6 @@
         endsAt: event.endsAt ?? undefined,
         theme: event.theme ?? undefined,
         showGuests: event.showGuests,
-        allowComments: event.allowComments,
         showAlbum: event.showAlbum,
         guestsRequireRsvp: event.guestsRequireRsvp,
         wallRequiresRsvp: event.wallRequiresRsvp,
@@ -572,9 +571,6 @@
               <option value="sunset">Sunset (red)</option>
             </select>
           </label>
-          <div class="checkboxes">
-            <label class="checkbox"><input type="checkbox" bind:checked={event.allowComments} /> Allow comments</label>
-          </div>
           <div class="visibility-group">
             <p class="channel-section-label">Require RSVP to view</p>
             <div class="checkboxes">

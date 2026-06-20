@@ -11,7 +11,6 @@ import editTokenPlugin from './middleware/editToken.js'
 import authRoutes from './routes/auth.js'
 import eventsRoutes from './routes/events.js'
 import rsvpsRoutes from './routes/rsvps.js'
-import commentsRoutes from './routes/comments.js'
 import postsRoutes from './routes/posts.js'
 import albumRoutes from './routes/album.js'
 import messagesRoutes from './routes/messages.js'
@@ -63,7 +62,6 @@ export async function buildApp() {
   await app.register(authRoutes)
   await app.register(eventsRoutes)
   await app.register(rsvpsRoutes)
-  await app.register(commentsRoutes)
   await app.register(postsRoutes)
   await app.register(albumRoutes)
   await app.register(messagesRoutes)

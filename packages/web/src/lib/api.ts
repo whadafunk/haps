@@ -1,4 +1,4 @@
-import type { Event, Rsvp, Comment, Post, AlbumPhoto } from '@haps/shared'
+import type { Event, Rsvp, Post, AlbumPhoto } from '@haps/shared'
 
 export class ApiError extends Error {
   constructor(
@@ -190,19 +190,6 @@ export const api = {
 
   listRsvps: (slug: string) =>
     apiFetch<{ rsvps: Array<Rsvp & { email?: string; guestId?: string | null; isHost?: boolean; profile: { avatarUrl: string | null; bio: string | null; vibe: string | null } | null }> }>(`/events/${slug}/rsvps`),
-
-  // Comments
-  listComments: (slug: string) =>
-    apiFetch<{ comments: Comment[] }>(`/events/${slug}/comments`),
-
-  postComment: (slug: string, body: { displayName: string; body: string }) =>
-    apiFetch<{ comment: Comment }>(`/events/${slug}/comments`, { method: 'POST', body: JSON.stringify(body) }),
-
-  deleteComment: (slug: string, commentId: string, editToken?: string) =>
-    apiFetch<void>(`/events/${slug}/comments/${commentId}`, {
-      method: 'DELETE',
-      headers: editToken ? { 'x-edit-token': editToken } : {},
-    }),
 
   // Wall posts
   listPosts: (slug: string) =>

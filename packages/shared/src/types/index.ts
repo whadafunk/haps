@@ -24,7 +24,6 @@ export interface Event {
   status: 'draft' | 'published' | 'cancelled' | 'archived'
   eventType: 'open' | 'invite_only'
   showGuests: boolean
-  allowComments: boolean
   showAlbum: boolean
   guestsRequireRsvp: boolean
   wallRequiresRsvp: boolean
@@ -60,14 +59,6 @@ export interface Rsvp {
   checkedInAt?: string | null
   createdAt: string
   updatedAt: string
-}
-
-export interface Comment {
-  id: string
-  eventId: string
-  displayName: string
-  body: string
-  createdAt: string
 }
 
 export interface AlbumPhoto {
