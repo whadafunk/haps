@@ -712,7 +712,7 @@
                         onclick={(e) => { e.stopPropagation(); reactionPickerPostId = reactionPickerPostId === post.id ? null : post.id }}
                         title="Add reaction"
                         aria-label="Add reaction"
-                      >+😊</button>
+                      >React</button>
                       {#if reactionPickerPostId === post.id}
                         <div class="reaction-picker" role="menu">
                           {#each REACTION_EMOJIS as emoji}

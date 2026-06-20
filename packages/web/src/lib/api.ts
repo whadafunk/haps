@@ -220,7 +220,7 @@ export const api = {
   toggleReaction: (slug: string, postId: string, emoji: string) =>
     apiFetch<{ reactions: Record<string, number>; myReactions: string[] }>(
       `/events/${slug}/posts/${postId}/reactions`,
-      { method: 'POST', body: { emoji } },
+      { method: 'POST', body: JSON.stringify({ emoji }) },
     ),
 
   // Album
