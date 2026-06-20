@@ -415,24 +415,26 @@
     <!-- RSVP section -->
     {#if event.status === 'published'}
       {#if data.myRsvp && !editingRsvp}
-        {#if data.myRsvp.status === 'waitlist'}
-          <div class="waitlist-banner">
-            <strong>You're on the waitlist.</strong>
-            <p>We'll notify you if a spot opens up.</p>
-          </div>
-        {/if}
-        <div class="rsvp-confirmed">
-          <span class="rsvp-confirmed-status rsvp-chip-{data.myRsvp.status}">
-            {data.myRsvp.status === 'yes' ? 'Going' : data.myRsvp.status === 'maybe' ? 'Maybe' : data.myRsvp.status === 'waitlist' ? 'Waitlisted' : "Can't go"}{#if data.myRsvp.headCount > 1} · +{data.myRsvp.headCount - 1}{/if}
-          </span>
-          <span class="rsvp-confirmed-sep">·</span>
-          <span class="rsvp-confirmed-name">{data.myRsvp.displayName}</span>
-          {#if !rsvpDeadlinePassed}
-            <button class="rsvp-confirmed-change" onclick={() => { editingRsvp = true; rsvpError = '' }}>
-              {data.myRsvp.status === 'waitlist' ? 'Cancel / change' : 'Change RSVP'}
-            </button>
+        <section class="section">
+          {#if data.myRsvp.status === 'waitlist'}
+            <div class="waitlist-banner">
+              <strong>You're on the waitlist.</strong>
+              <p>We'll notify you if a spot opens up.</p>
+            </div>
           {/if}
-        </div>
+          <div class="rsvp-confirmed">
+            <span class="rsvp-confirmed-status rsvp-chip-{data.myRsvp.status}">
+              {data.myRsvp.status === 'yes' ? 'Going' : data.myRsvp.status === 'maybe' ? 'Maybe' : data.myRsvp.status === 'waitlist' ? 'Waitlisted' : "Can't go"}{#if data.myRsvp.headCount > 1} · +{data.myRsvp.headCount - 1}{/if}
+            </span>
+            <span class="rsvp-confirmed-sep">·</span>
+            <span class="rsvp-confirmed-name">{data.myRsvp.displayName}</span>
+            {#if !rsvpDeadlinePassed}
+              <button class="rsvp-confirmed-change" onclick={() => { editingRsvp = true; rsvpError = '' }}>
+                {data.myRsvp.status === 'waitlist' ? 'Cancel / change' : 'Change RSVP'}
+              </button>
+            {/if}
+          </div>
+        </section>
       {:else}
         <section class="section">
           <h2>RSVP</h2>
