@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, posts, albumPhotos, postPhotos, users, guests, rsvps } from '../db/schema.js'
+import { events, posts, albumPhotos, postPhotos, users, guests, rsvps, visitorSessions } from '../db/schema.js'
 import { eq, and, isNull, asc, inArray } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { ensureSession } from '../middleware/session.js'
@@ -74,6 +74,32 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     const currentSessionId = request.session?.id
     const currentUserId = request.user?.sub
 
+    // Build sessionId → guestId and userId → guestId maps for profile linking
+    const guestIdBySession: Record<string, string> = {}
+    const guestIdByUser: Record<string, string> = {}
+
+    const sessionIds = postRows.map((p) => p.sessionId).filter((id): id is string => !!id)
+    if (sessionIds.length > 0) {
+      const rows = await db
+        .select({ id: visitorSessions.id, guestId: visitorSessions.guestId })
+        .from(visitorSessions)
+        .where(inArray(visitorSessions.id, sessionIds))
+      for (const r of rows) {
+        if (r.guestId) guestIdBySession[r.id] = r.guestId
+      }
+    }
+
+    const userIds = postRows.map((p) => p.userId).filter((id): id is string => !!id)
+    if (userIds.length > 0) {
+      const rows = await db
+        .select({ id: guests.id, userId: guests.userId })
+        .from(guests)
+        .where(inArray(guests.userId, userIds))
+      for (const r of rows) {
+        if (r.userId) guestIdByUser[r.userId] = r.id
+      }
+    }
+
     return {
       posts: postRows.map((p) => ({
         id: p.id,
@@ -81,6 +107,7 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
         body: p.body,
         photos: photosMap[p.id] ?? [],
         createdAt: p.createdAt.toISOString(),
+        guestId: (p.sessionId && guestIdBySession[p.sessionId]) || (p.userId && guestIdByUser[p.userId]) || null,
         isOwn: !!(
           (currentSessionId && p.sessionId === currentSessionId) ||
           (currentUserId && p.userId === currentUserId)

@@ -653,7 +653,13 @@
               {#each posts as post (post.id)}
                 <div class="post-card">
                   <div class="post-header">
-                    <strong class="post-author">{post.authorName}</strong>
+                    {#if post.guestId}
+                      <button class="post-author post-author-btn" onclick={() => openProfileModal({ id: post.id, displayName: post.authorName, status: 'yes', headCount: 1, guestId: post.guestId ?? null, profile: null })}>
+                        {post.authorName}
+                      </button>
+                    {:else}
+                      <strong class="post-author">{post.authorName}</strong>
+                    {/if}
                     <span class="post-time">{new Date(post.createdAt).toLocaleDateString()}</span>
                     {#if post.isOwn || data.isEditor}
                       <button class="post-delete-btn" onclick={() => deletePost(post.id)} title="Delete post">✕</button>
@@ -954,7 +960,9 @@
   .post-feed { display: flex; flex-direction: column; gap: 0.75rem; }
   .post-card { background: var(--card-inner, #e8ddd0); border-radius: 8px; padding: 0.75rem; border: 1px solid var(--border, #cfc3b0); }
   .post-header { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.375rem; }
-  .post-author { font-size: 0.875rem; color: #1a1510; }
+  .post-author { font-size: 0.875rem; color: #1a1510; font-weight: 600; }
+  .post-author-btn { background: none; border: none; padding: 0; font-family: inherit; cursor: pointer; }
+  .post-author-btn:hover { text-decoration: underline; color: var(--accent, #b05525); }
   .post-time { font-size: 0.75rem; color: #6b6058; }
   .post-delete-btn { margin-left: auto; background: none; border: none; font-size: 0.8rem; color: #9a8f86; cursor: pointer; padding: 0; line-height: 1; }
   .post-delete-btn:hover { color: #c03828; }
