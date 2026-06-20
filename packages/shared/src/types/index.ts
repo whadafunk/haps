@@ -27,6 +27,7 @@ export interface Event {
   showAlbum: boolean
   guestsRequireRsvp: boolean
   wallRequiresRsvp: boolean
+  moderatePosts: boolean
   allowPlusOnes: boolean
   maxPlusOnes?: number | null
   maxCapacity?: number | null
@@ -81,6 +82,7 @@ export interface Post {
   reactions?: Record<string, number>
   myReactions?: string[]
   isOwn?: boolean
+  status?: 'pending' | 'approved'
 }
 
 export interface VisitorSession {

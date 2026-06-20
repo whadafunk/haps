@@ -204,6 +204,19 @@ export const api = {
       headers: editToken ? { 'x-edit-token': editToken } : {},
     }),
 
+  approvePost: (slug: string, postId: string, editToken?: string) =>
+    apiFetch<{ post: { id: string; status: string } }>(`/events/${slug}/posts/${postId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'approved' }),
+      headers: editToken ? { 'x-edit-token': editToken } : {},
+    }),
+
+  approveAllPosts: (slug: string, editToken?: string) =>
+    apiFetch<{ approved: number }>(`/events/${slug}/posts/approve-all`, {
+      method: 'POST',
+      headers: editToken ? { 'x-edit-token': editToken } : {},
+    }),
+
   toggleReaction: (slug: string, postId: string, emoji: string) =>
     apiFetch<{ reactions: Record<string, number>; myReactions: string[] }>(
       `/events/${slug}/posts/${postId}/reactions`,

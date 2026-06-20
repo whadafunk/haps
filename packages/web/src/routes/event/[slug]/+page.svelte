@@ -368,7 +368,7 @@
         if (!guestList.some((g) => g.id === payload.rsvp.id)) guestList = [...guestList, payload.rsvp]
       } else if (payload.action === 'updated') {
         guestList = guestList.map((g) => g.id === payload.rsvp.id ? { ...g, ...payload.rsvp } : g)
-      } else {
+      } else if (payload.action === 'removed') {
         guestList = guestList.filter((g) => g.id !== payload.rsvpId)
       }
     })

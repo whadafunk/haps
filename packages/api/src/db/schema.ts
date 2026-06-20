@@ -85,6 +85,7 @@ export const events = pgTable('events', {
   rsvpDeadline:  timestamp('rsvp_deadline', { withTimezone: true }),
   expiresAt:     timestamp('expires_at', { withTimezone: true }),
   eventType:      text('event_type').notNull().default('open'), // 'open' | 'invite_only'
+  moderatePosts:  boolean('moderate_posts').notNull().default(false),
   welcomeMessage: text('welcome_message'),
   createdAt:      timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt:      timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -237,6 +238,7 @@ export const posts = pgTable('posts', {
   userId:     uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
   authorName: text('author_name').notNull(),
   body:       text('body'),
+  status:     text('status').notNull().default('approved'), // 'pending' | 'approved'
   deletedAt:  timestamp('deleted_at', { withTimezone: true }),
   createdAt:  timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({

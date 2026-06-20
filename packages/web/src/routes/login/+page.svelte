@@ -18,7 +18,7 @@
     loading = true
     try {
       const { user } = await api.login(email, password, skipMerge)
-      goto(user.type === 'guest' ? '/my-events' : '/dashboard', { invalidateAll: true })
+      goto(user.role === 'member' ? '/my-events' : '/dashboard', { invalidateAll: true })
     } catch (e: unknown) {
       error = e instanceof ApiError ? e.message : 'Login failed. Please try again.'
     } finally {

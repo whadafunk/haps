@@ -32,6 +32,8 @@
   let wallTab = $state<'wall' | 'album'>('wall')
   let posts = $state<Post[]>([])
   let postsLoaded = $state(false)
+  let approvingPostId = $state<string | null>(null)
+  let approvingAll = $state(false)
   let albumPhotos = $state<(AlbumPhoto & { isOwn?: boolean })[]>([])
   let albumLoaded = $state(false)
   let postBody = $state('')
@@ -375,6 +377,7 @@
         showAlbum: event.showAlbum,
         guestsRequireRsvp: event.guestsRequireRsvp,
         wallRequiresRsvp: event.wallRequiresRsvp,
+        moderatePosts: event.moderatePosts,
         rsvpDeadline: event.rsvpDeadline ?? null,
         maxCapacity: event.maxCapacity ?? null,
         welcomeMessage: event.welcomeMessage ?? null,
@@ -436,6 +439,26 @@
       await api.deletePost(event.slug, postId, data.editToken)
       posts = posts.filter(p => p.id !== postId)
     } catch { /**/ }
+  }
+
+  async function approvePost(postId: string) {
+    approvingPostId = postId
+    try {
+      await api.approvePost(event.slug, postId, data.editToken)
+      posts = posts.map(p => p.id === postId ? { ...p, status: 'approved' as const } : p)
+    } catch { /**/ } finally {
+      approvingPostId = null
+    }
+  }
+
+  async function approveAllPosts() {
+    approvingAll = true
+    try {
+      await api.approveAllPosts(event.slug, data.editToken)
+      posts = posts.map(p => p.status === 'pending' ? { ...p, status: 'approved' as const } : p)
+    } catch { /**/ } finally {
+      approvingAll = false
+    }
   }
 
   async function uploadToAlbum() {
@@ -572,6 +595,12 @@
             </select>
           </label>
           <div class="visibility-group">
+            <p class="channel-section-label">Moderation</p>
+            <div class="checkboxes">
+              <label class="checkbox"><input type="checkbox" bind:checked={event.moderatePosts} /> Moderate wall posts (hold for approval)</label>
+            </div>
+          </div>
+          <div class="visibility-group">
             <p class="channel-section-label">Require RSVP to view</p>
             <div class="checkboxes">
               <label class="checkbox"><input type="checkbox" bind:checked={event.guestsRequireRsvp} /> Guest list &amp; RSVP numbers</label>
@@ -703,11 +732,49 @@
           {/if}
 
           {#if postsLoaded}
-            {#if posts.length === 0}
+            {#if event.moderatePosts}
+              {@const pendingPosts = posts.filter(p => p.status === 'pending')}
+              {#if pendingPosts.length > 0}
+                <div class="moderation-queue">
+                  <div class="moderation-queue-header">
+                    <span class="moderation-queue-title">Pending approval ({pendingPosts.length})</span>
+                    <button class="btn-secondary-sm" onclick={approveAllPosts} disabled={approvingAll}>
+                      {approvingAll ? 'Approving…' : 'Approve all'}
+                    </button>
+                  </div>
+                  {#each pendingPosts as post (post.id)}
+                    <div class="post-card post-card-pending">
+                      <div class="post-header">
+                        <strong class="post-author">{post.authorName}</strong>
+                        <span class="post-time">{new Date(post.createdAt).toLocaleDateString()}</span>
+                        <div class="post-moderation-actions">
+                          <button class="btn-approve" onclick={() => approvePost(post.id)} disabled={approvingPostId === post.id}>
+                            {approvingPostId === post.id ? '…' : 'Approve'}
+                          </button>
+                          <button class="post-delete-btn" onclick={() => deletePost(post.id)} title="Reject post">✕</button>
+                        </div>
+                      </div>
+                      {#if post.body}<p class="post-body">{post.body}</p>{/if}
+                      {#if post.photos.length > 0}
+                        <div class="post-photos" class:single={post.photos.length === 1}>
+                          {#each post.photos as photo (photo.id)}
+                            <img src={photo.url} alt={photo.caption ?? ''} class="photo-thumb" loading="lazy" />
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            {/if}
+            {@const approvedPosts = posts.filter(p => p.status !== 'pending')}
+            {#if approvedPosts.length === 0 && posts.filter(p => p.status === 'pending').length === 0}
               <p class="muted">No posts yet.</p>
-            {:else}
+            {:else if approvedPosts.length === 0 && !event.moderatePosts}
+              <p class="muted">No posts yet.</p>
+            {:else if approvedPosts.length > 0}
               <div class="post-feed">
-                {#each posts as post (post.id)}
+                {#each approvedPosts as post (post.id)}
                   <div class="post-card">
                     <div class="post-header">
                       <strong class="post-author">{post.authorName}</strong>
@@ -1226,12 +1293,22 @@
   .photo-pick-btn { display: inline-block; background: #ede8e0; color: #4e453e; border: 1px solid #c8bdb0; padding: 0.375rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 500; cursor: pointer; }
   .photo-pick-btn:hover { background: #e0d8cc; }
 
+  .moderation-queue { margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+  .moderation-queue-header { display: flex; align-items: center; justify-content: space-between; padding: 0.25rem 0 0.375rem; }
+  .moderation-queue-title { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9a8f86; }
+  .post-card-pending { border-color: #d4a847; background: #f5edd8; }
+  .post-moderation-actions { margin-left: auto; display: flex; align-items: center; gap: 0.375rem; }
+  .btn-approve { background: #4a7c59; color: #fff; border: none; border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.75rem; cursor: pointer; }
+  .btn-approve:hover { background: #3a6147; }
+  .btn-approve:disabled { opacity: 0.5; cursor: default; }
+
   .post-feed { display: flex; flex-direction: column; gap: 0.75rem; }
   .post-card { background: #e8ddd0; border: 1px solid #cfc3b0; border-radius: 10px; padding: 0.875rem 1rem; display: flex; flex-direction: column; gap: 0.375rem; }
   .post-header { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
   .post-author { font-size: 0.875rem; color: #1a1510; }
   .post-time { font-size: 0.75rem; color: #9a8f86; }
-  .post-delete-btn { margin-left: auto; background: none; border: none; color: #9a8f86; font-size: 0.8rem; cursor: pointer; padding: 0.1rem 0.3rem; line-height: 1; }
+  .post-delete-btn { background: none; border: none; color: #9a8f86; font-size: 0.8rem; cursor: pointer; padding: 0.1rem 0.3rem; line-height: 1; margin-left: auto; }
+  .post-moderation-actions .post-delete-btn { margin-left: 0; }
   .post-delete-btn:hover { color: #8b3016; }
   .post-body { margin: 0; font-size: 0.875rem; color: #3d352e; white-space: pre-wrap; }
   .post-photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.25rem; margin-top: 0.25rem; }

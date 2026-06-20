@@ -51,6 +51,7 @@ export const UpdateEventSchema = z.object({
   showAlbum: z.boolean().optional(),
   guestsRequireRsvp: z.boolean().optional(),
   wallRequiresRsvp: z.boolean().optional(),
+  moderatePosts: z.boolean().optional(),
   maxCapacity: z.number().int().positive().nullish(),
   rsvpDeadline: z.string().datetime().nullish(),
   expiresAt: z.string().datetime().nullish(),

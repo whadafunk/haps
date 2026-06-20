@@ -16,7 +16,7 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     const { slug } = request.params as { slug: string }
 
     const eventRows = await db
-      .select({ id: events.id, showAlbum: events.showAlbum, wallRequiresRsvp: events.wallRequiresRsvp })
+      .select({ id: events.id, showAlbum: events.showAlbum, wallRequiresRsvp: events.wallRequiresRsvp, moderatePosts: events.moderatePosts })
       .from(events)
       .where(eq(events.slug, slug))
       .limit(1)
@@ -37,17 +37,23 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
       if (!hasRsvp) throw createError(403, 'RSVP_REQUIRED', 'You must RSVP to view the wall.')
     }
 
+    // Editors see all non-deleted posts (pending + approved); guests see approved only
+    const statusFilter = request.isEditor
+      ? isNull(posts.deletedAt)
+      : and(isNull(posts.deletedAt), eq(posts.status, 'approved'))
+
     const postRows = await db
       .select({
         id: posts.id,
         authorName: posts.authorName,
         body: posts.body,
+        status: posts.status,
         sessionId: posts.sessionId,
         userId: posts.userId,
         createdAt: posts.createdAt,
       })
       .from(posts)
-      .where(and(eq(posts.eventId, event.id), isNull(posts.deletedAt)))
+      .where(and(eq(posts.eventId, event.id), statusFilter))
       .orderBy(asc(posts.createdAt))
 
     const postIds = postRows.map((r) => r.id)
@@ -77,7 +83,6 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     const currentGuestId = request.session?.guestId
     const currentUserId = request.user?.sub
 
-    // Build sessionId → guestId and userId → guestId maps for profile linking
     const guestIdBySession: Record<string, string> = {}
     const guestIdByUser: Record<string, string> = {}
 
@@ -103,7 +108,6 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    // Batch-fetch reaction counts and current user's reactions
     const reactionsMap: Record<string, Record<string, number>> = {}
     const myReactionsMap: Record<string, string[]> = {}
 
@@ -143,6 +147,7 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
         id: p.id,
         authorName: p.authorName,
         body: p.body,
+        status: p.status as 'pending' | 'approved',
         photos: photosMap[p.id] ?? [],
         createdAt: p.createdAt.toISOString(),
         guestId: (p.sessionId && guestIdBySession[p.sessionId]) || (p.userId && guestIdByUser[p.userId]) || null,
@@ -161,7 +166,7 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     await ensureSession(request, reply)
 
     const eventRows = await db
-      .select({ id: events.id, showAlbum: events.showAlbum, wallRequiresRsvp: events.wallRequiresRsvp, status: events.status })
+      .select({ id: events.id, showAlbum: events.showAlbum, wallRequiresRsvp: events.wallRequiresRsvp, status: events.status, moderatePosts: events.moderatePosts })
       .from(events)
       .where(eq(events.slug, slug))
       .limit(1)
@@ -239,6 +244,9 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
       await saveLocalFile(Readable.from(buffer), filename)
     }
 
+    // Editors posting on their own event are never held for moderation
+    const postStatus = event.moderatePosts && !request.isEditor ? 'pending' : 'approved'
+
     const result = await db.transaction(async (tx) => {
       const insertedPhotos = photoRecords.length > 0
         ? await tx.insert(albumPhotos).values(
@@ -258,7 +266,8 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
         userId: session.userId,
         authorName,
         body: body ?? null,
-      }).returning({ id: posts.id, authorName: posts.authorName, body: posts.body, createdAt: posts.createdAt })
+        status: postStatus,
+      }).returning({ id: posts.id, authorName: posts.authorName, body: posts.body, status: posts.status, createdAt: posts.createdAt })
 
       if (!post) throw createError(500, 'INTERNAL_ERROR', 'Failed to create post.')
 
@@ -275,16 +284,117 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
       id: result.post.id,
       authorName: result.post.authorName,
       body: result.post.body,
+      status: result.post.status as 'pending' | 'approved',
       photos: photoRecords.map((p, i) => ({ id: result.insertedPhotos[i]?.id ?? '', url: p.url, caption: null })),
       createdAt: result.post.createdAt.toISOString(),
       guestId: session.guestId ?? null,
       reactions: {} as Record<string, number>,
       myReactions: [] as string[],
     }
-    // Broadcast to other connected clients (isOwn is always false for others)
-    broadcast(slug, 'new_post', { ...responsePost, isOwn: false })
+
+    // Only broadcast approved posts to connected guests
+    if (postStatus === 'approved') {
+      broadcast(slug, 'new_post', { ...responsePost, isOwn: false })
+    }
 
     return reply.code(201).send({ post: { ...responsePost, isOwn: true } })
+  })
+
+  // Approve or reject a single pending post (editor only)
+  fastify.patch('/api/events/:slug/posts/:postId', {
+    preHandler: [fastify.requireEditToken],
+  }, async (request, reply) => {
+    const { postId } = request.params as { slug: string; postId: string }
+    const BodySchema = z.object({ status: z.enum(['approved']) }).strict()
+    const { status } = BodySchema.parse(request.body)
+
+    const rows = await db
+      .select({ id: posts.id, eventId: posts.eventId, authorName: posts.authorName, body: posts.body, createdAt: posts.createdAt, guestId: posts.sessionId })
+      .from(posts)
+      .where(and(eq(posts.id, postId), isNull(posts.deletedAt)))
+      .limit(1)
+
+    const post = rows[0]
+    if (!post) throw createError(404, 'POST_NOT_FOUND', 'Post not found.')
+
+    await db.update(posts).set({ status }).where(eq(posts.id, postId))
+
+    if (status === 'approved') {
+      // Broadcast the now-approved post to connected guests
+      const slug = (request.params as { slug: string }).slug
+      const approvedPost = {
+        id: post.id,
+        authorName: post.authorName,
+        body: post.body,
+        status: 'approved' as const,
+        photos: [] as Array<{ id: string; url: string; caption: null }>,
+        createdAt: post.createdAt.toISOString(),
+        guestId: null,
+        reactions: {} as Record<string, number>,
+        myReactions: [] as string[],
+        isOwn: false,
+      }
+      // Fetch photos for the broadcast
+      const photoRows = await db
+        .select({ id: albumPhotos.id, url: albumPhotos.url, caption: albumPhotos.caption })
+        .from(postPhotos)
+        .innerJoin(albumPhotos, eq(postPhotos.photoId, albumPhotos.id))
+        .where(and(eq(postPhotos.postId, postId), isNull(albumPhotos.deletedAt)))
+        .orderBy(asc(postPhotos.sortOrder))
+      approvedPost.photos = photoRows.map(p => ({ id: p.id, url: p.url, caption: null }))
+      broadcast(slug, 'new_post', approvedPost)
+    }
+
+    return reply.send({ post: { id: postId, status } })
+  })
+
+  // Approve all pending posts for an event (editor only)
+  fastify.post('/api/events/:slug/posts/approve-all', {
+    preHandler: [fastify.requireEditToken],
+  }, async (request, reply) => {
+    const { slug } = request.params as { slug: string }
+
+    const eventRows = await db
+      .select({ id: events.id })
+      .from(events)
+      .where(eq(events.slug, slug))
+      .limit(1)
+    const event = eventRows[0]
+    if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
+
+    const pending = await db
+      .select({ id: posts.id, authorName: posts.authorName, body: posts.body, createdAt: posts.createdAt })
+      .from(posts)
+      .where(and(eq(posts.eventId, event.id), eq(posts.status, 'pending'), isNull(posts.deletedAt)))
+
+    if (pending.length === 0) return reply.send({ approved: 0 })
+
+    const pendingIds = pending.map(p => p.id)
+    await db.update(posts).set({ status: 'approved' }).where(inArray(posts.id, pendingIds))
+
+    // Broadcast each newly-approved post
+    for (const post of pending) {
+      const photoRows = await db
+        .select({ id: albumPhotos.id, url: albumPhotos.url })
+        .from(postPhotos)
+        .innerJoin(albumPhotos, eq(postPhotos.photoId, albumPhotos.id))
+        .where(and(eq(postPhotos.postId, post.id), isNull(albumPhotos.deletedAt)))
+        .orderBy(asc(postPhotos.sortOrder))
+      broadcast(slug, 'new_post', {
+        id: post.id,
+        authorName: post.authorName,
+        body: post.body,
+        status: 'approved',
+        photos: photoRows.map(p => ({ id: p.id, url: p.url, caption: null })),
+        createdAt: post.createdAt.toISOString(),
+        guestId: null,
+        reactions: {},
+        myReactions: [],
+        isOwn: false,
+      })
+    }
+
+    return reply.send({ approved: pending.length })
   })
 
   fastify.post('/api/events/:slug/posts/:postId/reactions', async (request, reply) => {
@@ -295,7 +405,6 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     const BodySchema = z.object({ emoji: z.enum(['❤️', '😂', '🎉', '🔥']) }).strict()
     const { emoji } = BodySchema.parse(request.body)
 
-    // Verify post exists and belongs to this event
     const eventRows = await db
       .select({ id: events.id })
       .from(events)
@@ -305,17 +414,18 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
 
     const postRows = await db
-      .select({ id: posts.id, eventId: posts.eventId })
+      .select({ id: posts.id, eventId: posts.eventId, status: posts.status })
       .from(posts)
       .where(and(eq(posts.id, postId), isNull(posts.deletedAt)))
       .limit(1)
     const post = postRows[0]
     if (!post || post.eventId !== event.id) throw createError(404, 'POST_NOT_FOUND', 'Post not found.')
+    // Guests cannot react to pending posts
+    if (post.status === 'pending' && !request.isEditor) throw createError(403, 'POST_PENDING', 'This post is awaiting moderation.')
 
     const session = request.session!
     const guestId = session.guestId ?? null
 
-    // Toggle: delete if exists, insert if not
     if (guestId) {
       const existing = await db
         .select({ id: postReactions.id })
@@ -340,7 +450,6 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    // Return updated counts + my reactions
     const allReactions = await db
       .select({ emoji: postReactions.emoji, count: sql<number>`count(*)::int` })
       .from(postReactions)
@@ -356,8 +465,7 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     const myRows = await db.select({ emoji: postReactions.emoji }).from(postReactions).where(myWhere)
     const myReactions = myRows.map((r) => r.emoji)
 
-    void ALLOWED_EMOJIS // suppress unused warning
-    // Broadcast updated counts to all connected clients (myReactions is per-user, excluded)
+    void ALLOWED_EMOJIS
     broadcast(slug, 'post_reaction', { postId, reactions })
     return reply.send({ reactions, myReactions })
   })
