@@ -24,15 +24,25 @@ export const load: LayoutServerLoad = async ({ cookies }) => {
     }
   }
 
-  let session: { displayName: string | null; email: string | null } | null = null
+  let session: { displayName: string | null; email: string | null; guestId: string | null } | null = null
   if (!user && cookies.get('vsid')) {
     try {
-      const data = await serverGet<{ session: { displayName: string | null; email: string | null } }>('/session/me', cookies)
+      const data = await serverGet<{ session: { displayName: string | null; email: string | null; guestId: string | null } }>('/session/me', cookies)
       session = data.session
     } catch {
       // invalid session cookie
     }
   }
 
-  return { meta: null, session, user, setupRequired: false, requireRsvpBeforeRegister }
+  let unreadCount = 0
+  if ((user || session) && cookies.get('vsid')) {
+    try {
+      const data = await serverGet<{ unreadCount: number }>('/notifications', cookies)
+      unreadCount = data.unreadCount
+    } catch {
+      // non-critical
+    }
+  }
+
+  return { meta: null, session, user, setupRequired: false, requireRsvpBeforeRegister, unreadCount }
 }

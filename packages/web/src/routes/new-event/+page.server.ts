@@ -28,6 +28,7 @@ export const actions: Actions = {
     const maxCapacity = maxCapacityRaw ? parseInt(maxCapacityRaw, 10) : undefined
     const rsvpDeadlineRaw = data.get('rsvpDeadline')?.toString()
     const rsvpDeadline = rsvpDeadlineRaw ? new Date(rsvpDeadlineRaw + 'T23:59:59Z').toISOString() : undefined
+    const welcomeMessage = data.get('welcomeMessage')?.toString() || undefined
 
     if (!title || !eventDate || !eventTime) return fail(400, { error: 'Title, date, and time are required.' })
 
@@ -41,6 +42,7 @@ export const actions: Actions = {
           timezone, theme, eventType,
           ...(maxCapacity ? { maxCapacity } : {}),
           ...(rsvpDeadline ? { rsvpDeadline } : {}),
+          ...(welcomeMessage ? { welcomeMessage } : {}),
         },
         cookies,
       )

@@ -155,6 +155,34 @@
       "when": 1781690200000,
       "tag": "0021_guest_profile_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1781951938000,
+      "tag": "0022_notifications_messaging",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1781952000000,
+      "tag": "0023_push_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1782052000000,
+      "tag": "0024_guest_signals",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1782200000000,
+      "tag": "0025_direct_messages",
+      "breakpoints": true
     }
   ]
 }

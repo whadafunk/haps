@@ -147,6 +147,11 @@
         {/if}
       </div>
       <label>
+        Welcome message
+        <textarea name="welcomeMessage" rows="3" maxlength="2000" placeholder="Sent to guests after they RSVP. Include dress code reminders, directions, or any important info…"></textarea>
+        <span class="field-hint">Optional. Guests receive this as a notification after RSVPing.</span>
+      </label>
+      <label>
         Theme
         <select name="theme" bind:value={selectedTheme}>
           <option value="">Default (warm)</option>

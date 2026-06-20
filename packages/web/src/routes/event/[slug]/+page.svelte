@@ -75,13 +75,35 @@
   let lightboxPhoto = $state<LightboxPhoto | null>(null)
 
   type GuestProfile = { avatarUrl: string | null; bio: string | null; vibe: string | null }
-  type GuestRow = { id: string; displayName: string; status: string; headCount: number; isHost?: boolean; profile: GuestProfile | null }
+  type GuestRow = { id: string; displayName: string; status: string; headCount: number; isHost?: boolean; guestId?: string | null; profile: GuestProfile | null }
   let guestList = $state<GuestRow[]>([])
   let guestListLoaded = $state(false)
   let guestListExpanded = $state(false)
 
   // Profile modal
-  let profileModal = $state<{ name: string; profile: GuestProfile } | null>(null)
+  let profileModal = $state<{ name: string; guestId: string | null; profile: GuestProfile } | null>(null)
+
+  // Signal state (per open modal)
+  let signalSent = $state<'wink' | 'crush' | null>(null)
+  let signalLoading = $state(false)
+  let signalError = $state('')
+  let signalMutual = $state(false)
+
+  // DM state (per open modal)
+  type DmMessage = { id: string; fromMe: boolean; body: string; createdAt: string }
+  let dmOpen = $state(false)
+  let dmMessages = $state<DmMessage[]>([])
+  let dmInput = $state('')
+  let dmLoading = $state(false)
+  let dmSending = $state(false)
+  let dmError = $state('')
+  let dmBlocked = $state(false)
+
+  // Current viewer's guestId (for sending signals)
+  const currentGuestId = $derived(
+    data.user?.type === 'guest' ? data.user.id :
+    data.session?.guestId ?? null
+  )
 
   const event = $derived(data.event)
   const rsvpDeadlinePassed = $derived(!!event.rsvpDeadline && new Date() > new Date(event.rsvpDeadline))
@@ -217,6 +239,75 @@
       posts = posts.map(p => ({ ...p, photos: p.photos.filter(ph => ph.id !== photoId) }))
       lightboxPhoto = null
     } catch { /**/ }
+  }
+
+  async function sendSignal(type: 'wink' | 'crush') {
+    if (!profileModal?.guestId) return
+    signalLoading = true
+    signalError = ''
+    try {
+      const res = await api.sendSignal(event.slug, { toGuestId: profileModal.guestId, type })
+      signalSent = type
+      signalMutual = res.signal.mutualReveal
+    } catch (e: unknown) {
+      signalError = e instanceof ApiError ? e.message : 'Failed to send.'
+    } finally {
+      signalLoading = false
+    }
+  }
+
+  function openProfileModal(guest: GuestRow) {
+    if (!guest.profile) return
+    profileModal = { name: guest.displayName, guestId: guest.guestId ?? null, profile: guest.profile }
+    signalSent = null
+    signalError = ''
+    signalMutual = false
+    dmOpen = false
+    dmMessages = []
+    dmInput = ''
+    dmError = ''
+    dmBlocked = false
+  }
+
+  async function openDmThread() {
+    if (!profileModal?.guestId) return
+    dmOpen = true
+    dmLoading = true
+    dmError = ''
+    try {
+      const res = await api.getDmThread(event.slug, profileModal.guestId)
+      dmMessages = res.messages
+      dmBlocked = res.blocked
+    } catch (e: unknown) {
+      dmError = e instanceof ApiError ? e.message : 'Failed to load messages.'
+    } finally {
+      dmLoading = false
+    }
+  }
+
+  async function sendDm() {
+    if (!profileModal?.guestId || !dmInput.trim()) return
+    dmSending = true
+    dmError = ''
+    const text = dmInput.trim()
+    dmInput = ''
+    try {
+      const res = await api.sendDm(event.slug, { toGuestId: profileModal.guestId, body: text })
+      dmMessages = [...dmMessages, { id: res.message.id, fromMe: true, body: res.message.body, createdAt: res.message.createdAt }]
+    } catch (e: unknown) {
+      dmError = e instanceof ApiError ? e.message : 'Failed to send.'
+      dmInput = text
+    } finally {
+      dmSending = false
+    }
+  }
+
+  async function blockGuest() {
+    if (!profileModal?.guestId) return
+    try {
+      await api.blockGuest(event.slug, profileModal.guestId)
+      dmBlocked = true
+    } catch { /* non-critical */ }
   }
 
   $effect(() => {
@@ -506,8 +597,8 @@
                   class:guest-row-clickable={!!guest.profile}
                   role={guest.profile ? 'button' : undefined}
                   tabindex={guest.profile ? 0 : undefined}
-                  onclick={() => guest.profile && (profileModal = { name: guest.displayName, profile: guest.profile })}
-                  onkeydown={(e) => e.key === 'Enter' && guest.profile && (profileModal = { name: guest.displayName, profile: guest.profile })}
+                  onclick={() => guest.profile && openProfileModal(guest)}
+                  onkeydown={(e) => e.key === 'Enter' && guest.profile && openProfileModal(guest)}
                 >
                   {#if guest.profile?.avatarUrl}
                     <img src={guest.profile.avatarUrl} alt="" class="guest-avatar" />
@@ -632,6 +723,80 @@
       {#if profileModal.profile.bio}
         <p class="modal-bio">{profileModal.profile.bio}</p>
       {/if}
+
+      {#if profileModal.guestId && currentGuestId && profileModal.guestId !== currentGuestId}
+        {#if !dmOpen}
+          <div class="signal-row">
+            {#if signalMutual}
+              <p class="signal-mutual">💞 Mutual crush! You two should talk.</p>
+            {:else if signalSent === 'crush'}
+              <p class="signal-sent">💌 Crush sent!</p>
+            {:else if signalSent === 'wink'}
+              <p class="signal-sent">👋 Wink sent!</p>
+            {:else}
+              {#if signalError}
+                <p class="signal-error">{signalError}</p>
+              {/if}
+              <button class="signal-btn signal-wink" onclick={() => sendSignal('wink')} disabled={signalLoading}>
+                👋 Wink
+              </button>
+              <button class="signal-btn signal-crush" onclick={() => sendSignal('crush')} disabled={signalLoading}>
+                💌 Crush
+              </button>
+            {/if}
+            <button class="signal-btn signal-msg" onclick={openDmThread}>
+              💬 Message
+            </button>
+          </div>
+        {:else}
+          <!-- DM thread -->
+          <div class="dm-thread">
+            <div class="dm-header">
+              <button class="dm-back" onclick={() => dmOpen = false}>← Back</button>
+              {#if !dmBlocked}
+                <button class="dm-block-btn" onclick={blockGuest}>Block</button>
+              {/if}
+            </div>
+            {#if dmLoading}
+              <p class="dm-loading">Loading…</p>
+            {:else if dmError}
+              <p class="signal-error">{dmError}</p>
+            {:else}
+              <div class="dm-messages">
+                {#if dmMessages.length === 0}
+                  <p class="dm-empty">No messages yet. Say hello!</p>
+                {:else}
+                  {#each dmMessages as msg (msg.id)}
+                    <div class="dm-msg" class:dm-msg-mine={msg.fromMe} class:dm-msg-theirs={!msg.fromMe}>
+                      <span class="dm-bubble">{msg.body}</span>
+                    </div>
+                  {/each}
+                {/if}
+              </div>
+              {#if dmBlocked}
+                <p class="dm-blocked-notice">You have blocked this person.</p>
+              {:else}
+                <div class="dm-compose">
+                  <textarea
+                    class="dm-input"
+                    rows="2"
+                    maxlength="2000"
+                    placeholder="Write a message…"
+                    bind:value={dmInput}
+                    onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendDm() } }}
+                  ></textarea>
+                  <button class="dm-send-btn" onclick={sendDm} disabled={dmSending || !dmInput.trim()}>
+                    {dmSending ? '…' : 'Send'}
+                  </button>
+                </div>
+                {#if dmError}
+                  <p class="signal-error">{dmError}</p>
+                {/if}
+              {/if}
+            {/if}
+          </div>
+        {/if}
+      {/if}
     </div>
   </div>
 {/if}
@@ -733,6 +898,40 @@
   .modal-name { margin: 0 0 0.375rem; font-size: 1.1rem; color: #1a1510; }
   .modal-vibe { margin: 0 0 0.75rem; font-size: 0.9rem; color: #b05525; font-style: italic; }
   .modal-bio { margin: 0; font-size: 0.875rem; color: #3d352e; line-height: 1.5; }
+  .signal-row { display: flex; gap: 0.625rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap; }
+  .signal-btn { border: none; border-radius: 20px; padding: 0.5rem 1.25rem; font-size: 0.875rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: opacity 0.15s; }
+  .signal-btn:disabled { opacity: 0.5; cursor: default; }
+  .signal-wink { background: #f0e8da; color: #3d352e; border: 1px solid #cfc3b0; }
+  .signal-wink:hover:not(:disabled) { background: #e8ddd0; }
+  .signal-crush { background: #fde8e8; color: #8b1616; border: 1px solid #f0b8b8; }
+  .signal-crush:hover:not(:disabled) { background: #f5d0d0; }
+  .signal-sent { margin: 0.75rem 0 0; font-size: 0.875rem; color: #3d352e; text-align: center; width: 100%; }
+  .signal-mutual { margin: 0.75rem 0 0; font-size: 0.9rem; font-weight: 600; color: #b03050; text-align: center; width: 100%; }
+  .signal-error { margin: 0; font-size: 0.8rem; color: #c03828; text-align: center; width: 100%; }
+  .signal-msg { background: #e8f0fc; color: #1a3a70; border: 1px solid #b0c8e8; }
+  .signal-msg:hover:not(:disabled) { background: #d4e4f8; }
+  .dm-thread { margin-top: 1rem; text-align: left; }
+  .dm-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+  .dm-back { background: none; border: none; font-size: 0.85rem; color: #6b6058; cursor: pointer; padding: 0; font-family: inherit; }
+  .dm-back:hover { color: #1a1510; }
+  .dm-block-btn { background: none; border: 1px solid #f0c8b8; border-radius: 6px; font-size: 0.75rem; color: #8b3016; cursor: pointer; padding: 0.25rem 0.625rem; font-family: inherit; }
+  .dm-block-btn:hover { background: #fdf2ee; }
+  .dm-loading { font-size: 0.85rem; color: #6b6058; text-align: center; margin: 1rem 0; }
+  .dm-messages { display: flex; flex-direction: column; gap: 0.5rem; max-height: 220px; overflow-y: auto; margin-bottom: 0.75rem; padding-right: 2px; }
+  .dm-empty { font-size: 0.85rem; color: #9a8f86; text-align: center; margin: 0.75rem 0; }
+  .dm-msg { display: flex; }
+  .dm-msg-mine { justify-content: flex-end; }
+  .dm-msg-theirs { justify-content: flex-start; }
+  .dm-bubble { display: inline-block; max-width: 82%; padding: 0.4rem 0.75rem; border-radius: 14px; font-size: 0.875rem; line-height: 1.45; word-break: break-word; }
+  .dm-msg-mine .dm-bubble { background: var(--accent, #b05525); color: #fff; border-bottom-right-radius: 4px; }
+  .dm-msg-theirs .dm-bubble { background: var(--card-inner, #e8ddd0); color: #1a1510; border-bottom-left-radius: 4px; }
+  .dm-compose { display: flex; gap: 0.5rem; align-items: flex-end; }
+  .dm-input { flex: 1; padding: 0.4rem 0.625rem; border: 1px solid var(--border, #c8bdb0); border-radius: 10px; font-size: 0.875rem; font-family: inherit; background: #fff; color: #1a1510; resize: none; }
+  .dm-input:focus { outline: 2px solid var(--accent, #b05525); outline-offset: -1px; }
+  .dm-send-btn { background: var(--accent, #b05525); color: #fff; border: none; border-radius: 10px; padding: 0.4rem 0.875rem; font-size: 0.875rem; font-weight: 600; cursor: pointer; font-family: inherit; flex-shrink: 0; }
+  .dm-send-btn:disabled { opacity: 0.5; cursor: default; }
+  .dm-send-btn:hover:not(:disabled) { background: var(--accent-hover, #924418); }
+  .dm-blocked-notice { font-size: 0.8rem; color: #8b3016; text-align: center; margin: 0.5rem 0 0; }
   .no-identity-banner { background: #fef4e0; color: #7a5a1a; border: 1px solid #e0c870; border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.9rem; }
   .no-identity-banner a { color: #b05525; font-weight: 600; text-decoration: none; }
   .no-identity-banner a:hover { text-decoration: underline; }

@@ -4,6 +4,7 @@ import { events, rsvps, visitorSessions, emailBlocklist, guests, notifications, 
 import { eq, and, ne, sql, asc, isNull } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { CreateRsvpSchema, UpdateRsvpSchema } from '@haps/shared'
+import { sendPushToSession } from '../services/push.js'
 import { ensureSession, hasAttendeeAccess, getPendingTokenId } from '../middleware/session.js'
 
 const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
@@ -53,7 +54,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
       if (blocked) throw createError(403, 'EMAIL_BLOCKED', 'This email address has been blocked.')
 
       const eventRows = await db
-        .select({ id: events.id, status: events.status, eventType: events.eventType, maxCapacity: events.maxCapacity, rsvpDeadline: events.rsvpDeadline, allowPlusOnes: events.allowPlusOnes, maxPlusOnes: events.maxPlusOnes })
+        .select({ id: events.id, title: events.title, status: events.status, eventType: events.eventType, maxCapacity: events.maxCapacity, rsvpDeadline: events.rsvpDeadline, allowPlusOnes: events.allowPlusOnes, maxPlusOnes: events.maxPlusOnes, welcomeMessage: events.welcomeMessage })
         .from(events)
         .where(eq(events.slug, slug))
         .limit(1)
@@ -116,6 +117,22 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
           })
           .returning()
         rsvp = inserted[0]
+
+        // Welcome notification on first RSVP
+        if (event.welcomeMessage) {
+          const notifSessionId = user.type === 'operator' ? null : (request.session?.id ?? null)
+          await db.insert(notifications).values({
+            sessionId: notifSessionId,
+            userId:    user.type === 'operator' ? user.sub : null,
+            eventId:   event.id,
+            type:      'welcome',
+            body:      event.welcomeMessage,
+            link:      `/event/${slug}`,
+          })
+          if (notifSessionId) {
+            void sendPushToSession(notifSessionId, null, { title: event.title, body: event.welcomeMessage, link: `/event/${slug}` })
+          }
+        }
       }
       if (!rsvp) throw createError(500, 'INTERNAL_ERROR', 'Failed to create RSVP.')
 
@@ -139,7 +156,7 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Event lookup first (before email checks) so 404 is returned for unknown events
     const eventRows = await db
-      .select({ id: events.id, status: events.status, eventType: events.eventType, maxCapacity: events.maxCapacity, rsvpDeadline: events.rsvpDeadline, allowPlusOnes: events.allowPlusOnes, maxPlusOnes: events.maxPlusOnes })
+      .select({ id: events.id, title: events.title, status: events.status, eventType: events.eventType, maxCapacity: events.maxCapacity, rsvpDeadline: events.rsvpDeadline, allowPlusOnes: events.allowPlusOnes, maxPlusOnes: events.maxPlusOnes, welcomeMessage: events.welcomeMessage })
       .from(events)
       .where(eq(events.slug, slug))
       .limit(1)
@@ -286,6 +303,19 @@ const rsvpsRoutes: FastifyPluginAsync = async (fastify) => {
         })
         .returning()
       rsvp = inserted[0]
+
+      // Welcome notification on first RSVP
+      if (event.welcomeMessage) {
+        await db.insert(notifications).values({
+          sessionId: session.id,
+          userId:    session.userId ?? null,
+          eventId:   event.id,
+          type:      'welcome',
+          body:      event.welcomeMessage,
+          link:      `/event/${slug}`,
+        })
+        void sendPushToSession(session.id, session.guestId ?? null, { title: event.title, body: event.welcomeMessage, link: `/event/${slug}` })
+      }
     }
     if (!rsvp) throw createError(500, 'INTERNAL_ERROR', 'Failed to create RSVP.')
 
@@ -506,14 +536,18 @@ async function promoteFromWaitlist(eventId: string, eventSlug: string) {
     .set({ status: 'yes', updatedAt: new Date() })
     .where(eq(rsvps.id, waitlisted.id))
 
+  const notifBody = "A spot opened up — you've been moved from the waitlist to confirmed!"
   await db.insert(notifications).values({
     sessionId: waitlisted.sessionId ?? null,
     userId:    waitlisted.userId ?? null,
     eventId:   eventId,
     type:      'waitlist_promotion',
-    body:      "A spot opened up — you've been moved from the waitlist to confirmed!",
+    body:      notifBody,
     link:      `/event/${eventSlug}`,
   })
+  if (waitlisted.sessionId) {
+    void sendPushToSession(waitlisted.sessionId, null, { title: "You're in!", body: notifBody, link: `/event/${eventSlug}` })
+  }
 }
 
 function serializeRsvp(rsvp: typeof rsvps.$inferSelect) {

@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, eventTokens, rsvps, visitorSessions, guests, users, albumPhotos } from '../db/schema.js'
-import { eq, and, sql } from 'drizzle-orm'
+import { events, eventTokens, rsvps, visitorSessions, guests, users, albumPhotos, notifications } from '../db/schema.js'
+import { eq, and, sql, inArray } from 'drizzle-orm'
 import { generateToken, hashToken, verifyToken } from '../lib/crypto.js'
 import { generateSlug } from '../lib/slug.js'
 import { createError } from '../lib/errors.js'
@@ -11,6 +11,7 @@ import { config } from '../lib/config.js'
 import { nanoid } from 'nanoid'
 import { detectMimeType, getAllowedExtension, saveLocalFile, deleteLocalFile } from '../services/storage.js'
 import { sendEmail } from '../services/email.js'
+import { sendPushToSession } from '../services/push.js'
 
 const eventsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/api/events', {
@@ -199,6 +200,14 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     const { slug } = request.params as { slug: string }
     const body = UpdateEventSchema.parse(request.body)
 
+    // Fetch current state before update to detect meaningful changes
+    const [current] = await db
+      .select({ id: events.id, status: events.status, startsAt: events.startsAt, title: events.title })
+      .from(events)
+      .where(eq(events.slug, slug))
+      .limit(1)
+    if (!current) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
+
     const updates: Record<string, unknown> = { updatedAt: new Date() }
     if (body.title !== undefined) updates['title'] = body.title
     if (body.description !== undefined) updates['description'] = body.description ?? null
@@ -221,10 +230,47 @@ const eventsRoutes: FastifyPluginAsync = async (fastify) => {
     if (body.maxCapacity !== undefined) updates['maxCapacity'] = body.maxCapacity ?? null
     if (body.rsvpDeadline !== undefined) updates['rsvpDeadline'] = body.rsvpDeadline ? new Date(body.rsvpDeadline) : null
     if (body.expiresAt !== undefined) updates['expiresAt'] = body.expiresAt ? new Date(body.expiresAt) : null
+    if (body.welcomeMessage !== undefined) updates['welcomeMessage'] = body.welcomeMessage ?? null
 
     const updated = await db.update(events).set(updates as Parameters<ReturnType<typeof db.update>['set']>[0]).where(eq(events.slug, slug)).returning()
     const event = updated[0]
     if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
+
+    const wasCancelled = body.status === 'cancelled' && current.status !== 'cancelled'
+    const wasRescheduled = body.startsAt !== undefined &&
+      new Date(body.startsAt).getTime() !== current.startsAt.getTime() &&
+      current.status === 'published'
+
+    if (wasCancelled || wasRescheduled) {
+      const eventRsvps = await db
+        .select({ sessionId: rsvps.sessionId, userId: rsvps.userId })
+        .from(rsvps)
+        .where(and(eq(rsvps.eventId, current.id), inArray(rsvps.status, ['yes', 'maybe', 'waitlist'])))
+
+      if (eventRsvps.length > 0) {
+        const eventTitle = (updates['title'] as string | undefined) ?? current.title
+        const notifType = wasCancelled ? 'event_cancelled' : 'event_rescheduled'
+        const notifBody = wasCancelled
+          ? `${eventTitle} has been cancelled.`
+          : `${eventTitle} has been rescheduled to ${new Date(body.startsAt!).toLocaleDateString()}.`
+
+        await db.insert(notifications).values(
+          eventRsvps.map(r => ({
+            sessionId: r.sessionId ?? null,
+            userId:    r.userId ?? null,
+            eventId:   current.id,
+            type:      notifType,
+            body:      notifBody,
+            link:      `/event/${slug}`,
+          }))
+        )
+        for (const r of eventRsvps) {
+          if (r.sessionId) {
+            void sendPushToSession(r.sessionId, null, { title: eventTitle, body: notifBody, link: `/event/${slug}` })
+          }
+        }
+      }
+    }
 
     return { event: serializeEvent(event) }
   })
@@ -550,6 +596,7 @@ function serializeEvent(event: typeof events.$inferSelect) {
     maxCapacity: event.maxCapacity,
     rsvpDeadline: event.rsvpDeadline?.toISOString() ?? null,
     expiresAt: event.expiresAt?.toISOString() ?? null,
+    welcomeMessage: event.welcomeMessage ?? null,
     createdAt: event.createdAt.toISOString(),
     updatedAt: event.updatedAt.toISOString(),
   }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PageData } from './$types'
+  import PushOptIn from '$lib/components/PushOptIn.svelte'
 
   let { data } = $props<{ data: PageData }>()
 
@@ -40,6 +41,8 @@
     {#if data.session?.displayName}
       <p class="greeting">Hi, {data.session.displayName}!</p>
     {/if}
+
+    <PushOptIn />
 
     {#if data.events.length === 0}
       <div class="empty">

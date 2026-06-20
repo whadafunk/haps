@@ -376,6 +376,7 @@
         showAlbum: event.showAlbum,
         rsvpDeadline: event.rsvpDeadline ?? null,
         maxCapacity: event.maxCapacity ?? null,
+        welcomeMessage: event.welcomeMessage ?? null,
       }, data.editToken)
       saveSuccess = true
       setTimeout(() => { saveSuccess = false }, 2000)
@@ -554,6 +555,11 @@
               oninput={(e) => { const v = (e.target as HTMLInputElement).value; event.rsvpDeadline = v ? v + 'T23:59:59Z' : null }}
             />
             <span class="field-hint">Leave blank to remove deadline</span>
+          </label>
+          <label>
+            Welcome message
+            <textarea bind:value={event.welcomeMessage} rows="3" maxlength="2000" placeholder="Sent to guests after they RSVP…"></textarea>
+            <span class="field-hint">Optional. Guests receive this as a notification after RSVPing.</span>
           </label>
           <label>
             Theme

@@ -28,7 +28,7 @@
     if (!blockReason.trim()) { actionError = 'Reason is required.'; return }
     actionLoading = true; actionError = ''
     try {
-      await api.blockGuest(data.guest.id, { reason: blockReason.trim(), blockEmail: blockEmail || undefined })
+      await api.adminBlockGuest(data.guest.id, { reason: blockReason.trim(), blockEmail: blockEmail || undefined })
       showBlockModal = false
       goto('/admin/guests')
     } catch (e: unknown) {
@@ -39,7 +39,7 @@
   async function doUnblock() {
     actionLoading = true; actionError = ''
     try {
-      await api.unblockGuest(data.guest.id)
+      await api.adminUnblockGuest(data.guest.id)
       goto('/admin/guests')
     } catch (e: unknown) {
       actionError = e instanceof ApiError ? e.message : 'Failed to unblock guest.'

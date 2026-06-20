@@ -46,8 +46,9 @@ export const visitorSessions = pgTable('visitor_sessions', {
   email:           text('email'),
   phone:           text('phone'),
   instagramHandle: text('instagram_handle'),
-  eventAccess:     jsonb('event_access').notNull().default(sql`'{}'::jsonb`),
-  status:          text('status').notNull().default('active'), // 'active' | 'blocked' | 'removed'
+  eventAccess:      jsonb('event_access').notNull().default(sql`'{}'::jsonb`),
+  messagingOptOut:  boolean('messaging_opt_out').notNull().default(false),
+  status:           text('status').notNull().default('active'), // 'active' | 'blocked' | 'removed'
   statusReason:    text('status_reason'),
   statusAt:        timestamp('status_at', { withTimezone: true }),
   statusBy:        uuid('status_by').references(() => users.id, { onDelete: 'set null' }),
@@ -82,9 +83,10 @@ export const events = pgTable('events', {
   maxCapacity:   integer('max_capacity'),
   rsvpDeadline:  timestamp('rsvp_deadline', { withTimezone: true }),
   expiresAt:     timestamp('expires_at', { withTimezone: true }),
-  eventType:     text('event_type').notNull().default('open'), // 'open' | 'invite_only'
-  createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt:     timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  eventType:      text('event_type').notNull().default('open'), // 'open' | 'invite_only'
+  welcomeMessage: text('welcome_message'),
+  createdAt:      timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:      timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   slugIdx:         index('events_slug_idx').on(t.slug),
   organizerIdx:    index('events_organizer_idx').on(t.organizerId),
@@ -154,6 +156,8 @@ export const instanceConfig = pgTable('instance_config', {
   smtpFrom:     text('smtp_from'),
   defaultTheme:                 text('default_theme'),
   requireRsvpBeforeRegister:    boolean('require_rsvp_before_register').notNull().default(true),
+  vapidPublicKey:               text('vapid_public_key'),
+  vapidPrivateKey:              text('vapid_private_key'),
   updatedAt:                    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
@@ -244,6 +248,59 @@ export const postPhotos = pgTable('post_photos', {
   photoId:   uuid('photo_id').notNull().references(() => albumPhotos.id, { onDelete: 'cascade' }),
   sortOrder: integer('sort_order').notNull().default(0),
 })
+
+export const pushSubscriptions = pgTable('push_subscriptions', {
+  id:        uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: uuid('session_id').notNull().references(() => visitorSessions.id, { onDelete: 'cascade' }),
+  endpoint:  text('endpoint').notNull(),
+  p256dh:    text('p256dh').notNull(),
+  authKey:   text('auth_key').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  sessionIdx: index('push_subscriptions_session_idx').on(t.sessionId),
+  uniqueEndpoint: unique('push_subscriptions_session_endpoint_unique').on(t.sessionId, t.endpoint),
+}))
+
+export const guestSignals = pgTable('guest_signals', {
+  id:            uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  fromSessionId: uuid('from_session_id').references(() => visitorSessions.id, { onDelete: 'set null' }),
+  fromGuestId:   uuid('from_guest_id').notNull().references(() => guests.id, { onDelete: 'cascade' }),
+  toGuestId:     uuid('to_guest_id').notNull().references(() => guests.id, { onDelete: 'cascade' }),
+  eventId:       uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  type:          text('type').notNull(), // 'wink' | 'crush'
+  revealed:      boolean('revealed').notNull().default(false),
+  eventContext:  text('event_context'),
+  createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  fromGuestIdx:  index('guest_signals_from_guest_idx').on(t.fromGuestId),
+  toGuestIdx:    index('guest_signals_to_guest_idx').on(t.toGuestId),
+  eventIdx:      index('guest_signals_event_idx').on(t.eventId),
+  uniquePair:    unique('guest_signals_pair_unique').on(t.fromGuestId, t.toGuestId, t.eventId, t.type),
+}))
+
+export const directMessages = pgTable('direct_messages', {
+  id:            uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  eventId:       uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  fromGuestId:   uuid('from_guest_id').notNull().references(() => guests.id, { onDelete: 'cascade' }),
+  toGuestId:     uuid('to_guest_id').notNull().references(() => guests.id, { onDelete: 'cascade' }),
+  fromSessionId: uuid('from_session_id').references(() => visitorSessions.id, { onDelete: 'set null' }),
+  body:          text('body').notNull(),
+  readAt:        timestamp('read_at', { withTimezone: true }),
+  createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  threadIdx:    index('dm_thread_idx').on(t.eventId, t.fromGuestId, t.toGuestId),
+  inboxIdx:     index('dm_inbox_idx').on(t.toGuestId, t.eventId),
+}))
+
+export const guestBlocks = pgTable('guest_blocks', {
+  id:               uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  eventId:          uuid('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  blockingGuestId:  uuid('blocking_guest_id').notNull().references(() => guests.id, { onDelete: 'cascade' }),
+  blockedGuestId:   uuid('blocked_guest_id').notNull().references(() => guests.id, { onDelete: 'cascade' }),
+  createdAt:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uniqueBlock: unique('guest_blocks_unique').on(t.eventId, t.blockingGuestId, t.blockedGuestId),
+}))
 
 export const comments = pgTable('comments', {
   id:          uuid('id').primaryKey().default(sql`gen_random_uuid()`),

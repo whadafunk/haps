@@ -27,6 +27,7 @@ export const CreateEventSchema = z.object({
   maxCapacity: z.number().int().positive().optional(),
   rsvpDeadline: z.string().datetime().optional(),
   expiresAt: z.string().datetime().optional(),
+  welcomeMessage: z.string().max(2000).optional(),
 }).strict().refine(
   (data) => new Date(data.startsAt) > new Date(),
   { message: 'Event start date must be in the future.', path: ['startsAt'] },
@@ -51,6 +52,7 @@ export const UpdateEventSchema = z.object({
   maxCapacity: z.number().int().positive().nullish(),
   rsvpDeadline: z.string().datetime().nullish(),
   expiresAt: z.string().datetime().nullish(),
+  welcomeMessage: z.string().max(2000).nullish(),
 }).strict()
 
 // RSVPs
@@ -204,4 +206,16 @@ export const MagicLinkRequestSchema = z.object({
 
 export const MagicLinkVerifySchema = z.object({
   token: z.string().min(1),
+}).strict()
+
+// Social signals (wink / crush)
+export const SendSignalSchema = z.object({
+  toGuestId: z.string().uuid(),
+  type: z.enum(['wink', 'crush']),
+}).strict()
+
+// Direct messages
+export const SendDmSchema = z.object({
+  toGuestId: z.string().uuid(),
+  body: z.string().min(1).max(2000),
 }).strict()

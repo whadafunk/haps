@@ -85,7 +85,7 @@ const sessionRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     return {
-      session: { displayName: session.displayName, email: session.email },
+      session: { displayName: session.displayName, email: session.email, guestId: session.guestId ?? null },
       events: eventList,
     }
   })

@@ -18,7 +18,7 @@ function getBase(serverSide: boolean): string {
   return ''
 }
 
-async function apiFetch<T>(
+export async function apiFetch<T>(
   path: string,
   options: RequestInit & { serverSide?: boolean } = {},
   fetchFn: typeof fetch = fetch,
@@ -250,6 +250,26 @@ export const api = {
       headers: editToken ? { 'x-edit-token': editToken } : {},
     }),
 
+  // Signals
+  sendSignal: (slug: string, body: { toGuestId: string; type: 'wink' | 'crush' }) =>
+    apiFetch<{ signal: { type: string; mutualReveal: boolean } }>(`/events/${slug}/signals`, { method: 'POST', body: JSON.stringify(body) }),
+
+  listSentSignals: (slug: string) =>
+    apiFetch<{ signals: Array<{ id: string; toGuestId: string; type: string; revealed: boolean; recipientName: string | null; recipientAvatarUrl: string | null; createdAt: string }> }>(`/events/${slug}/signals/sent`),
+
+  // Direct messages
+  sendDm: (slug: string, body: { toGuestId: string; body: string }) =>
+    apiFetch<{ message: { id: string; body: string; createdAt: string } }>(`/events/${slug}/dm`, { method: 'POST', body: JSON.stringify(body) }),
+
+  getDmThread: (slug: string, guestId: string) =>
+    apiFetch<{ messages: Array<{ id: string; fromMe: boolean; body: string; readAt: string | null; createdAt: string }>; blocked: boolean }>(`/events/${slug}/dm/${guestId}`),
+
+  blockGuest: (slug: string, guestId: string) =>
+    apiFetch<void>(`/events/${slug}/dm/${guestId}/block`, { method: 'POST' }),
+
+  unblockGuest: (slug: string, guestId: string) =>
+    apiFetch<void>(`/events/${slug}/dm/${guestId}/block`, { method: 'DELETE' }),
+
   // Session
   getSession: () =>
     apiFetch<{ session: { displayName: string | null; email: string | null }; events: Array<{ slug: string; title: string; startsAt: string; myStatus: string | null; isEditor: boolean }> }>('/session/me'),
@@ -296,10 +316,10 @@ export const api = {
     apiFetch<void>(`/guests/${guestId}`, { method: 'DELETE' }),
 
   // Admin guests
-  blockGuest: (sessionId: string, body: { reason: string; blockEmail?: boolean }) =>
+  adminBlockGuest: (sessionId: string, body: { reason: string; blockEmail?: boolean }) =>
     apiFetch<void>(`/admin/guests/session/${sessionId}/block`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  unblockGuest: (sessionId: string) =>
+  adminUnblockGuest: (sessionId: string) =>
     apiFetch<void>(`/admin/guests/session/${sessionId}/unblock`, { method: 'PATCH', body: '{}' }),
 
   removeGuest: (sessionId: string, body: { blockEmail?: boolean }) =>
