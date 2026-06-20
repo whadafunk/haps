@@ -349,7 +349,16 @@
           <span class="type-badge type-invite_only">Invite-Only</span>
         </div>
       {/if}
-      <h1>{event.title}</h1>
+      <div class="title-row">
+        <h1>{event.title}</h1>
+        {#if data.myRsvp && event.status === 'published'}
+          <button
+            class="rsvp-inline-chip rsvp-chip-{data.myRsvp.status}"
+            onclick={() => { if (!rsvpDeadlinePassed) { editingRsvp = true; rsvpError = '' } }}
+            disabled={rsvpDeadlinePassed}
+          >({data.myRsvp.status === 'yes' ? 'Going' : data.myRsvp.status === 'maybe' ? 'Maybe' : data.myRsvp.status === 'waitlist' ? 'Waitlisted' : "Can't go"})</button>
+        {/if}
+      </div>
       {#if event.organizerName}
         <p class="organizer-name">Hosted by {event.organizerName}</p>
       {/if}
@@ -403,7 +412,7 @@
     {/if}
 
     <!-- RSVP section -->
-    {#if event.status === 'published'}
+    {#if event.status === 'published' && (!data.myRsvp || editingRsvp || rsvpDeadlinePassed || profileRequired || data.inviteAlreadyUsed || data.sessionBlocked || data.myRsvp?.status === 'waitlist')}
       <section class="section">
         <h2>RSVP</h2>
 
@@ -416,15 +425,6 @@
             <strong>RSVP is closed.</strong>
             <p>The deadline was {formatDeadline(event.rsvpDeadline!)}.</p>
           </div>
-          {#if data.myRsvp}
-            <div class="rsvp-summary">
-              <div class="rsvp-summary-status rsvp-summary-{data.myRsvp.status}">
-                {data.myRsvp.status === 'yes' ? 'Going' : data.myRsvp.status === 'maybe' ? 'Maybe' : data.myRsvp.status === 'waitlist' ? 'Waitlisted' : 'Not going'}
-                {#if data.myRsvp.headCount > 1} · +{data.myRsvp.headCount - 1}{/if}
-              </div>
-              <div class="rsvp-summary-name">{data.myRsvp.displayName}</div>
-            </div>
-          {/if}
         {:else if data.inviteAlreadyUsed}
           <div class="invite-used-banner">
             <strong>This invite link has already been used.</strong>
@@ -463,27 +463,14 @@
               {profileLoading ? 'Saving…' : 'Continue to RSVP'}
             </button>
           </div>
-        {:else if data.myRsvp && !editingRsvp}
-          <!-- Read-only RSVP summary -->
-          {#if data.myRsvp.status === 'waitlist'}
-            <div class="waitlist-banner">
-              <strong>You're on the waitlist.</strong>
-              <p>We'll notify you if a spot opens up.</p>
-            </div>
-          {/if}
-          <div class="rsvp-summary">
-            <div class="rsvp-summary-status rsvp-summary-{data.myRsvp.status}">
-              {data.myRsvp.status === 'yes' ? 'Going' : data.myRsvp.status === 'maybe' ? 'Maybe' : data.myRsvp.status === 'waitlist' ? 'Waitlisted' : 'Not going'}
-              {#if data.myRsvp.headCount > 1} · +{data.myRsvp.headCount - 1}{/if}
-            </div>
-            <div class="rsvp-summary-name">{data.myRsvp.displayName}</div>
-            {#if data.myRsvp.note}
-              <div class="rsvp-summary-note">"{data.myRsvp.note}"</div>
-            {/if}
-            <button class="change-rsvp-btn" onclick={() => { editingRsvp = true; rsvpError = '' }}>
-              Change RSVP
-            </button>
+        {:else if data.myRsvp?.status === 'waitlist' && !editingRsvp}
+          <div class="waitlist-banner">
+            <strong>You're on the waitlist.</strong>
+            <p>We'll notify you if a spot opens up.</p>
           </div>
+          <button class="change-rsvp-btn" onclick={() => { editingRsvp = true; rsvpError = '' }}>
+            Cancel / change RSVP
+          </button>
         {:else}
           {#if rsvpError}
             <div class="error-banner">{rsvpError}</div>
@@ -817,7 +804,16 @@
   .header-badges { display: flex; gap: 0.375rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
   .type-badge { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 0.2rem 0.5rem; border-radius: 4px; }
   .type-badge.type-invite_only { background: #fef4e0; color: #7a5a1a; }
-  h1 { font-size: 1.75rem; font-weight: 800; margin: 0.5rem 0 0.25rem; color: #1a1510; }
+  .title-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0 0.25rem; }
+  .title-row h1 { margin: 0; }
+  h1 { font-size: 1.75rem; font-weight: 800; color: #1a1510; }
+  .rsvp-inline-chip { background: none; border: none; font-size: 1.1rem; font-weight: 600; cursor: pointer; padding: 0; font-family: inherit; line-height: 1; }
+  .rsvp-inline-chip:hover:not(:disabled) { text-decoration: underline; }
+  .rsvp-inline-chip:disabled { cursor: default; }
+  .rsvp-chip-yes { color: #2a5e28; }
+  .rsvp-chip-maybe { color: #7a5a1a; }
+  .rsvp-chip-no { color: #6b6058; }
+  .rsvp-chip-waitlist { color: #1a4070; }
   .organizer-name { margin: 0 0 1rem; font-size: 0.875rem; color: #6b6058; }
   .event-meta { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
   .meta-item { font-size: 0.9rem; color: #3d352e; }
