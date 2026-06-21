@@ -17,6 +17,20 @@ services:
     networks:
       - internal
 
+  migrate:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    command: node packages/api/dist/db/migrate.js
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    networks:
+      - internal
+
   api:
     build:
       context: .
@@ -25,6 +39,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     env_file: .env
     environment:
       NODE_ENV: production

@@ -18,7 +18,6 @@ import sessionRoutes from './routes/session.js'
 import adminRoutes from './routes/admin.js'
 import setupRoutes from './routes/setup.js'
 import uploadsRoutes from './routes/uploads.js'
-import { migrate } from './db/migrate.js'
 import { db } from './db/index.js'
 import { events as eventsTable, rsvps, notifications } from './db/schema.js'
 import { and, isNotNull, lt, eq, inArray, gte, lte, notExists, sql } from 'drizzle-orm'
@@ -38,9 +37,6 @@ export async function buildApp() {
         : { transport: { target: 'pino-pretty', options: { colorize: true } } },
     trustProxy: true,
   })
-
-  // Run migrations on startup
-  await migrate()
 
   await app.register(cookie, { secret: config.SESSION_SECRET })
 
