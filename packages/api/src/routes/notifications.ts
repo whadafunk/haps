@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { notifications, visitorSessions } from '../db/schema.js'
+import { notifications, visitorSessions, events } from '../db/schema.js'
 import { eq, and, or, inArray, desc } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 
@@ -32,15 +32,31 @@ const notificationsRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     const rows = await db
-      .select()
+      .select({
+        id: notifications.id,
+        type: notifications.type,
+        senderName: notifications.senderName,
+        subject: notifications.subject,
+        body: notifications.body,
+        link: notifications.link,
+        read: notifications.read,
+        createdAt: notifications.createdAt,
+        eventId: notifications.eventId,
+        eventTitle: events.title,
+        eventSlug: events.slug,
+      })
       .from(notifications)
+      .leftJoin(events, eq(events.id, notifications.eventId))
       .where(or(...conditions))
       .orderBy(desc(notifications.createdAt))
-      .limit(50)
+      .limit(100)
 
     const unreadCount = rows.filter(n => !n.read).length
 
-    return { notifications: rows, unreadCount }
+    return {
+      notifications: rows.map(n => ({ ...n, createdAt: n.createdAt.toISOString() })),
+      unreadCount,
+    }
   })
 
   // PATCH /api/notifications/:id/read — mark one read

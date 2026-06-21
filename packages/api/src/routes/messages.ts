@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, eventMessages, deliveryJobs, rsvps } from '../db/schema.js'
+import { events, eventMessages, deliveryJobs, rsvps, notifications, users } from '../db/schema.js'
 import { eq, and, isNull, inArray } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { CreateEventMessageSchema, BlastSchema } from '@haps/shared'
@@ -97,32 +97,36 @@ const messagesRoutes: FastifyPluginAsync = async (fastify) => {
     })
   })
 
-  // POST /api/events/:slug/blast — organizer only; creates in-app message + queues delivery jobs
+  // POST /api/events/:slug/blast — organizer only; creates in-app message + delivers to guest inboxes
   fastify.post('/api/events/:slug/blast', async (request, reply) => {
     const { slug } = request.params as { slug: string }
 
     const eventRows = await db
-      .select({ id: events.id, status: events.status })
+      .select({
+        id: events.id,
+        status: events.status,
+        organizerId: events.organizerId,
+        organizerName: users.displayName,
+      })
       .from(events)
+      .innerJoin(users, eq(users.id, events.organizerId))
       .where(eq(events.slug, slug))
       .limit(1)
 
     const event = eventRows[0]
     if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
 
-    // Must be editor (edit token or organizer/admin JWT)
     if (!request.isEditor) throw createError(403, 'FORBIDDEN', 'Only the event organizer can send blasts.')
 
     const body = BlastSchema.parse(request.body)
+    const senderName = event.organizerName
 
-    const displayName = request.session?.displayName ?? 'Organizer'
-
-    // Create the in-app event message
+    // Keep event message record for the host's Updates tab sent history
     const [blastMessage] = await db.insert(eventMessages).values({
       eventId: event.id,
       sessionId: request.session?.id ?? null,
       userId: request.user?.sub ?? null,
-      displayName,
+      displayName: senderName,
       subject: body.subject,
       body: body.body,
       type: 'blast',
@@ -130,20 +134,39 @@ const messagesRoutes: FastifyPluginAsync = async (fastify) => {
 
     if (!blastMessage) throw createError(500, 'INTERNAL_ERROR', 'Failed to create blast.')
 
-    let queued = 0
+    // Deliver to the inbox of all yes/maybe RSVPs
+    const recipients = await db
+      .select({ sessionId: rsvps.sessionId, userId: rsvps.userId })
+      .from(rsvps)
+      .where(and(eq(rsvps.eventId, event.id), inArray(rsvps.status, ['yes', 'maybe'])))
 
+    const inboxRows: (typeof notifications.$inferInsert)[] = recipients
+      .filter(r => r.sessionId || r.userId)
+      .map(r => ({
+        sessionId: r.sessionId ?? null,
+        userId: r.userId ?? null,
+        eventId: event.id,
+        type: 'announcement',
+        senderName,
+        subject: body.subject,
+        body: body.body,
+        link: `/event/${slug}`,
+        read: false,
+      }))
+
+    if (inboxRows.length > 0) {
+      await db.insert(notifications).values(inboxRows)
+    }
+
+    // Queue external delivery jobs when channels are selected (email/sms)
+    let queued = 0
     if (body.channels.length > 0) {
-      // Fetch yes RSVPs with contact info for the requested channels
       const eligibleRsvps = await db
-        .select({
-          displayName: rsvps.displayName,
-          email: rsvps.email,
-        })
+        .select({ displayName: rsvps.displayName, email: rsvps.email })
         .from(rsvps)
-        .where(and(eq(rsvps.eventId, event.id), eq(rsvps.status, 'yes')))
+        .where(and(eq(rsvps.eventId, event.id), inArray(rsvps.status, ['yes', 'maybe'])))
 
       const jobs: (typeof deliveryJobs.$inferInsert)[] = []
-
       for (const rsvp of eligibleRsvps) {
         if (body.channels.includes('email') && rsvp.email) {
           jobs.push({
@@ -154,11 +177,7 @@ const messagesRoutes: FastifyPluginAsync = async (fastify) => {
             status: 'pending',
           })
         }
-        if (body.channels.includes('sms')) {
-          // SMS: phone field is a Phase 2 addition; skip silently for now
-        }
       }
-
       if (jobs.length > 0) {
         await db.insert(deliveryJobs).values(jobs)
         queued = jobs.length

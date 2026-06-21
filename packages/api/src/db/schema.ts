@@ -194,15 +194,17 @@ export const deliveryJobs = pgTable('delivery_jobs', {
 }))
 
 export const notifications = pgTable('notifications', {
-  id:        uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-  sessionId: uuid('session_id').references(() => visitorSessions.id, { onDelete: 'cascade' }),
-  userId:    uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
-  eventId:   uuid('event_id').references(() => events.id, { onDelete: 'cascade' }),
-  type:      text('type').notNull(), // 'invitation' | 'event_update' | 'reminder' | 'waitlist_promotion' | 'event_cancelled'
-  body:      text('body').notNull(),
-  link:      text('link'),
-  read:      boolean('read').notNull().default(false),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  id:         uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  sessionId:  uuid('session_id').references(() => visitorSessions.id, { onDelete: 'cascade' }),
+  userId:     uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  eventId:    uuid('event_id').references(() => events.id, { onDelete: 'cascade' }),
+  type:       text('type').notNull(), // 'announcement' | 'reminder' | 'waitlist_promotion' | 'event_cancelled' | 'event_rescheduled' | 'welcome'
+  senderName: text('sender_name'),   // organizer display name; null for system messages
+  subject:    text('subject'),       // subject line; null for system messages without one
+  body:       text('body').notNull(),
+  link:       text('link'),
+  read:       boolean('read').notNull().default(false),
+  createdAt:  timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   sessionIdx: index('notifications_session_idx').on(t.sessionId).where(sql`${t.sessionId} is not null`),
   userIdx:    index('notifications_user_idx').on(t.userId).where(sql`${t.userId} is not null`),
