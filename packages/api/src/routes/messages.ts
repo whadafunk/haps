@@ -102,14 +102,8 @@ const messagesRoutes: FastifyPluginAsync = async (fastify) => {
     const { slug } = request.params as { slug: string }
 
     const eventRows = await db
-      .select({
-        id: events.id,
-        status: events.status,
-        organizerId: events.organizerId,
-        organizerName: users.displayName,
-      })
+      .select({ id: events.id, status: events.status, organizerId: events.organizerId })
       .from(events)
-      .innerJoin(users, eq(users.id, events.organizerId))
       .where(eq(events.slug, slug))
       .limit(1)
 
@@ -119,7 +113,13 @@ const messagesRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.isEditor) throw createError(403, 'FORBIDDEN', 'Only the event organizer can send blasts.')
 
     const body = BlastSchema.parse(request.body)
-    const senderName = event.organizerName
+
+    const organizerRows = await db
+      .select({ displayName: users.displayName })
+      .from(users)
+      .where(eq(users.id, event.organizerId))
+      .limit(1)
+    const senderName = organizerRows[0]?.displayName ?? 'Organizer'
 
     // Keep event message record for the host's Updates tab sent history
     const [blastMessage] = await db.insert(eventMessages).values({
