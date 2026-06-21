@@ -116,7 +116,7 @@ export const CreateUserSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(128),
   displayName: z.string().min(1).max(200),
-  role: z.enum(['organizer', 'member']),
+  role: z.enum(['organizer', 'member', 'admin']),
 }).strict()
 
 // Event messages (in-app feed, posted by any yes/maybe RSVP or organizer)
