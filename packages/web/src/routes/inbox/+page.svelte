@@ -35,9 +35,10 @@
   async function open(item: InboxItem) {
     if (!item.read) {
       items = items.map(i => i.id === item.id ? { ...i, read: true } : i)
-      apiFetch(`/notifications/${item.id}/read`, { method: 'PATCH' })
-        .then(() => invalidateAll())
-        .catch(() => {})
+      try {
+        await apiFetch(`/notifications/${item.id}/read`, { method: 'PATCH' })
+      } catch {}
+      await invalidateAll()
     }
     if (item.link) goto(item.link)
   }
@@ -47,8 +48,8 @@
     try {
       await apiFetch('/notifications/read-all', { method: 'POST' })
       items = items.map(i => ({ ...i, read: true }))
-      invalidateAll()
     } catch { /* non-critical */ }
+    await invalidateAll()
     busy = false
   }
 
