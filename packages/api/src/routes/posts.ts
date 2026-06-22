@@ -25,7 +25,7 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!event) throw createError(404, 'EVENT_NOT_FOUND', 'No event found with this slug.')
     if (!event.showAlbum) throw createError(403, 'WALL_DISABLED', 'Wall is disabled for this event.')
 
-    if (event.wallRequiresRsvp) {
+    if (event.wallRequiresRsvp && !request.isEditor && request.user?.type !== 'operator') {
       const session = request.session
       const hasRsvp = session ? await (async () => {
         const where = session.guestId
@@ -177,7 +177,7 @@ const postsRoutes: FastifyPluginAsync = async (fastify) => {
     if (event.status !== 'published') throw createError(403, 'EVENT_NOT_PUBLISHED', 'Event is not published.')
 
     const session = request.session!
-    if (event.wallRequiresRsvp) {
+    if (event.wallRequiresRsvp && !request.isEditor && request.user?.type !== 'operator') {
       const where = session.guestId
         ? and(eq(rsvps.eventId, event.id), eq(rsvps.guestId, session.guestId))
         : and(eq(rsvps.eventId, event.id), eq(rsvps.sessionId, session.id))
