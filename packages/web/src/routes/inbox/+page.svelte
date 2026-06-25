@@ -31,12 +31,19 @@
     const initial = ($page.url.searchParams.get('tab') as 'messages' | 'updates' | null) ?? 'updates'
     _tab = initial
 
+    // Sync the nav badge immediately with fresh inbox data — the layout server load
+    // may have run earlier and produced a stale count (e.g. DMs that arrived after
+    // layout load, or the user landing on Messages tab which never triggers a reset).
+    const initNotifUnread = items.filter(i => !i.read).length
+    const initDmUnread = threads.reduce((s, t) => s + t.unreadCount, 0)
+    unreadCount.set(initNotifUnread + initDmUnread)
+
     // Auto-mark notifications as read when landing on the updates tab
     if (initial === 'updates' && items.some(i => !i.read)) {
       apiFetch('/notifications/read-all', { method: 'POST' })
         .then(() => {
           items = items.map(i => ({ ...i, read: true }))
-          unreadCount.set(data.dmUnreadCount)
+          unreadCount.set(initDmUnread)
         })
         .catch(() => {})
     }
@@ -46,10 +53,11 @@
   let prevTab = _tab
   $effect(() => {
     if (tab === 'updates' && prevTab !== 'updates' && items.some(i => !i.read)) {
+      const liveDmUnread = threads.reduce((s, t) => s + t.unreadCount, 0)
       apiFetch('/notifications/read-all', { method: 'POST' })
         .then(() => {
           items = items.map(i => ({ ...i, read: true }))
-          unreadCount.set(data.dmUnreadCount)
+          unreadCount.set(liveDmUnread)
         })
         .catch(() => {})
     }
@@ -61,7 +69,7 @@
     try {
       await apiFetch('/notifications/read-all', { method: 'POST' })
       items = items.map(i => ({ ...i, read: true }))
-      unreadCount.set(data.dmUnreadCount)
+      unreadCount.set(dmUnread)
     } catch { /* non-critical */ }
     busy = false
   }
