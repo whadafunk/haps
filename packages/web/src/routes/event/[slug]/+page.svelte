@@ -302,7 +302,11 @@
     dmError = ''
     try {
       const res = await api.getDmThread(event.slug, guestId)
-      dmMessages = res.messages
+      const sseLive = dmMessages
+      const dbIds = new Set(res.messages.map(m => m.id))
+      const merged = [...res.messages, ...sseLive.filter(m => !dbIds.has(m.id))]
+      merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      dmMessages = merged
       dmBlocked = res.blocked
       dmLoaded = true
     } catch (e: unknown) {
@@ -319,15 +323,26 @@
 
   // Open the modal for a guest by guestId only (used for deep-links, no GuestRow needed)
   async function openDmByGuestId(guestId: string) {
-    dmLoading = true
-    dmError = ''
+    // Set profileModal + modalTab early so the SSE new_dm listener can match
+    // messages that arrive while the fetch is in-flight
+    profileModal = { name: '', guestId, profile: null }
+    modalTab = 'chat'
     dmMessages = []
     dmBlocked = false
     dmLoaded = false
+    dmLoading = true
+    dmError = ''
 
     try {
       const res = await api.getDmThread(event.slug, guestId)
-      dmMessages = res.messages
+
+      // Merge: keep any SSE messages that arrived while the fetch was in-flight
+      const sseLive = dmMessages  // messages added by SSE listener during fetch
+      const dbIds = new Set(res.messages.map(m => m.id))
+      const merged = [...res.messages, ...sseLive.filter(m => !dbIds.has(m.id))]
+      merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+
+      dmMessages = merged
       dmBlocked = res.blocked
       dmLoaded = true
 
@@ -336,7 +351,6 @@
         ? { avatarUrl: res.otherGuest.avatarUrl, bio: res.otherGuest.bio, vibe: res.otherGuest.vibe }
         : null
       profileModal = { name, guestId, profile }
-      modalTab = 'chat'
     } catch (e: unknown) {
       dmError = e instanceof ApiError ? e.message : 'Failed to load messages.'
     } finally {
