@@ -68,7 +68,7 @@
           </div>
         {/if}
       </div>
-    {:else if data.session}
+    {:else if data.session?.displayName}
       <div class="user-menu">
         <button class="user-menu-btn" onclick={() => (menuOpen = !menuOpen)}>
           {data.session.displayName ?? 'My account'}<span class="chevron" class:open={menuOpen}>▾</span>
