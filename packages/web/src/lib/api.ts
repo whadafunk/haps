@@ -26,10 +26,11 @@ export async function apiFetch<T>(
   const { serverSide = false, ...rest } = options
   const base = getBase(serverSide)
   const isFormData = rest.body instanceof FormData
+  const hasJsonBody = !isFormData && rest.body !== undefined && rest.body !== null
   const res = await fetchFn(`${base}/api${path}`, {
     ...rest,
     headers: {
-      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(hasJsonBody ? { 'Content-Type': 'application/json' } : {}),
       ...(rest.headers ?? {}),
     },
     credentials: 'include',
