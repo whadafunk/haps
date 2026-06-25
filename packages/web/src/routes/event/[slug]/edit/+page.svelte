@@ -83,7 +83,6 @@
   let coverUploading = $state(false)
   let coverError = $state('')
   let coverPreview = $state<string | null>(event.coverImageUrl ?? null)
-  let coverFileInput: HTMLInputElement | null = null
 
   async function uploadCover(e: Event) {
     const input = e.target as HTMLInputElement
@@ -541,10 +540,10 @@
         {#if coverError}
           <div class="error-banner">{coverError}</div>
         {/if}
-        <input bind:this={coverFileInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif" onchange={uploadCover} disabled={coverUploading} style="position:absolute;opacity:0;width:0;height:0;overflow:hidden;" />
-        <button type="button" class="cover-upload-btn" disabled={coverUploading} onclick={() => coverFileInput?.click()}>
+        <input id="cover-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onchange={uploadCover} disabled={coverUploading} style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;" />
+        <label for="cover-file-input" class="cover-upload-btn" class:disabled={coverUploading}>
           {coverUploading ? 'Uploading…' : coverPreview ? 'Change image' : 'Upload image'}
-        </button>
+        </label>
       </section>
 
       {#if editLink}
@@ -1169,6 +1168,7 @@
   .cover-placeholder { background: #e8ddd0; border: 1px dashed #c8bdb0; border-radius: 8px; height: 120px; display: flex; align-items: center; justify-content: center; color: #9a8f86; font-size: 0.875rem; margin-bottom: 0.75rem; }
   .cover-upload-btn { display: inline-block; background: #b05525; color: #fff; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; border: none; }
   .cover-upload-btn:hover { background: #924418; }
+  .cover-upload-btn.disabled { opacity: 0.6; pointer-events: none; }
 
   .copy-btn { flex-shrink: 0; background: #c4962d; color: #fff; border: none; padding: 0.4rem 0.875rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
   .copy-btn:hover { background: #a87c22; }
