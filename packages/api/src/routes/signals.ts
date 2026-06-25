@@ -6,6 +6,7 @@ import { createError } from '../lib/errors.js'
 import { SendSignalSchema } from '@haps/shared'
 import { ensureSession, hasAttendeeAccess } from '../middleware/session.js'
 import { sendPushToSession } from '../services/push.js'
+import { broadcast } from '../lib/sse.js'
 
 const CRUSH_LIMIT_PER_EVENT = 3
 
@@ -203,7 +204,46 @@ const signalsRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
+    // Broadcast real-time signal event so the recipient's open event page updates immediately
+    broadcast(slug, 'new_signal', {
+      toGuestId:   body.toGuestId,
+      fromGuestId,
+      type:        body.type,
+      mutualReveal,
+    })
+
     return reply.code(201).send({ signal: { type: body.type, mutualReveal } })
+  })
+
+  // GET /api/events/:slug/signals/mine — sent + received signals for current guest
+  fastify.get('/api/events/:slug/signals/mine', async (request, reply) => {
+    const { slug } = request.params as { slug: string }
+
+    if (!request.session) return reply.send({ sent: [], received: [] })
+
+    const myGuestId = request.session.guestId ?? (request.user?.type === 'guest' ? request.user.sub : null)
+    if (!myGuestId) return reply.send({ sent: [], received: [] })
+
+    const [event] = await db
+      .select({ id: events.id })
+      .from(events)
+      .where(eq(events.slug, slug))
+      .limit(1)
+    if (!event) return reply.send({ sent: [], received: [] })
+
+    const [sentRows, receivedRows] = await Promise.all([
+      db.select({ toGuestId: guestSignals.toGuestId, type: guestSignals.type, revealed: guestSignals.revealed })
+        .from(guestSignals)
+        .where(and(eq(guestSignals.fromGuestId, myGuestId), eq(guestSignals.eventId, event.id))),
+      db.select({ fromGuestId: guestSignals.fromGuestId, type: guestSignals.type, revealed: guestSignals.revealed })
+        .from(guestSignals)
+        .where(and(eq(guestSignals.toGuestId, myGuestId), eq(guestSignals.eventId, event.id))),
+    ])
+
+    return reply.send({
+      sent:     sentRows.map(r => ({ toGuestId: r.toGuestId, type: r.type as 'wink' | 'crush', revealed: r.revealed })),
+      received: receivedRows.map(r => ({ fromGuestId: r.fromGuestId, type: r.type as 'wink' | 'crush', revealed: r.revealed })),
+    })
   })
 
   // GET /api/events/:slug/signals/sent — my sent signals at this event

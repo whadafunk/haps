@@ -293,6 +293,9 @@ export const api = {
   sendSignal: (slug: string, body: { toGuestId: string; type: 'wink' | 'crush' }) =>
     apiFetch<{ signal: { type: string; mutualReveal: boolean } }>(`/events/${slug}/signals`, { method: 'POST', body: JSON.stringify(body) }),
 
+  getMySignals: (slug: string) =>
+    apiFetch<{ sent: Array<{ toGuestId: string; type: 'wink' | 'crush'; revealed: boolean }>; received: Array<{ fromGuestId: string; type: 'wink' | 'crush'; revealed: boolean }> }>(`/events/${slug}/signals/mine`),
+
   listSentSignals: (slug: string) =>
     apiFetch<{ signals: Array<{ id: string; toGuestId: string; type: string; revealed: boolean; recipientName: string | null; recipientAvatarUrl: string | null; createdAt: string }> }>(`/events/${slug}/signals/sent`),
 

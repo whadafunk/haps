@@ -88,11 +88,16 @@
   let profileModal = $state<{ name: string; guestId: string; profile: GuestProfile | null } | null>(null)
   let modalTab = $state<'profile' | 'chat'>('profile')
 
-  // Signal state (per open modal)
-  let signalSent = $state<'wink' | 'crush' | null>(null)
-  let signalLoading = $state(false)
-  let signalError = $state('')
-  let signalMutual = $state(false)
+  // Signal state — persisted across modals; loaded once on mount
+  type SignalType = 'wink' | 'crush'
+  let sentSignals     = $state(new Map<string, Set<SignalType>>()) // guestId → types I sent
+  let receivedSignals = $state(new Map<string, Set<SignalType>>()) // guestId → types sent to me
+  let signalLoading   = $state<SignalType | null>(null)
+  let signalError     = $state('')
+  // Per-modal derived views (recalculate whenever Maps or profileModal change)
+  const modalSent         = $derived(profileModal ? (sentSignals.get(profileModal.guestId) ?? new Set<SignalType>()) : new Set<SignalType>())
+  const modalReceived     = $derived(profileModal ? (receivedSignals.get(profileModal.guestId) ?? new Set<SignalType>()) : new Set<SignalType>())
+  const modalMutualCrush  = $derived(modalSent.has('crush') && modalReceived.has('crush'))
 
   // DM state (persisted across modal open/close for the same guest)
   type DmMessage = { id: string; fromMe: boolean; body: string; createdAt: string; readAt: string | null }
@@ -271,18 +276,22 @@
     } catch { /**/ }
   }
 
-  async function sendSignal(type: 'wink' | 'crush') {
+  async function sendSignal(type: SignalType) {
     if (!profileModal?.guestId) return
-    signalLoading = true
+    signalLoading = type
     signalError = ''
+    const guestId = profileModal.guestId
     try {
-      const res = await api.sendSignal(event.slug, { toGuestId: profileModal.guestId, type })
-      signalSent = type
-      signalMutual = res.signal.mutualReveal
+      await api.sendSignal(event.slug, { toGuestId: guestId, type })
+      const next = new Map(sentSignals)
+      const existing = next.get(guestId) ?? new Set<SignalType>()
+      existing.add(type)
+      next.set(guestId, existing)
+      sentSignals = next
     } catch (e: unknown) {
       signalError = e instanceof ApiError ? e.message : 'Failed to send.'
     } finally {
-      signalLoading = false
+      signalLoading = null
     }
   }
 
@@ -290,9 +299,7 @@
     if (!guest.guestId) return
     profileModal = { name: guest.displayName, guestId: guest.guestId, profile: guest.profile }
     modalTab = 'profile'
-    signalSent = null
     signalError = ''
-    signalMutual = false
     // Preserve DM state when reopening the same guest's modal so history stays visible
     if (guest.guestId !== dmCachedForGuestId) {
       dmMessages = []
@@ -422,9 +429,29 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     const dmGuestId = $page.url.searchParams.get('dm')
     if (dmGuestId) openDmByGuestId(dmGuestId)
+
+    if (currentGuestId) {
+      try {
+        const res = await api.getMySignals(event.slug)
+        const sent = new Map<string, Set<SignalType>>()
+        for (const s of res.sent) {
+          const set = sent.get(s.toGuestId) ?? new Set<SignalType>()
+          set.add(s.type)
+          sent.set(s.toGuestId, set)
+        }
+        const received = new Map<string, Set<SignalType>>()
+        for (const r of res.received) {
+          const set = received.get(r.fromGuestId) ?? new Set<SignalType>()
+          set.add(r.type)
+          received.set(r.fromGuestId, set)
+        }
+        sentSignals = sent
+        receivedSignals = received
+      } catch { /* non-critical */ }
+    }
   })
 
   $effect(() => {
@@ -480,6 +507,17 @@
       liveStartsAt = patch.startsAt
       liveEndsAt   = patch.endsAt
       liveLocation = patch.location
+    })
+
+    source.addEventListener('new_signal', (e: MessageEvent) => {
+      const sig = JSON.parse(e.data) as { toGuestId: string; fromGuestId: string; type: SignalType; mutualReveal: boolean }
+      if (sig.toGuestId === currentGuestId) {
+        const next = new Map(receivedSignals)
+        const existing = next.get(sig.fromGuestId) ?? new Set<SignalType>()
+        existing.add(sig.type)
+        next.set(sig.fromGuestId, existing)
+        receivedSignals = next
+      }
     })
 
     source.addEventListener('new_dm', (e: MessageEvent) => {
@@ -961,23 +999,36 @@
             <p class="modal-bio">{profileModal.profile.bio}</p>
           {/if}
           <div class="signal-row">
-            {#if signalMutual}
+            {#if modalMutualCrush}
               <p class="signal-mutual">💞 Mutual crush! You two should talk.</p>
-            {:else if signalSent === 'crush'}
-              <p class="signal-sent">💌 Crush sent!</p>
-            {:else if signalSent === 'wink'}
-              <p class="signal-sent">👋 Wink sent!</p>
-            {:else}
-              {#if signalError}
-                <p class="signal-error">{signalError}</p>
-              {/if}
-              <button class="signal-btn signal-wink" onclick={() => sendSignal('wink')} disabled={signalLoading}>
-                👋 Wink
-              </button>
-              <button class="signal-btn signal-crush" onclick={() => sendSignal('crush')} disabled={signalLoading}>
-                💌 Crush
-              </button>
             {/if}
+            {#if signalError}
+              <p class="signal-error">{signalError}</p>
+            {/if}
+            <div class="signal-btns">
+              <div class="signal-btn-group">
+                <button class="signal-btn signal-wink"
+                        class:signal-sent-active={modalSent.has('wink')}
+                        onclick={() => sendSignal('wink')}
+                        disabled={signalLoading !== null || modalSent.has('wink')}>
+                  {modalSent.has('wink') ? '👋 Winked' : signalLoading === 'wink' ? '…' : '👋 Wink'}
+                </button>
+                {#if modalReceived.has('wink')}
+                  <span class="signal-received-hint">they winked at you</span>
+                {/if}
+              </div>
+              <div class="signal-btn-group">
+                <button class="signal-btn signal-crush"
+                        class:signal-sent-active={modalSent.has('crush')}
+                        onclick={() => sendSignal('crush')}
+                        disabled={signalLoading !== null || modalSent.has('crush')}>
+                  {modalSent.has('crush') ? '💌 Crushed' : signalLoading === 'crush' ? '…' : '💌 Crush'}
+                </button>
+                {#if modalReceived.has('crush') && !modalMutualCrush}
+                  <span class="signal-received-hint">they crushed on you</span>
+                {/if}
+              </div>
+            </div>
           </div>
         {:else}
           <!-- Chat tab -->
@@ -1157,16 +1208,20 @@
   .modal-tab { flex: 1; background: none; border: none; font-family: inherit; font-size: 0.85rem; font-weight: 500; color: #6b6058; padding: 0.45rem 0; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
   .modal-tab:hover { color: #3d352e; }
   .modal-tab-active { color: #1a1510; font-weight: 600; border-bottom-color: #b05525; }
-  .signal-row { display: flex; gap: 0.625rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap; }
-  .signal-btn { border: none; border-radius: 20px; padding: 0.5rem 1.25rem; font-size: 0.875rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: opacity 0.15s; }
-  .signal-btn:disabled { opacity: 0.5; cursor: default; }
+  .signal-row { margin-top: 1rem; }
+  .signal-btns { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+  .signal-btn-group { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
+  .signal-btn { border: none; border-radius: 20px; padding: 0.5rem 1.25rem; font-size: 0.875rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: background 0.15s, opacity 0.15s; }
+  .signal-btn:disabled { opacity: 0.6; cursor: default; }
   .signal-wink { background: #f0e8da; color: #3d352e; border: 1px solid #cfc3b0; }
   .signal-wink:hover:not(:disabled) { background: #e8ddd0; }
   .signal-crush { background: #fde8e8; color: #8b1616; border: 1px solid #f0b8b8; }
   .signal-crush:hover:not(:disabled) { background: #f5d0d0; }
-  .signal-sent { margin: 0.75rem 0 0; font-size: 0.875rem; color: #3d352e; text-align: center; width: 100%; }
-  .signal-mutual { margin: 0.75rem 0 0; font-size: 0.9rem; font-weight: 600; color: #b03050; text-align: center; width: 100%; }
-  .signal-error { margin: 0; font-size: 0.8rem; color: #c03828; text-align: center; width: 100%; }
+  .signal-sent-active.signal-wink { background: #d8ccbc; border-color: #b8a898; }
+  .signal-sent-active.signal-crush { background: #f0c0c0; border-color: #d89090; }
+  .signal-received-hint { font-size: 0.7rem; color: #7a6050; text-align: center; }
+  .signal-mutual { margin: 0 0 0.5rem; font-size: 0.9rem; font-weight: 600; color: #b03050; text-align: center; }
+  .signal-error { margin: 0 0 0.5rem; font-size: 0.8rem; color: #c03828; text-align: center; }
   .dm-thread { margin-top: 1rem; text-align: left; }
   .dm-header { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 0.75rem; min-height: 1.5rem; }
   .dm-block-btn { background: none; border: 1px solid #f0c8b8; border-radius: 6px; font-size: 0.75rem; color: #8b3016; cursor: pointer; padding: 0.25rem 0.625rem; font-family: inherit; }
