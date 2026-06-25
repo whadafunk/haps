@@ -1192,7 +1192,7 @@
   .guest-name { font-size: 0.9rem; color: #1a1510; font-weight: 500; }
   .guest-count { font-size: 0.8rem; color: #6b6058; }
   .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
-  .modal-card { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 16px; padding: 2rem 1.5rem 1.5rem; width: 100%; max-width: 320px; position: relative; text-align: center; }
+  .modal-card { background: #f0e8da; border: 1px solid #cfc3b0; border-radius: 16px; padding: 2rem 1.5rem 1.5rem; width: 100%; max-width: 320px; max-height: calc(100vh - 2rem); overflow-y: auto; position: relative; text-align: center; }
   .modal-close { position: absolute; top: 0.75rem; right: 0.875rem; background: none; border: none; font-size: 1rem; color: #6b6058; cursor: pointer; padding: 0.25rem; }
   .modal-close:hover { color: #1a1510; }
   .modal-avatar-wrap { margin: 0 auto 0.875rem; width: 80px; height: 80px; }
@@ -1218,7 +1218,7 @@
   .signal-sent-active.signal-crush { background: #f0c0c0; border-color: #d89090; }
   .signal-error { margin: 0 0 0.5rem; font-size: 0.8rem; color: #c03828; text-align: center; }
   .modal-signal-strip { margin: 0.5rem 0 0; padding: 0.35rem 0.875rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; text-align: center; }
-  .modal-signal-wink { background: #f0e8da; color: #5a4a38; border: 1px solid #d4c4b0; }
+  .modal-signal-wink { background: #d8ecd8; color: #2a5030; border: 1px solid #a8cca8; }
   .modal-signal-crush { background: #fde8e8; color: #8b1616; border: 1px solid #f0b8b8; }
   .modal-signal-mutual { background: #fce8f0; color: #a01840; border: 1px solid #e8b0c8; }
   .dm-thread { margin-top: 1rem; text-align: left; }
