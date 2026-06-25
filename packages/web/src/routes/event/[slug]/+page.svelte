@@ -283,11 +283,10 @@
     const guestId = profileModal.guestId
     try {
       await api.sendSignal(event.slug, { toGuestId: guestId, type })
-      const next = new Map(sentSignals)
-      const existing = next.get(guestId) ?? new Set<SignalType>()
+      // Mutate the reactive Map directly — Svelte 5 tracks Map.set() calls
+      const existing = sentSignals.get(guestId) ?? new Set<SignalType>()
       existing.add(type)
-      next.set(guestId, existing)
-      sentSignals = next
+      sentSignals.set(guestId, existing)
     } catch (e: unknown) {
       signalError = e instanceof ApiError ? e.message : 'Failed to send.'
     } finally {
@@ -512,11 +511,9 @@
     source.addEventListener('new_signal', (e: MessageEvent) => {
       const sig = JSON.parse(e.data) as { toGuestId: string; fromGuestId: string; type: SignalType; mutualReveal: boolean }
       if (sig.toGuestId === currentGuestId) {
-        const next = new Map(receivedSignals)
-        const existing = next.get(sig.fromGuestId) ?? new Set<SignalType>()
+        const existing = receivedSignals.get(sig.fromGuestId) ?? new Set<SignalType>()
         existing.add(sig.type)
-        next.set(sig.fromGuestId, existing)
-        receivedSignals = next
+        receivedSignals.set(sig.fromGuestId, existing)
       }
     })
 
@@ -980,6 +977,15 @@
       <h3 class="modal-name">{profileModal.name}</h3>
 
       {#if currentGuestId && profileModal.guestId !== currentGuestId}
+        <!-- Received-signal strip — visible regardless of active tab -->
+        {#if modalMutualCrush}
+          <p class="modal-signal-strip modal-signal-mutual">💞 Mutual crush!</p>
+        {:else if modalReceived.has('crush')}
+          <p class="modal-signal-strip modal-signal-crush">{profileModal.name} crushed on you 💌</p>
+        {:else if modalReceived.has('wink')}
+          <p class="modal-signal-strip modal-signal-wink">{profileModal.name} winked at you 👋</p>
+        {/if}
+
         <!-- Tabs: Profile | Chat -->
         <div class="modal-tabs">
           <button class="modal-tab" class:modal-tab-active={modalTab === 'profile'} onclick={() => modalTab = 'profile'}>
@@ -999,9 +1005,6 @@
             <p class="modal-bio">{profileModal.profile.bio}</p>
           {/if}
           <div class="signal-row">
-            {#if modalMutualCrush}
-              <p class="signal-mutual">💞 Mutual crush! You two should talk.</p>
-            {/if}
             {#if signalError}
               <p class="signal-error">{signalError}</p>
             {/if}
@@ -1013,9 +1016,6 @@
                         disabled={signalLoading !== null || modalSent.has('wink')}>
                   {modalSent.has('wink') ? '👋 Winked' : signalLoading === 'wink' ? '…' : '👋 Wink'}
                 </button>
-                {#if modalReceived.has('wink')}
-                  <span class="signal-received-hint">they winked at you</span>
-                {/if}
               </div>
               <div class="signal-btn-group">
                 <button class="signal-btn signal-crush"
@@ -1024,9 +1024,6 @@
                         disabled={signalLoading !== null || modalSent.has('crush')}>
                   {modalSent.has('crush') ? '💌 Crushed' : signalLoading === 'crush' ? '…' : '💌 Crush'}
                 </button>
-                {#if modalReceived.has('crush') && !modalMutualCrush}
-                  <span class="signal-received-hint">they crushed on you</span>
-                {/if}
               </div>
             </div>
           </div>
@@ -1219,9 +1216,11 @@
   .signal-crush:hover:not(:disabled) { background: #f5d0d0; }
   .signal-sent-active.signal-wink { background: #d8ccbc; border-color: #b8a898; }
   .signal-sent-active.signal-crush { background: #f0c0c0; border-color: #d89090; }
-  .signal-received-hint { font-size: 0.7rem; color: #7a6050; text-align: center; }
-  .signal-mutual { margin: 0 0 0.5rem; font-size: 0.9rem; font-weight: 600; color: #b03050; text-align: center; }
   .signal-error { margin: 0 0 0.5rem; font-size: 0.8rem; color: #c03828; text-align: center; }
+  .modal-signal-strip { margin: 0.5rem 0 0; padding: 0.35rem 0.875rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; text-align: center; }
+  .modal-signal-wink { background: #f0e8da; color: #5a4a38; border: 1px solid #d4c4b0; }
+  .modal-signal-crush { background: #fde8e8; color: #8b1616; border: 1px solid #f0b8b8; }
+  .modal-signal-mutual { background: #fce8f0; color: #a01840; border: 1px solid #e8b0c8; }
   .dm-thread { margin-top: 1rem; text-align: left; }
   .dm-header { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 0.75rem; min-height: 1.5rem; }
   .dm-block-btn { background: none; border: 1px solid #f0c8b8; border-radius: 6px; font-size: 0.75rem; color: #8b3016; cursor: pointer; padding: 0.25rem 0.625rem; font-family: inherit; }
