@@ -373,7 +373,11 @@
     dmInput = ''
     try {
       const res = await api.sendDm(event.slug, { toGuestId: profileModal.guestId, body: text })
-      dmMessages = [...dmMessages, { id: res.message.id, fromMe: true, body: res.message.body, createdAt: res.message.createdAt }]
+      // SSE may have already added this message (new_dm fires before HTTP response returns);
+      // skip the append to prevent a duplicate key in the #each block
+      if (!dmMessages.some(m => m.id === res.message.id)) {
+        dmMessages = [...dmMessages, { id: res.message.id, fromMe: true, body: res.message.body, createdAt: res.message.createdAt }]
+      }
     } catch (e: unknown) {
       dmError = e instanceof ApiError ? e.message : 'Failed to send.'
       dmInput = text
@@ -387,7 +391,9 @@
     try {
       await api.blockGuest(event.slug, profileModal.guestId)
       dmBlocked = true
-    } catch { /* non-critical */ }
+    } catch (e: unknown) {
+      dmError = e instanceof ApiError ? e.message : 'Failed to block.'
+    }
   }
 
   async function unblockGuest() {
@@ -395,7 +401,9 @@
     try {
       await api.unblockGuest(event.slug, profileModal.guestId)
       dmBlocked = false
-    } catch { /* non-critical */ }
+    } catch (e: unknown) {
+      dmError = e instanceof ApiError ? e.message : 'Failed to unblock.'
+    }
   }
 
   onMount(() => {
