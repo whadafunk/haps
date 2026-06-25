@@ -16,7 +16,7 @@
     goto('/clear-identity', { invalidateAll: true })
   }
 
-  const hasSession = $derived(data.user?.type === 'guest' ? data.user : !data.user && data.session)
+  const hasSession = $derived(data.user?.type === 'guest' ? data.user : !data.user && data.session?.displayName)
   const unreadCount = $derived(data.unreadCount ?? 0)
 </script>
 
