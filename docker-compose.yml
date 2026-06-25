@@ -32,6 +32,7 @@ services:
       - internal
 
   api:
+    container_name: haps-api
     build:
       context: .
       dockerfile: packages/api/Dockerfile
@@ -52,6 +53,7 @@ services:
       - internal
 
   web:
+    container_name: haps-web
     build:
       context: .
       dockerfile: packages/web/Dockerfile
@@ -61,7 +63,7 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
-      INTERNAL_API_URL: http://api:3000
+      INTERNAL_API_URL: http://haps-api:3000
     networks:
       - internal
 

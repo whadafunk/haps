@@ -6,12 +6,12 @@
 
     # API — Fastify backend
     handle /api/* {
-        reverse_proxy api:3000
+        reverse_proxy haps-api:3000
     }
 
     # Everything else — SvelteKit SSR frontend
     handle {
-        reverse_proxy web:3000
+        reverse_proxy haps-web:3000
     }
 
     # Compress responses
