@@ -318,6 +318,7 @@
 
   function switchToChat() {
     modalTab = 'chat'
+    dmError = ''
     if (profileModal?.guestId && !dmLoaded) loadDmTab(profileModal.guestId)
   }
 
@@ -380,6 +381,14 @@
     try {
       await api.blockGuest(event.slug, profileModal.guestId)
       dmBlocked = true
+    } catch { /* non-critical */ }
+  }
+
+  async function unblockGuest() {
+    if (!profileModal?.guestId) return
+    try {
+      await api.unblockGuest(event.slug, profileModal.guestId)
+      dmBlocked = false
     } catch { /* non-critical */ }
   }
 
@@ -943,7 +952,9 @@
           <!-- Chat tab -->
           <div class="dm-thread">
             <div class="dm-header">
-              {#if !dmBlocked}
+              {#if dmBlocked}
+                <button class="dm-unblock-btn" onclick={unblockGuest}>Unblock</button>
+              {:else}
                 <button class="dm-block-btn" onclick={blockGuest}>Block</button>
               {/if}
             </div>
@@ -1124,6 +1135,8 @@
   .dm-header { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 0.75rem; min-height: 1.5rem; }
   .dm-block-btn { background: none; border: 1px solid #f0c8b8; border-radius: 6px; font-size: 0.75rem; color: #8b3016; cursor: pointer; padding: 0.25rem 0.625rem; font-family: inherit; }
   .dm-block-btn:hover { background: #fdf2ee; }
+  .dm-unblock-btn { background: none; border: 1px solid #c8d8b8; border-radius: 6px; font-size: 0.75rem; color: #3a6020; cursor: pointer; padding: 0.25rem 0.625rem; font-family: inherit; }
+  .dm-unblock-btn:hover { background: #f0f8e8; }
   .dm-loading { font-size: 0.85rem; color: #6b6058; text-align: center; margin: 1rem 0; }
   .dm-messages { display: flex; flex-direction: column; gap: 0.5rem; max-height: 220px; overflow-y: auto; margin-bottom: 0.75rem; padding-right: 2px; }
   .dm-empty { font-size: 0.85rem; color: #9a8f86; text-align: center; margin: 0.75rem 0; }
