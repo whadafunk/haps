@@ -94,8 +94,9 @@
   let signalError = $state('')
   let signalMutual = $state(false)
 
-  // DM state (per open modal)
+  // DM state (persisted across modal open/close for the same guest)
   type DmMessage = { id: string; fromMe: boolean; body: string; createdAt: string }
+  let dmCachedForGuestId = $state<string | null>(null)  // which guest's state is cached
   let dmMessages = $state<DmMessage[]>([])
   let dmInput = $state('')
   let dmLoading = $state(false)
@@ -289,11 +290,15 @@
     signalSent = null
     signalError = ''
     signalMutual = false
-    dmMessages = []
-    dmInput = ''
-    dmError = ''
-    dmBlocked = false
-    dmLoaded = false
+    // Preserve DM state when reopening the same guest's modal so history stays visible
+    if (guest.guestId !== dmCachedForGuestId) {
+      dmMessages = []
+      dmInput = ''
+      dmError = ''
+      dmBlocked = false
+      dmLoaded = false
+      dmCachedForGuestId = guest.guestId
+    }
   }
 
   async function loadDmTab(guestId: string) {
@@ -328,6 +333,7 @@
     // messages that arrive while the fetch is in-flight
     profileModal = { name: '', guestId, profile: null }
     modalTab = 'chat'
+    dmCachedForGuestId = guestId
     dmMessages = []
     dmBlocked = false
     dmLoaded = false
@@ -958,14 +964,18 @@
                 <button class="dm-block-btn" onclick={blockGuest}>Block</button>
               {/if}
             </div>
-            {#if dmLoading}
+            {#if dmLoading && dmMessages.length === 0}
               <p class="dm-loading">Loading…</p>
-            {:else if dmError}
+            {:else if dmError && dmMessages.length === 0}
               <p class="signal-error">{dmError}</p>
             {:else}
               <div class="dm-messages">
                 {#if dmMessages.length === 0}
-                  <p class="dm-empty">No messages yet. Say hello!</p>
+                  {#if dmLoading}
+                    <p class="dm-empty">Loading…</p>
+                  {:else}
+                    <p class="dm-empty">No messages yet. Say hello!</p>
+                  {/if}
                 {:else}
                   {#each dmMessages as msg (msg.id)}
                     <div class="dm-msg" class:dm-msg-mine={msg.fromMe} class:dm-msg-theirs={!msg.fromMe}>
