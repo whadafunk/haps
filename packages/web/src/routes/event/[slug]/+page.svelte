@@ -2,7 +2,7 @@
   import type { PageData } from './$types'
   import { api, ApiError } from '$lib/api'
   import { invalidateAll, goto } from '$app/navigation'
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import { page } from '$app/stores'
 
   let { data } = $props<{ data: PageData }>()
@@ -95,15 +95,18 @@
   let signalMutual = $state(false)
 
   // DM state (persisted across modal open/close for the same guest)
-  type DmMessage = { id: string; fromMe: boolean; body: string; createdAt: string }
+  type DmMessage = { id: string; fromMe: boolean; body: string; createdAt: string; readAt: string | null }
   let dmCachedForGuestId = $state<string | null>(null)  // which guest's state is cached
   let dmMessages = $state<DmMessage[]>([])
+  let dmScrollEl = $state<HTMLElement | null>(null)
   let dmInput = $state('')
   let dmLoading = $state(false)
   let dmSending = $state(false)
   let dmError = $state('')
   let dmBlocked = $state(false)
   let dmLoaded = $state(false)
+  // ID of the first unread incoming message — used to scroll to it on open
+  const firstUnreadId = $derived(dmMessages.find(m => !m.fromMe && m.readAt === null)?.id ?? null)
 
   // Current viewer's guestId (for sending signals)
   const currentGuestId = $derived(
@@ -314,11 +317,22 @@
       dmMessages = merged
       dmBlocked = res.blocked
       dmLoaded = true
+      scrollDmMessages('unread')
     } catch (e: unknown) {
       dmError = e instanceof ApiError ? e.message : 'Failed to load messages.'
     } finally {
       dmLoading = false
     }
+  }
+
+  async function scrollDmMessages(mode: 'unread' | 'bottom' = 'bottom') {
+    await tick()
+    if (!dmScrollEl) return
+    if (mode === 'unread') {
+      const anchor = dmScrollEl.querySelector<HTMLElement>('[data-first-unread]')
+      if (anchor) { anchor.scrollIntoView({ block: 'start' }); return }
+    }
+    dmScrollEl.scrollTop = dmScrollEl.scrollHeight
   }
 
   function switchToChat() {
@@ -358,6 +372,7 @@
         ? { avatarUrl: res.otherGuest.avatarUrl, bio: res.otherGuest.bio, vibe: res.otherGuest.vibe }
         : null
       profileModal = { name, guestId, profile }
+      scrollDmMessages('unread')
     } catch (e: unknown) {
       dmError = e instanceof ApiError ? e.message : 'Failed to load messages.'
     } finally {
@@ -376,8 +391,9 @@
       // SSE may have already added this message (new_dm fires before HTTP response returns);
       // skip the append to prevent a duplicate key in the #each block
       if (!dmMessages.some(m => m.id === res.message.id)) {
-        dmMessages = [...dmMessages, { id: res.message.id, fromMe: true, body: res.message.body, createdAt: res.message.createdAt }]
+        dmMessages = [...dmMessages, { id: res.message.id, fromMe: true, body: res.message.body, createdAt: res.message.createdAt, readAt: null }]
       }
+      scrollDmMessages('bottom')
     } catch (e: unknown) {
       dmError = e instanceof ApiError ? e.message : 'Failed to send.'
       dmInput = text
@@ -474,7 +490,8 @@
           profileModal.guestId === dm.fromGuestId || profileModal.guestId === dm.toGuestId
         if (isRelevant && !dmMessages.some(m => m.id === dm.id)) {
           const fromMe = dm.fromGuestId === currentGuestId
-          dmMessages = [...dmMessages, { id: dm.id, fromMe, body: dm.body, createdAt: dm.createdAt }]
+          dmMessages = [...dmMessages, { id: dm.id, fromMe, body: dm.body, createdAt: dm.createdAt, readAt: null }]
+          scrollDmMessages('bottom')
         }
       }
     })
@@ -977,7 +994,7 @@
             {:else if dmError && dmMessages.length === 0}
               <p class="signal-error">{dmError}</p>
             {:else}
-              <div class="dm-messages">
+              <div class="dm-messages" bind:this={dmScrollEl}>
                 {#if dmMessages.length === 0}
                   {#if dmLoading}
                     <p class="dm-empty">Loading…</p>
@@ -986,7 +1003,8 @@
                   {/if}
                 {:else}
                   {#each dmMessages as msg (msg.id)}
-                    <div class="dm-msg" class:dm-msg-mine={msg.fromMe} class:dm-msg-theirs={!msg.fromMe}>
+                    <div class="dm-msg" class:dm-msg-mine={msg.fromMe} class:dm-msg-theirs={!msg.fromMe}
+                         data-first-unread={msg.id === firstUnreadId ? '' : undefined}>
                       <span class="dm-bubble">{msg.body}</span>
                     </div>
                   {/each}
