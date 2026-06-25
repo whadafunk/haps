@@ -1,4 +1,9 @@
 :80 {
+    # Health check for HAProxy
+    handle /health {
+        respond "ok" 200
+    }
+
     # API — Fastify backend
     handle /api/* {
         reverse_proxy api:3000
