@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { notifications, visitorSessions, events } from '../db/schema.js'
-import { eq, and, or, inArray, desc } from 'drizzle-orm'
+import { notifications, visitorSessions, events, directMessages } from '../db/schema.js'
+import { eq, and, or, inArray, desc, isNull } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 
 const notificationsRoutes: FastifyPluginAsync = async (fastify) => {
@@ -53,9 +53,20 @@ const notificationsRoutes: FastifyPluginAsync = async (fastify) => {
 
     const unreadCount = rows.filter(n => !n.read).length
 
+    // Unread DMs (messages addressed to this guest that haven't been read)
+    let unreadDmCount = 0
+    if (session.guestId) {
+      const unreadDms = await db
+        .select({ id: directMessages.id })
+        .from(directMessages)
+        .where(and(eq(directMessages.toGuestId, session.guestId), isNull(directMessages.readAt)))
+      unreadDmCount = unreadDms.length
+    }
+
     return {
       notifications: rows.map(n => ({ ...n, createdAt: n.createdAt.toISOString() })),
       unreadCount,
+      unreadDmCount,
     }
   })
 

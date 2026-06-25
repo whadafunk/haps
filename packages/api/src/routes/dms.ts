@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
 import { directMessages, guestBlocks, guests, events, notifications, visitorSessions } from '../db/schema.js'
-import { eq, and, or, desc } from 'drizzle-orm'
+import { eq, and, or, desc, inArray } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { SendDmSchema } from '@haps/shared'
 import { ensureSession } from '../middleware/session.js'
@@ -10,6 +10,93 @@ import { sendPushToSession } from '../services/push.js'
 const DM_MAX_LENGTH = 2000
 
 const dmsRoutes: FastifyPluginAsync = async (fastify) => {
+
+  // GET /api/dm/threads — all DM threads for the current guest, across all events
+  fastify.get('/api/dm/threads', async (request, reply) => {
+    if (!request.session) return reply.send({ threads: [] })
+
+    const myGuestId = request.session.guestId ?? (request.user?.type === 'guest' ? request.user.sub : null)
+    if (!myGuestId) return reply.send({ threads: [] })
+
+    const rows = await db
+      .select({
+        id:          directMessages.id,
+        eventId:     directMessages.eventId,
+        fromGuestId: directMessages.fromGuestId,
+        toGuestId:   directMessages.toGuestId,
+        body:        directMessages.body,
+        readAt:      directMessages.readAt,
+        createdAt:   directMessages.createdAt,
+        eventSlug:   events.slug,
+        eventTitle:  events.title,
+      })
+      .from(directMessages)
+      .innerJoin(events, eq(directMessages.eventId, events.id))
+      .where(or(eq(directMessages.fromGuestId, myGuestId), eq(directMessages.toGuestId, myGuestId)))
+      .orderBy(desc(directMessages.createdAt))
+      .limit(500)
+
+    // Group by (eventId, otherGuestId) — rows are newest-first so first occurrence is the latest message
+    type ThreadAcc = {
+      otherGuestId: string
+      eventId: string
+      eventSlug: string
+      eventTitle: string
+      lastMessage: string
+      lastMessageAt: Date
+      fromMe: boolean
+      unreadCount: number
+    }
+    const threadMap = new Map<string, ThreadAcc>()
+
+    for (const row of rows) {
+      const otherGuestId = row.fromGuestId === myGuestId ? row.toGuestId : row.fromGuestId
+      const key = `${row.eventId}:${otherGuestId}`
+
+      if (!threadMap.has(key)) {
+        threadMap.set(key, {
+          otherGuestId,
+          eventId:       row.eventId,
+          eventSlug:     row.eventSlug,
+          eventTitle:    row.eventTitle,
+          lastMessage:   row.body,
+          lastMessageAt: row.createdAt,
+          fromMe:        row.fromGuestId === myGuestId,
+          unreadCount:   0,
+        })
+      }
+
+      if (row.toGuestId === myGuestId && row.readAt === null) {
+        threadMap.get(key)!.unreadCount++
+      }
+    }
+
+    const otherGuestIds = [...new Set([...threadMap.values()].map(t => t.otherGuestId))]
+    const guestRows = otherGuestIds.length > 0
+      ? await db
+          .select({ id: guests.id, name: guests.name, avatarUrl: guests.avatarUrl })
+          .from(guests)
+          .where(inArray(guests.id, otherGuestIds))
+      : []
+    const guestMap = new Map(guestRows.map(g => [g.id, g]))
+
+    const threads = [...threadMap.values()]
+      .sort((a, b) => b.lastMessageAt.getTime() - a.lastMessageAt.getTime())
+      .map(t => ({
+        otherGuestId:     t.otherGuestId,
+        otherGuestName:   guestMap.get(t.otherGuestId)?.name ?? 'Unknown',
+        otherGuestAvatar: guestMap.get(t.otherGuestId)?.avatarUrl ?? null,
+        eventId:          t.eventId,
+        eventSlug:        t.eventSlug,
+        eventTitle:       t.eventTitle,
+        lastMessage:      t.lastMessage,
+        lastMessageAt:    t.lastMessageAt.toISOString(),
+        fromMe:           t.fromMe,
+        unreadCount:      t.unreadCount,
+      }))
+
+    return reply.send({ threads })
+  })
 
   // POST /api/events/:slug/dm — send a DM
   fastify.post('/api/events/:slug/dm', async (request, reply) => {

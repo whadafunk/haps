@@ -16,13 +16,34 @@ export type InboxItem = {
   eventSlug: string | null
 }
 
+export type DmThread = {
+  otherGuestId: string
+  otherGuestName: string
+  otherGuestAvatar: string | null
+  eventId: string
+  eventSlug: string
+  eventTitle: string
+  lastMessage: string
+  lastMessageAt: string
+  fromMe: boolean
+  unreadCount: number
+}
+
 export const load: PageServerLoad = async ({ cookies }) => {
   if (!cookies.get('vsid')) redirect(302, '/')
 
-  try {
-    const data = await serverGet<{ notifications: InboxItem[]; unreadCount: number }>('/notifications', cookies)
-    return { items: data.notifications, unreadCount: data.unreadCount }
-  } catch {
-    return { items: [] as InboxItem[], unreadCount: 0 }
+  const [notifData, dmData] = await Promise.all([
+    serverGet<{ notifications: InboxItem[]; unreadCount: number }>('/notifications', cookies)
+      .catch(() => ({ notifications: [] as InboxItem[], unreadCount: 0 })),
+    serverGet<{ threads: DmThread[] }>('/dm/threads', cookies)
+      .catch(() => ({ threads: [] as DmThread[] })),
+  ])
+
+  const dmUnreadCount = dmData.threads.reduce((sum, t) => sum + t.unreadCount, 0)
+
+  return {
+    items: notifData.notifications,
+    threads: dmData.threads,
+    dmUnreadCount,
   }
 }

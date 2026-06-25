@@ -1,5 +1,5 @@
 import type { LayoutServerLoad } from './$types'
-import { serverGet } from '$lib/serverFetch'
+import { serverGet, serverPost } from '$lib/serverFetch'
 
 export const load: LayoutServerLoad = async ({ cookies }) => {
   let requireRsvpBeforeRegister = true
@@ -44,8 +44,8 @@ export const load: LayoutServerLoad = async ({ cookies }) => {
   let unreadCount = 0
   if ((user?.type === 'guest' || (!user && session)) && cookies.get('vsid')) {
     try {
-      const data = await serverGet<{ unreadCount: number }>('/notifications', cookies)
-      unreadCount = data.unreadCount
+      const data = await serverGet<{ unreadCount: number; unreadDmCount: number }>('/notifications', cookies)
+      unreadCount = data.unreadCount + (data.unreadDmCount ?? 0)
     } catch {
       // non-critical
     }
