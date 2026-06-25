@@ -1171,7 +1171,7 @@
 
   h2 { margin: 0 0 1rem; font-size: 1.1rem; color: #1a1510; }
 
-  .cover-preview { width: 100%; max-height: 240px; object-fit: cover; border-radius: 8px; display: block; margin-bottom: 0.75rem; }
+  .cover-preview { width: 100%; aspect-ratio: 3/1; object-fit: cover; border-radius: 8px; display: block; margin-bottom: 0.75rem; }
   .cover-placeholder { background: #e8ddd0; border: 1px dashed #c8bdb0; border-radius: 8px; height: 120px; display: flex; align-items: center; justify-content: center; color: #9a8f86; font-size: 0.875rem; margin-bottom: 0.75rem; }
   .cover-upload-btn { display: inline-block; background: #b05525; color: #fff; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; border: none; }
   .cover-upload-btn:hover { background: #924418; }

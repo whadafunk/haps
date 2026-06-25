@@ -925,7 +925,7 @@
   .back-nav { padding: 0.75rem 0 0; }
   .back-link { font-size: 0.85rem; color: #6b6058; text-decoration: none; font-weight: 500; }
   .back-link:hover { color: var(--accent, #b05525); }
-  .cover { height: 240px; background-size: cover; background-position: left center; border-radius: 0 0 12px 12px; margin-bottom: 1.5rem; }
+  .cover { aspect-ratio: 3/1; background-size: cover; background-position: left center; border-radius: 0 0 12px 12px; margin-bottom: 1.5rem; }
   .event-header { margin-bottom: 1.5rem; }
   .header-badges { display: flex; gap: 0.375rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
   .type-badge { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 0.2rem 0.5rem; border-radius: 4px; }
