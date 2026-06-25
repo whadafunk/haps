@@ -412,7 +412,7 @@
   {/if}
 
   {#if event.coverImageUrl}
-    <div class="cover" style="background-image: url({event.coverImageUrl})"></div>
+    <img class="cover" src={event.coverImageUrl} alt="Event cover" />
   {/if}
 
   <div class="content">
@@ -925,7 +925,7 @@
   .back-nav { padding: 0.75rem 0 0; }
   .back-link { font-size: 0.85rem; color: #6b6058; text-decoration: none; font-weight: 500; }
   .back-link:hover { color: var(--accent, #b05525); }
-  .cover { aspect-ratio: 3/1; background-size: cover; background-position: left center; border-radius: 0 0 12px 12px; margin-bottom: 1.5rem; }
+  .cover { width: 100%; height: auto; max-height: 400px; object-fit: cover; object-position: left center; border-radius: 0 0 12px 12px; margin-bottom: 1.5rem; display: block; }
   .event-header { margin-bottom: 1.5rem; }
   .header-badges { display: flex; gap: 0.375rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
   .type-badge { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 0.2rem 0.5rem; border-radius: 4px; }
