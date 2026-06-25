@@ -11,23 +11,27 @@ export const load: LayoutServerLoad = async ({ cookies }) => {
     return { meta: null, session: null, user: null, setupRequired: false, requireRsvpBeforeRegister: true }
   }
 
-  let user: { id: string; email: string; displayName: string; role: string | null; type: 'guest' | 'operator' } | null = null
+  type AuthUser = { id: string; email: string; displayName: string; role: string | null; type: 'guest' | 'operator' }
+  let user: AuthUser | null = null
+
   if (cookies.get('auth_token')) {
     try {
-      user = await serverGet<{ id: string; email: string; displayName: string; role: string | null; type: 'guest' | 'operator' }>('/auth/me', cookies)
+      user = await serverGet<AuthUser>('/auth/me', cookies)
     } catch {
-      // auth_token expired — attempt a silent server-side refresh if refresh_token is present
+      // auth_token present but invalid/expired — clear it and fall through to refresh
       cookies.delete('auth_token', { path: '/' })
-      if (cookies.get('refresh_token')) {
-        try {
-          await serverPost('/auth/refresh', null, cookies)
-          // forwardCookies in serverPost has written the new auth_token into cookies
-          user = await serverGet<{ id: string; email: string; displayName: string; role: string | null; type: 'guest' | 'operator' }>('/auth/me', cookies)
-        } catch {
-          // refresh also failed — clear everything
-          cookies.delete('refresh_token', { path: '/' })
-        }
-      }
+    }
+  }
+
+  // If still no user but refresh_token exists, try a silent refresh.
+  // This covers two cases: (a) auth_token was just cleared above, and
+  // (b) auth_token maxAge elapsed so the browser never sent it at all.
+  if (!user && cookies.get('refresh_token')) {
+    try {
+      await serverPost('/auth/refresh', null, cookies)
+      user = await serverGet<AuthUser>('/auth/me', cookies)
+    } catch {
+      cookies.delete('refresh_token', { path: '/' })
     }
   }
 
