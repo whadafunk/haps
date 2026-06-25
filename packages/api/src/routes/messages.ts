@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
-import { events, eventMessages, deliveryJobs, rsvps, notifications, users } from '../db/schema.js'
+import { events, eventMessages, deliveryJobs, rsvps, notifications, users, visitorSessions } from '../db/schema.js'
 import { eq, and, isNull, inArray } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { CreateEventMessageSchema, BlastSchema } from '@haps/shared'
@@ -136,23 +136,28 @@ const messagesRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Deliver to the inbox of all yes/maybe RSVPs
     const recipients = await db
-      .select({ sessionId: rsvps.sessionId, userId: rsvps.userId })
+      .select({ sessionId: rsvps.sessionId, userId: rsvps.userId, guestId: rsvps.guestId })
       .from(rsvps)
       .where(and(eq(rsvps.eventId, event.id), inArray(rsvps.status, ['yes', 'maybe'])))
 
-    const inboxRows: (typeof notifications.$inferInsert)[] = recipients
-      .filter(r => r.sessionId || r.userId)
-      .map(r => ({
-        sessionId: r.sessionId ?? null,
-        userId: r.userId ?? null,
-        eventId: event.id,
-        type: 'announcement',
-        senderName,
-        subject: body.subject,
-        body: body.body,
-        link: `/event/${slug}`,
-        read: false,
-      }))
+    const inboxRows: (typeof notifications.$inferInsert)[] = []
+    const notifBase = { eventId: event.id, type: 'announcement', senderName, subject: body.subject, body: body.body, link: `/event/${slug}`, read: false }
+
+    for (const r of recipients) {
+      if (r.sessionId || r.userId) {
+        inboxRows.push({ ...notifBase, sessionId: r.sessionId ?? null, userId: r.userId ?? null })
+      } else if (r.guestId) {
+        // RSVP created via logged-in JWT path — no sessionId/userId on the RSVP.
+        // Resolve the guest's active sessions so the inbox receives the notification.
+        const guestSessions = await db
+          .select({ id: visitorSessions.id })
+          .from(visitorSessions)
+          .where(eq(visitorSessions.guestId, r.guestId))
+        for (const s of guestSessions) {
+          inboxRows.push({ ...notifBase, sessionId: s.id, userId: null })
+        }
+      }
+    }
 
     if (inboxRows.length > 0) {
       await db.insert(notifications).values(inboxRows)
