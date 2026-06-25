@@ -19,7 +19,7 @@
 
   const hasSession = $derived(data.user?.type === 'guest' ? data.user : !data.user && data.session?.displayName)
 
-  $effect(() => { unreadCount.set(data.unreadCount ?? 0) })
+  unreadCount.set(data.unreadCount ?? 0)
 </script>
 
 <svelte:window onclick={handleWindowClick} />
