@@ -84,10 +84,19 @@
   let coverError = $state('')
   let coverPreview = $state<string | null>(event.coverImageUrl ?? null)
 
-  async function uploadCover(e: Event) {
-    const input = e.target as HTMLInputElement
-    const file = input.files?.[0]
-    if (!file) return
+  async function pickCoverFile() {
+    if (coverUploading) return
+    let file: File | null = null
+    try {
+      const [handle] = await (window as any).showOpenFilePicker({
+        types: [{ description: 'Images', accept: { 'image/jpeg': ['.jpg', '.jpeg'], 'image/png': ['.png'], 'image/webp': ['.webp'], 'image/gif': ['.gif'] } }],
+        multiple: false
+      })
+      file = await handle.getFile()
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') coverError = 'Could not open file picker.'
+      return
+    }
     coverError = ''
     coverUploading = true
     try {
@@ -98,7 +107,6 @@
       coverError = err instanceof ApiError ? err.message : 'Upload failed.'
     } finally {
       coverUploading = false
-      input.value = ''
     }
   }
 
@@ -540,10 +548,9 @@
         {#if coverError}
           <div class="error-banner">{coverError}</div>
         {/if}
-        <input id="cover-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onchange={uploadCover} disabled={coverUploading} style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;" />
-        <label for="cover-file-input" class="cover-upload-btn" class:disabled={coverUploading}>
+        <button type="button" class="cover-upload-btn" class:disabled={coverUploading} onclick={pickCoverFile}>
           {coverUploading ? 'Uploading…' : coverPreview ? 'Change image' : 'Upload image'}
-        </label>
+        </button>
       </section>
 
       {#if editLink}
