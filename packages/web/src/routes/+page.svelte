@@ -18,7 +18,7 @@
     <h1>Welcome to Haps</h1>
     <p class="tagline">The simple, private way to plan events and collect RSVPs — no account required for your guests.</p>
 
-    {#if data.session}
+    {#if data.session?.displayName}
       <div class="identity-card">
         <div class="identity-header">
           <span class="identity-label">Your session identity</span>
