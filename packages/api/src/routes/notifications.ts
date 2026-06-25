@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { db } from '../db/index.js'
 import { notifications, visitorSessions, events, directMessages } from '../db/schema.js'
-import { eq, and, or, inArray, desc, isNull } from 'drizzle-orm'
+import { eq, and, or, inArray, desc, isNull, ne } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 
 const notificationsRoutes: FastifyPluginAsync = async (fastify) => {
@@ -47,7 +47,7 @@ const notificationsRoutes: FastifyPluginAsync = async (fastify) => {
       })
       .from(notifications)
       .leftJoin(events, eq(events.id, notifications.eventId))
-      .where(or(...conditions))
+      .where(and(or(...conditions), ne(notifications.type, 'new_message')))
       .orderBy(desc(notifications.createdAt))
       .limit(100)
 
