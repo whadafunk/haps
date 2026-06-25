@@ -83,6 +83,7 @@
   let coverUploading = $state(false)
   let coverError = $state('')
   let coverPreview = $state<string | null>(event.coverImageUrl ?? null)
+  let coverFileInput = $state<HTMLInputElement | null>(null)
 
   async function uploadCover(e: Event) {
     const input = e.target as HTMLInputElement
@@ -540,10 +541,10 @@
         {#if coverError}
           <div class="error-banner">{coverError}</div>
         {/if}
-        <label class="cover-upload-btn">
+        <input bind:this={coverFileInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif" onchange={uploadCover} disabled={coverUploading} style="display:none" />
+        <button type="button" class="cover-upload-btn" disabled={coverUploading} onclick={() => coverFileInput?.click()}>
           {coverUploading ? 'Uploading…' : coverPreview ? 'Change image' : 'Upload image'}
-          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onchange={uploadCover} disabled={coverUploading} hidden />
-        </label>
+        </button>
       </section>
 
       {#if editLink}
