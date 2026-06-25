@@ -2,6 +2,8 @@
   import type { PageData } from './$types'
   import { api, ApiError } from '$lib/api'
   import { invalidateAll, goto } from '$app/navigation'
+  import { onMount } from 'svelte'
+  import { page } from '$app/stores'
 
   let { data } = $props<{ data: PageData }>()
 
@@ -84,6 +86,7 @@
 
   // Profile modal
   let profileModal = $state<{ name: string; guestId: string; profile: GuestProfile | null } | null>(null)
+  let modalTab = $state<'profile' | 'chat'>('profile')
 
   // Signal state (per open modal)
   let signalSent = $state<'wink' | 'crush' | null>(null)
@@ -93,13 +96,13 @@
 
   // DM state (per open modal)
   type DmMessage = { id: string; fromMe: boolean; body: string; createdAt: string }
-  let dmOpen = $state(false)
   let dmMessages = $state<DmMessage[]>([])
   let dmInput = $state('')
   let dmLoading = $state(false)
   let dmSending = $state(false)
   let dmError = $state('')
   let dmBlocked = $state(false)
+  let dmLoaded = $state(false)
 
   // Current viewer's guestId (for sending signals)
   const currentGuestId = $derived(
@@ -282,25 +285,58 @@
   function openProfileModal(guest: GuestRow) {
     if (!guest.guestId) return
     profileModal = { name: guest.displayName, guestId: guest.guestId, profile: guest.profile }
+    modalTab = 'profile'
     signalSent = null
     signalError = ''
     signalMutual = false
-    dmOpen = false
     dmMessages = []
     dmInput = ''
     dmError = ''
     dmBlocked = false
+    dmLoaded = false
   }
 
-  async function openDmThread() {
-    if (!profileModal?.guestId) return
-    dmOpen = true
+  async function loadDmTab(guestId: string) {
+    if (dmLoaded) return
     dmLoading = true
     dmError = ''
     try {
-      const res = await api.getDmThread(event.slug, profileModal.guestId)
+      const res = await api.getDmThread(event.slug, guestId)
       dmMessages = res.messages
       dmBlocked = res.blocked
+      dmLoaded = true
+    } catch (e: unknown) {
+      dmError = e instanceof ApiError ? e.message : 'Failed to load messages.'
+    } finally {
+      dmLoading = false
+    }
+  }
+
+  function switchToChat() {
+    modalTab = 'chat'
+    if (profileModal?.guestId && !dmLoaded) loadDmTab(profileModal.guestId)
+  }
+
+  // Open the modal for a guest by guestId only (used for deep-links, no GuestRow needed)
+  async function openDmByGuestId(guestId: string) {
+    dmLoading = true
+    dmError = ''
+    dmMessages = []
+    dmBlocked = false
+    dmLoaded = false
+
+    try {
+      const res = await api.getDmThread(event.slug, guestId)
+      dmMessages = res.messages
+      dmBlocked = res.blocked
+      dmLoaded = true
+
+      const name = res.otherGuest?.name ?? 'Guest'
+      const profile: GuestProfile | null = res.otherGuest
+        ? { avatarUrl: res.otherGuest.avatarUrl, bio: res.otherGuest.bio, vibe: res.otherGuest.vibe }
+        : null
+      profileModal = { name, guestId, profile }
+      modalTab = 'chat'
     } catch (e: unknown) {
       dmError = e instanceof ApiError ? e.message : 'Failed to load messages.'
     } finally {
@@ -332,6 +368,11 @@
       dmBlocked = true
     } catch { /* non-critical */ }
   }
+
+  onMount(() => {
+    const dmGuestId = $page.url.searchParams.get('dm')
+    if (dmGuestId) openDmByGuestId(dmGuestId)
+  })
 
   $effect(() => {
     if (event.showAlbum && (!event.wallRequiresRsvp || hasQualifyingRsvp)) { loadPosts() }
@@ -386,6 +427,19 @@
       liveStartsAt = patch.startsAt
       liveEndsAt   = patch.endsAt
       liveLocation = patch.location
+    })
+
+    source.addEventListener('new_dm', (e: MessageEvent) => {
+      const dm = JSON.parse(e.data) as { id: string; fromGuestId: string; toGuestId: string; body: string; createdAt: string }
+      // Append to open chat only if the modal is showing a thread with this person
+      if (profileModal && modalTab === 'chat') {
+        const isRelevant =
+          profileModal.guestId === dm.fromGuestId || profileModal.guestId === dm.toGuestId
+        if (isRelevant && !dmMessages.some(m => m.id === dm.id)) {
+          const fromMe = dm.fromGuestId === currentGuestId
+          dmMessages = [...dmMessages, { id: dm.id, fromMe, body: dm.body, createdAt: dm.createdAt }]
+        }
+      }
     })
 
     return () => source.close()
@@ -822,6 +876,8 @@
   <div class="modal-backdrop" onclick={() => profileModal = null} role="presentation">
     <div class="modal-card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Guest profile">
       <button class="modal-close" onclick={() => profileModal = null} aria-label="Close">✕</button>
+
+      <!-- Avatar + name always visible at top -->
       <div class="modal-avatar-wrap">
         {#if profileModal.profile?.avatarUrl}
           <img src={profileModal.profile.avatarUrl} alt="" class="modal-avatar" />
@@ -830,15 +886,26 @@
         {/if}
       </div>
       <h3 class="modal-name">{profileModal.name}</h3>
-      {#if profileModal.profile?.vibe}
-        <p class="modal-vibe">"{profileModal.profile.vibe}"</p>
-      {/if}
-      {#if profileModal.profile?.bio}
-        <p class="modal-bio">{profileModal.profile.bio}</p>
-      {/if}
 
       {#if currentGuestId && profileModal.guestId !== currentGuestId}
-        {#if !dmOpen}
+        <!-- Tabs: Profile | Chat -->
+        <div class="modal-tabs">
+          <button class="modal-tab" class:modal-tab-active={modalTab === 'profile'} onclick={() => modalTab = 'profile'}>
+            Profile
+          </button>
+          <button class="modal-tab" class:modal-tab-active={modalTab === 'chat'} onclick={switchToChat}>
+            Chat
+          </button>
+        </div>
+
+        {#if modalTab === 'profile'}
+          <!-- Profile content -->
+          {#if profileModal.profile?.vibe}
+            <p class="modal-vibe">"{profileModal.profile.vibe}"</p>
+          {/if}
+          {#if profileModal.profile?.bio}
+            <p class="modal-bio">{profileModal.profile.bio}</p>
+          {/if}
           <div class="signal-row">
             {#if signalMutual}
               <p class="signal-mutual">💞 Mutual crush! You two should talk.</p>
@@ -857,15 +924,11 @@
                 💌 Crush
               </button>
             {/if}
-            <button class="signal-btn signal-msg" onclick={openDmThread}>
-              💬 Message
-            </button>
           </div>
         {:else}
-          <!-- DM thread -->
+          <!-- Chat tab -->
           <div class="dm-thread">
             <div class="dm-header">
-              <button class="dm-back" onclick={() => dmOpen = false}>← Back</button>
               {#if !dmBlocked}
                 <button class="dm-block-btn" onclick={blockGuest}>Block</button>
               {/if}
@@ -908,6 +971,14 @@
               {/if}
             {/if}
           </div>
+        {/if}
+      {:else}
+        <!-- Viewing own profile or no guest context — just show bio/vibe -->
+        {#if profileModal.profile?.vibe}
+          <p class="modal-vibe">"{profileModal.profile.vibe}"</p>
+        {/if}
+        {#if profileModal.profile?.bio}
+          <p class="modal-bio">{profileModal.profile.bio}</p>
         {/if}
       {/if}
     </div>
@@ -1021,6 +1092,10 @@
   .modal-name { margin: 0 0 0.375rem; font-size: 1.1rem; color: #1a1510; }
   .modal-vibe { margin: 0 0 0.75rem; font-size: 0.9rem; color: #b05525; font-style: italic; }
   .modal-bio { margin: 0; font-size: 0.875rem; color: #3d352e; line-height: 1.5; }
+  .modal-tabs { display: flex; border-bottom: 1px solid #cfc3b0; margin: 0.875rem -0.5rem 0; }
+  .modal-tab { flex: 1; background: none; border: none; font-family: inherit; font-size: 0.85rem; font-weight: 500; color: #6b6058; padding: 0.45rem 0; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .modal-tab:hover { color: #3d352e; }
+  .modal-tab-active { color: #1a1510; font-weight: 600; border-bottom-color: #b05525; }
   .signal-row { display: flex; gap: 0.625rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap; }
   .signal-btn { border: none; border-radius: 20px; padding: 0.5rem 1.25rem; font-size: 0.875rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: opacity 0.15s; }
   .signal-btn:disabled { opacity: 0.5; cursor: default; }
@@ -1031,12 +1106,8 @@
   .signal-sent { margin: 0.75rem 0 0; font-size: 0.875rem; color: #3d352e; text-align: center; width: 100%; }
   .signal-mutual { margin: 0.75rem 0 0; font-size: 0.9rem; font-weight: 600; color: #b03050; text-align: center; width: 100%; }
   .signal-error { margin: 0; font-size: 0.8rem; color: #c03828; text-align: center; width: 100%; }
-  .signal-msg { background: #e8f0fc; color: #1a3a70; border: 1px solid #b0c8e8; }
-  .signal-msg:hover:not(:disabled) { background: #d4e4f8; }
   .dm-thread { margin-top: 1rem; text-align: left; }
-  .dm-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
-  .dm-back { background: none; border: none; font-size: 0.85rem; color: #6b6058; cursor: pointer; padding: 0; font-family: inherit; }
-  .dm-back:hover { color: #1a1510; }
+  .dm-header { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 0.75rem; min-height: 1.5rem; }
   .dm-block-btn { background: none; border: 1px solid #f0c8b8; border-radius: 6px; font-size: 0.75rem; color: #8b3016; cursor: pointer; padding: 0.25rem 0.625rem; font-family: inherit; }
   .dm-block-btn:hover { background: #fdf2ee; }
   .dm-loading { font-size: 0.85rem; color: #6b6058; text-align: center; margin: 1rem 0; }

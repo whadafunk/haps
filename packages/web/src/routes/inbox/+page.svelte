@@ -140,7 +140,7 @@
       <ul class="thread-list">
         {#each threads as thread (thread.otherGuestId + thread.eventId)}
           <li class="thread" class:thread-unread={thread.unreadCount > 0}>
-            <a href="/event/{thread.eventSlug}" class="thread-link">
+            <a href="/event/{thread.eventSlug}?dm={thread.otherGuestId}" class="thread-link">
               <div class="thread-avatar" style="background:{avatarColor(thread.otherGuestName)}">
                 {initials(thread.otherGuestName)}
               </div>

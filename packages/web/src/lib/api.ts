@@ -301,7 +301,7 @@ export const api = {
     apiFetch<{ message: { id: string; body: string; createdAt: string } }>(`/events/${slug}/dm`, { method: 'POST', body: JSON.stringify(body) }),
 
   getDmThread: (slug: string, guestId: string) =>
-    apiFetch<{ messages: Array<{ id: string; fromMe: boolean; body: string; readAt: string | null; createdAt: string }>; blocked: boolean }>(`/events/${slug}/dm/${guestId}`),
+    apiFetch<{ messages: Array<{ id: string; fromMe: boolean; body: string; readAt: string | null; createdAt: string }>; blocked: boolean; otherGuest: { id: string; name: string; avatarUrl: string | null; bio: string | null; vibe: string | null } | null }>(`/events/${slug}/dm/${guestId}`),
 
   blockGuest: (slug: string, guestId: string) =>
     apiFetch<void>(`/events/${slug}/dm/${guestId}/block`, { method: 'POST' }),

@@ -6,6 +6,7 @@ import { createError } from '../lib/errors.js'
 import { SendDmSchema } from '@haps/shared'
 import { ensureSession } from '../middleware/session.js'
 import { sendPushToSession } from '../services/push.js'
+import { broadcast } from '../lib/sse.js'
 
 const DM_MAX_LENGTH = 2000
 
@@ -182,6 +183,15 @@ const dmsRoutes: FastifyPluginAsync = async (fastify) => {
       })
     }
 
+    // Broadcast real-time DM event so the recipient's event page can show it live
+    broadcast(slug, 'new_dm', {
+      id:          newMessage.id,
+      fromGuestId,
+      toGuestId:   body.toGuestId,
+      body:        newMessage.body,
+      createdAt:   newMessage.createdAt.toISOString(),
+    })
+
     return reply.code(201).send({
       message: {
         id:        newMessage.id,
@@ -220,24 +230,31 @@ const dmsRoutes: FastifyPluginAsync = async (fastify) => {
       ))
       .limit(1)
 
-    const rows = await db
-      .select({
-        id:          directMessages.id,
-        fromGuestId: directMessages.fromGuestId,
-        body:        directMessages.body,
-        readAt:      directMessages.readAt,
-        createdAt:   directMessages.createdAt,
-      })
-      .from(directMessages)
-      .where(and(
-        eq(directMessages.eventId, event.id),
-        or(
-          and(eq(directMessages.fromGuestId, myGuestId), eq(directMessages.toGuestId, targetGuestId)),
-          and(eq(directMessages.fromGuestId, targetGuestId), eq(directMessages.toGuestId, myGuestId)),
-        ),
-      ))
-      .orderBy(desc(directMessages.createdAt))
-      .limit(50)
+    const [otherGuest, rows] = await Promise.all([
+      db.select({ id: guests.id, name: guests.name, avatarUrl: guests.avatarUrl, bio: guests.bio, vibe: guests.vibe })
+        .from(guests)
+        .where(eq(guests.id, targetGuestId))
+        .limit(1)
+        .then(r => r[0] ?? null),
+      db
+        .select({
+          id:          directMessages.id,
+          fromGuestId: directMessages.fromGuestId,
+          body:        directMessages.body,
+          readAt:      directMessages.readAt,
+          createdAt:   directMessages.createdAt,
+        })
+        .from(directMessages)
+        .where(and(
+          eq(directMessages.eventId, event.id),
+          or(
+            and(eq(directMessages.fromGuestId, myGuestId), eq(directMessages.toGuestId, targetGuestId)),
+            and(eq(directMessages.fromGuestId, targetGuestId), eq(directMessages.toGuestId, myGuestId)),
+          ),
+        ))
+        .orderBy(desc(directMessages.createdAt))
+        .limit(50),
+    ])
 
     // Mark unread incoming messages as read
     const unread = rows.filter(r => r.fromGuestId === targetGuestId && r.readAt === null)
@@ -261,6 +278,13 @@ const dmsRoutes: FastifyPluginAsync = async (fastify) => {
         createdAt: r.createdAt.toISOString(),
       })),
       blocked: !!block,
+      otherGuest: otherGuest ? {
+        id:        otherGuest.id,
+        name:      otherGuest.name,
+        avatarUrl: otherGuest.avatarUrl ?? null,
+        bio:       otherGuest.bio ?? null,
+        vibe:      otherGuest.vibe ?? null,
+      } : null,
     })
   })
 
