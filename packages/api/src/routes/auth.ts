@@ -122,7 +122,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         httpOnly: true,
         secure: config.NODE_ENV === 'production',
         sameSite: 'strict',
-        path: '/api/auth',
+        path: '/',
         maxAge: 60 * 60 * 24 * 7,
       })
 

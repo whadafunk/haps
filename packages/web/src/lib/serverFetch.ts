@@ -16,8 +16,10 @@ export class ServerApiError extends Error {
 export function buildCookieHeader(cookies: Cookies): string {
   const parts: string[] = []
   const authToken = cookies.get('auth_token')
+  const refreshToken = cookies.get('refresh_token')
   const vsid = cookies.get('vsid')
   if (authToken) parts.push(`auth_token=${authToken}`)
+  if (refreshToken) parts.push(`refresh_token=${refreshToken}`)
   if (vsid) parts.push(`vsid=${vsid}`)
   return parts.join('; ')
 }
@@ -56,20 +58,22 @@ export async function serverGet<T>(path: string, cookies: Cookies): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export async function serverPost<T>(path: string, body: unknown, cookies: Cookies): Promise<T> {
+export async function serverPost<T>(path: string, body: unknown, cookies: Cookies): Promise<T | undefined> {
   const cookieHeader = buildCookieHeader(cookies)
+  const hasBody = body !== undefined && body !== null
   const res = await fetch(`${API_BASE}/api${path}`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       ...(cookieHeader ? { Cookie: cookieHeader } : {}),
     },
-    body: JSON.stringify(body),
+    ...(hasBody ? { body: JSON.stringify(body) } : {}),
   })
   if (!res.ok) {
     const b = await res.json().catch(() => null)
     throw new ServerApiError(res.status, b?.error?.code ?? 'UNKNOWN', b?.error?.message ?? res.statusText)
   }
   forwardCookies(res, cookies)
+  if (res.status === 204) return undefined
   return res.json() as Promise<T>
 }

@@ -12,15 +12,22 @@ export const load: LayoutServerLoad = async ({ cookies }) => {
   }
 
   let user: { id: string; email: string; displayName: string; role: string | null; type: 'guest' | 'operator' } | null = null
-  let hadExpiredToken = false
   if (cookies.get('auth_token')) {
     try {
       user = await serverGet<{ id: string; email: string; displayName: string; role: string | null; type: 'guest' | 'operator' }>('/auth/me', cookies)
     } catch {
-      // expired or invalid JWT — clear the stale cookie so the nav doesn't
-      // show the session display name as if the user is still a logged-in guest
-      hadExpiredToken = true
+      // auth_token expired — attempt a silent server-side refresh if refresh_token is present
       cookies.delete('auth_token', { path: '/' })
+      if (cookies.get('refresh_token')) {
+        try {
+          await serverPost('/auth/refresh', null, cookies)
+          // forwardCookies in serverPost has written the new auth_token into cookies
+          user = await serverGet<{ id: string; email: string; displayName: string; role: string | null; type: 'guest' | 'operator' }>('/auth/me', cookies)
+        } catch {
+          // refresh also failed — clear everything
+          cookies.delete('refresh_token', { path: '/' })
+        }
+      }
     }
   }
 
