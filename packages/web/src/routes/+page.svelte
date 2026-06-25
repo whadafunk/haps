@@ -78,16 +78,18 @@
       </div>
     {/if}
 
-    <div class="actions">
-      <a href="/register" class="btn-primary">Create a free account</a>
-      <a href="/login" class="btn-secondary">Log in</a>
-    </div>
+    {#if !data.user}
+      <div class="actions">
+        <a href="/register" class="btn-primary">Create a free account</a>
+        <a href="/login" class="btn-secondary">Log in</a>
+      </div>
 
-    <ul class="perks">
-      <li>Keep your event history across all your devices</li>
-      <li>Never lose your invite links</li>
-      <li>Get notified about upcoming events</li>
-    </ul>
+      <ul class="perks">
+        <li>Keep your event history across all your devices</li>
+        <li>Never lose your invite links</li>
+        <li>Get notified about upcoming events</li>
+      </ul>
+    {/if}
   </div>
 </main>
 

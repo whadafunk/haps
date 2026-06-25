@@ -36,6 +36,38 @@ export async function apiFetch<T>(
     credentials: 'include',
   })
 
+  // Client-side JWT expiry: attempt a silent token refresh on 401, then retry once.
+  // On server-side calls we skip this — the layout load handles expiry by deleting the cookie.
+  if (res.status === 401 && !serverSide && typeof window !== 'undefined') {
+    const refreshed = await fetchFn(`${base}/api/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+    if (refreshed.ok) {
+      // Retry the original request with the new token (cookie is now updated)
+      const retry = await fetchFn(`${base}/api${path}`, {
+        ...rest,
+        headers: {
+          ...(hasJsonBody ? { 'Content-Type': 'application/json' } : {}),
+          ...(rest.headers ?? {}),
+        },
+        credentials: 'include',
+      })
+      if (retry.ok) {
+        if (retry.status === 204) return undefined as T
+        return retry.json()
+      }
+      const retryBody = await retry.json().catch(() => ({ error: { code: 'UNKNOWN', message: retry.statusText } }))
+      const retryErr = retryBody?.error ?? { code: 'UNKNOWN', message: retry.statusText }
+      throw new ApiError(retry.status, retryErr.code, retryErr.message)
+    } else {
+      // Refresh failed — navigate to /logout so the server clears stale cookies and
+      // the layout re-renders with user: null
+      window.location.href = '/logout'
+      return undefined as T
+    }
+  }
+
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: { code: 'UNKNOWN', message: res.statusText } }))
     const err = body?.error ?? { code: 'UNKNOWN', message: res.statusText }
