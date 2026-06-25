@@ -3,12 +3,22 @@
   import type { InboxItem } from './+page.server'
   import { apiFetch } from '$lib/api'
   import { invalidateAll } from '$app/navigation'
-  import { goto } from '$app/navigation'
+  import { onMount } from 'svelte'
 
   let { data } = $props<{ data: PageData }>()
 
   let items = $state<InboxItem[]>(data.items)
   let busy = $state(false)
+
+  onMount(async () => {
+    if (items.some(i => !i.read)) {
+      try {
+        await apiFetch('/notifications/read-all', { method: 'POST' })
+        items = items.map(i => ({ ...i, read: true }))
+      } catch {}
+      invalidateAll()
+    }
+  })
 
   function timeAgo(iso: string) {
     const diff = Date.now() - new Date(iso).getTime()
@@ -30,17 +40,6 @@
     if (type === 'reminder_1d' || type === 'reminder_2d' || type === 'reminder_7d') return 'Reminder'
     if (type === 'welcome') return 'Welcome'
     return 'Message'
-  }
-
-  async function open(item: InboxItem) {
-    if (!item.read) {
-      items = items.map(i => i.id === item.id ? { ...i, read: true } : i)
-      try {
-        await apiFetch(`/notifications/${item.id}/read`, { method: 'PATCH' })
-      } catch {}
-      await invalidateAll()
-    }
-    if (item.link) goto(item.link)
   }
 
   async function markAllRead() {
@@ -74,10 +73,12 @@
     <ul class="item-list">
       {#each items as item (item.id)}
         <li class="item" class:item-unread={!item.read}>
-          <button class="item-btn" onclick={() => open(item)}>
+          <div class="item-btn">
             <div class="item-meta">
               <span class="item-sender">{item.senderName ?? 'Haps'}</span>
-              {#if item.eventTitle}
+              {#if item.eventTitle && item.link}
+                <a class="item-event" href={item.link}>{item.eventTitle}</a>
+              {:else if item.eventTitle}
                 <span class="item-event">{item.eventTitle}</span>
               {/if}
               <span class="item-type">{typeLabel(item.type)}</span>
@@ -87,7 +88,7 @@
             {/if}
             <div class="item-body">{item.body}</div>
             <div class="item-time">{timeAgo(item.createdAt)}</div>
-          </button>
+          </div>
         </li>
       {/each}
     </ul>
@@ -151,18 +152,21 @@
 
   .item-btn {
     width: 100%;
-    background: none;
-    border: none;
     padding: 0.875rem 1rem;
-    text-align: left;
-    font-family: inherit;
-    cursor: pointer;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-  .item-btn:hover { background: #f5ead8; }
-  .item-unread .item-btn:hover { background: #f0e2cc; }
+
+  .item-event {
+    font-size: 0.75rem;
+    color: #924418;
+    background: #f5e8d8;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    text-decoration: none;
+  }
+  .item-event:hover { text-decoration: underline; }
 
   .item-meta {
     display: flex;
@@ -175,14 +179,6 @@
     font-size: 0.8rem;
     font-weight: 600;
     color: #1a1510;
-  }
-
-  .item-event {
-    font-size: 0.75rem;
-    color: #924418;
-    background: #f5e8d8;
-    padding: 0.1rem 0.4rem;
-    border-radius: 4px;
   }
 
   .item-type {
