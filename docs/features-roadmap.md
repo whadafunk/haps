@@ -214,3 +214,8 @@ Evaluated based on real usage after Phase 3.
 - [ ] Organizer analytics dashboard: RSVP conversion, open rates, etc.
 - [ ] Paid events: Stripe integration for ticketing
 - [ ] Multi-tenant management layer (separate deployment; manages N instances)
+- [ ] Global guest block scope: `guest_blocks` currently uses `(eventId,
+      blockingGuestId, blockedGuestId)` — block is per-event only. Extend to
+      cross-event scope by dropping `eventId` from the table and unique constraint,
+      so a block set at any event prevents that guest from DMing you at all future
+      events on the instance.
