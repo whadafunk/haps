@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { LayoutData } from './$types'
   import { goto, invalidateAll } from '$app/navigation'
+  import { unreadCount } from '$lib/unread'
 
   let { data, children } = $props<{ data: LayoutData; children: any }>()
 
@@ -17,7 +18,8 @@
   }
 
   const hasSession = $derived(data.user?.type === 'guest' ? data.user : !data.user && data.session?.displayName)
-  const unreadCount = $derived(data.unreadCount ?? 0)
+
+  $effect(() => { unreadCount.set(data.unreadCount ?? 0) })
 </script>
 
 <svelte:window onclick={handleWindowClick} />
@@ -49,7 +51,7 @@
 
     {#if hasSession}
       <a href="/inbox" class="nav-link nav-inbox-link">
-        Inbox{#if unreadCount > 0}<span class="inbox-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>{/if}
+        Inbox{#if $unreadCount > 0}<span class="inbox-badge">{$unreadCount > 9 ? '9+' : $unreadCount}</span>{/if}
       </a>
     {/if}
 

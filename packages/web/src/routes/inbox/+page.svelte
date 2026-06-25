@@ -2,8 +2,8 @@
   import type { PageData } from './$types'
   import type { InboxItem } from './+page.server'
   import { apiFetch } from '$lib/api'
-  import { invalidateAll } from '$app/navigation'
   import { onMount } from 'svelte'
+  import { unreadCount } from '$lib/unread'
 
   let { data } = $props<{ data: PageData }>()
 
@@ -15,8 +15,8 @@
       try {
         await apiFetch('/notifications/read-all', { method: 'POST' })
         items = items.map(i => ({ ...i, read: true }))
+        unreadCount.set(0)
       } catch {}
-      invalidateAll()
     }
   })
 
@@ -47,8 +47,8 @@
     try {
       await apiFetch('/notifications/read-all', { method: 'POST' })
       items = items.map(i => ({ ...i, read: true }))
+      unreadCount.set(0)
     } catch { /* non-critical */ }
-    await invalidateAll()
     busy = false
   }
 
