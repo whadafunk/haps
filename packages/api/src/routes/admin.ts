@@ -113,11 +113,10 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
   })
 
   fastify.post('/api/admin/config/test-email', { preHandler: adminPreHandler }, async (request, reply) => {
-    const [adminRow] = await db.select({ email: users.email }).from(users).where(eq(users.role, 'admin')).limit(1)
-    if (!adminRow) throw createError(500, 'NO_ADMIN', 'No admin user found.')
+    const to = request.user!.email
     try {
       await sendEmail({
-        to: adminRow.email,
+        to,
         subject: 'Test email from Haps',
         text: 'SMTP is working correctly. You can safely use email delivery.',
       })
