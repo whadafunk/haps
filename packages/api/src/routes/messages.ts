@@ -114,6 +114,7 @@ const messagesRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.isEditor) throw createError(403, 'FORBIDDEN', 'Only the event organizer can send blasts.')
 
     const body = BlastSchema.parse(request.body)
+    request.log.info({ channels: body.channels }, '[blast] channels requested')
 
     const organizerRows = await db
       .select({ displayName: users.displayName })
@@ -190,7 +191,7 @@ const messagesRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    // Push notification delivery — fire and forget
+    // Push notification delivery
     if (body.channels.includes('push')) {
       const pushSessionIds = new Set<string>()
 
@@ -218,6 +219,7 @@ const messagesRoutes: FastifyPluginAsync = async (fastify) => {
         for (const s of guestSessions) pushSessionIds.add(s.id)
       }
 
+      request.log.info({ sessions: pushSessionIds.size, recipients: recipients.length }, '[blast] push sessions resolved')
       if (pushSessionIds.size > 0) {
         const pushSent = await sendBulkPush([...pushSessionIds], { title: body.subject, body: body.body, link: `/event/${slug}` })
         queued += pushSent
