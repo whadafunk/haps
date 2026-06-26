@@ -219,8 +219,8 @@ const messagesRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       if (pushSessionIds.size > 0) {
-        void sendBulkPush([...pushSessionIds], { title: body.subject, body: body.body, link: `/event/${slug}` })
-        queued += pushSessionIds.size
+        const pushSent = await sendBulkPush([...pushSessionIds], { title: body.subject, body: body.body, link: `/event/${slug}` })
+        queued += pushSent
       }
     }
 

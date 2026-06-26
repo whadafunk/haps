@@ -91,7 +91,10 @@ export async function sendBulkPush(sessionIds: string[], payload: PushPayload): 
   if (sessionIds.length === 0) return 0
 
   const keys = await getOrCreateVapidKeys()
-  if (!keys) return 0
+  if (!keys) {
+    console.error('[push] sendBulkPush: no VAPID keys available')
+    return 0
+  }
 
   webpush.setVapidDetails('mailto:admin@haps.app', keys.publicKey, keys.privateKey)
 
@@ -100,8 +103,12 @@ export async function sendBulkPush(sessionIds: string[], payload: PushPayload): 
     .from(pushSubscriptions)
     .where(inArray(pushSubscriptions.sessionId, sessionIds))
 
-  if (subs.length === 0) return 0
+  if (subs.length === 0) {
+    console.info(`[push] sendBulkPush: 0 subscriptions found for ${sessionIds.length} sessions`)
+    return 0
+  }
 
+  console.info(`[push] sendBulkPush: sending to ${subs.length} subscriptions`)
   const data = JSON.stringify(payload)
   let sent = 0
 
@@ -116,10 +123,14 @@ export async function sendBulkPush(sessionIds: string[], payload: PushPayload): 
       } catch (err: any) {
         if (err?.statusCode === 410 || err?.statusCode === 404) {
           await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, sub.id))
+          console.info(`[push] removed expired subscription ${sub.id}`)
+        } else {
+          console.error(`[push] sendNotification failed for ${sub.id}:`, err?.statusCode, err?.body ?? err?.message)
         }
       }
     })
   )
 
+  console.info(`[push] sendBulkPush: ${sent}/${subs.length} delivered`)
   return sent
 }
