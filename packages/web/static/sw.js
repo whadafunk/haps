@@ -13,6 +13,9 @@ self.addEventListener('push', (event) => {
     icon: '/favicon.svg',
     badge: '/favicon.svg',
     data: { link: payload.link ?? '/' },
+    actions: [
+      { action: 'markread', title: 'Mark as read' },
+    ],
   }
 
   event.waitUntil(self.registration.showNotification(title, options))
@@ -20,6 +23,14 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
+
+  if (event.action === 'markread') {
+    event.waitUntil(
+      fetch('/api/notifications/read-all', { method: 'POST', credentials: 'include' })
+    )
+    return
+  }
+
   const link = event.notification.data?.link ?? '/'
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {

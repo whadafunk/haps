@@ -174,12 +174,12 @@ const dmsRoutes: FastifyPluginAsync = async (fastify) => {
         eventId:   event.id,
         type:      'new_message',
         body:      `${fromGuest.name} sent you a message at "${event.title}".`,
-        link:      `/event/${slug}`,
+        link:      `/event/${slug}?dm=${fromGuestId}`,
       })
       void sendPushToSession(recipientSession.id, body.toGuestId, {
         title:  `💬 Message from ${fromGuest.name}`,
         body:   body.body.slice(0, 100),
-        link:   `/event/${slug}`,
+        link:   `/event/${slug}?dm=${fromGuestId}`,
       })
     }
 

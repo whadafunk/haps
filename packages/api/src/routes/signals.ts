@@ -163,12 +163,12 @@ const signalsRoutes: FastifyPluginAsync = async (fastify) => {
           eventId: event.id,
           type: 'crush_revealed',
           body: `Your crush on ${fromGuest.name} at "${event.title}" is mutual! 💞`,
-          link: `/event/${slug}`,
+          link: `/event/${slug}?dm=${fromGuestId}`,
         })
         void sendPushToSession(recipientSession.id, body.toGuestId, {
           title: '💞 Mutual crush!',
           body: `Your crush on ${fromGuest.name} at "${event.title}" is mutual!`,
-          link: `/event/${slug}`,
+          link: `/event/${slug}?dm=${fromGuestId}`,
         })
       }
 
@@ -178,12 +178,12 @@ const signalsRoutes: FastifyPluginAsync = async (fastify) => {
         eventId: event.id,
         type: 'crush_revealed',
         body: `Your crush at "${event.title}" is mutual! 💞`,
-        link: `/event/${slug}`,
+        link: `/event/${slug}?dm=${body.toGuestId}`,
       })
       void sendPushToSession(request.session.id, fromGuestId, {
         title: '💞 Mutual crush!',
         body: `Your crush at "${event.title}" is mutual!`,
-        link: `/event/${slug}`,
+        link: `/event/${slug}?dm=${body.toGuestId}`,
       })
     } else {
       // Notify the recipient of the new signal
@@ -194,12 +194,12 @@ const signalsRoutes: FastifyPluginAsync = async (fastify) => {
           eventId: event.id,
           type: 'new_signal',
           body: `Someone sent you ${signalLabel} at "${event.title}".`,
-          link: `/event/${slug}`,
+          link: `/event/${slug}?dm=${fromGuestId}`,
         })
         void sendPushToSession(recipientSession.id, body.toGuestId, {
           title: body.type === 'wink' ? '👋 Someone winked at you' : '💌 Someone has a crush on you',
           body: `At "${event.title}"`,
-          link: `/event/${slug}`,
+          link: `/event/${slug}?dm=${fromGuestId}`,
         })
       }
     }
