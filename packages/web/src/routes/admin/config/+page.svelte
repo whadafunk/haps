@@ -62,9 +62,12 @@
       if (res.ok) {
         testResult = { ok: true, message: 'Test email sent — check your admin inbox.' }
       } else {
-        const err = await res.json().catch(() => null)
-        testResult = { ok: false, message: err?.error?.message ?? 'Failed to send test email.' }
+        const body = await res.json().catch(() => null)
+        const msg = body?.error?.message ?? `SMTP error (${res.status})`
+        testResult = { ok: false, message: msg }
       }
+    } catch (e: any) {
+      testResult = { ok: false, message: `Network error: ${e?.message ?? 'unknown'}` }
     } finally {
       testLoading = false
     }
