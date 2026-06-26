@@ -5,6 +5,7 @@ import { eq, and, isNull, inArray } from 'drizzle-orm'
 import { createError } from '../lib/errors.js'
 import { CreateEventMessageSchema, BlastSchema } from '@haps/shared'
 import { ensureSession } from '../middleware/session.js'
+import { sendBulkPush } from '../services/push.js'
 
 const messagesRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/events/:slug/messages — public feed for the event channel
@@ -165,7 +166,7 @@ const messagesRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Queue external delivery jobs when channels are selected (email/sms)
     let queued = 0
-    if (body.channels.length > 0) {
+    if (body.channels.includes('email') || body.channels.includes('sms')) {
       const eligibleRsvps = await db
         .select({ displayName: rsvps.displayName, email: rsvps.email })
         .from(rsvps)
@@ -186,6 +187,40 @@ const messagesRoutes: FastifyPluginAsync = async (fastify) => {
       if (jobs.length > 0) {
         await db.insert(deliveryJobs).values(jobs)
         queued = jobs.length
+      }
+    }
+
+    // Push notification delivery — fire and forget
+    if (body.channels.includes('push')) {
+      const pushSessionIds = new Set<string>()
+
+      for (const r of recipients) {
+        if (r.sessionId) pushSessionIds.add(r.sessionId)
+      }
+
+      // Resolve userId → sessions for JWT-RSVPd guests
+      const userIds = recipients.map(r => r.userId).filter(Boolean) as string[]
+      if (userIds.length > 0) {
+        const userSessions = await db
+          .select({ id: visitorSessions.id })
+          .from(visitorSessions)
+          .where(inArray(visitorSessions.userId, userIds))
+        for (const s of userSessions) pushSessionIds.add(s.id)
+      }
+
+      // Resolve guestId → sessions
+      const guestIds = recipients.map(r => r.guestId).filter(Boolean) as string[]
+      if (guestIds.length > 0) {
+        const guestSessions = await db
+          .select({ id: visitorSessions.id })
+          .from(visitorSessions)
+          .where(inArray(visitorSessions.guestId, guestIds))
+        for (const s of guestSessions) pushSessionIds.add(s.id)
+      }
+
+      if (pushSessionIds.size > 0) {
+        void sendBulkPush([...pushSessionIds], { title: body.subject, body: body.body, link: `/event/${slug}` })
+        queued += pushSessionIds.size
       }
     }
 

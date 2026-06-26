@@ -77,6 +77,7 @@
   let blastBody = $state('')
   let blastEmail = $state(true)
   let blastSms = $state(false)
+  let blastPush = $state(false)
   let blastLoading = $state(false)
   let blastError = $state('')
 
@@ -493,6 +494,7 @@
     const channels: string[] = []
     if (blastEmail) channels.push('email')
     if (blastSms) channels.push('sms')
+    if (blastPush) channels.push('push')
     blastLoading = true
     blastError = ''
     try {
@@ -961,6 +963,7 @@
           <div class="checkboxes">
             <label class="checkbox"><input type="checkbox" bind:checked={blastEmail} /> Send via email (to yes RSVPs with email)</label>
             <label class="checkbox"><input type="checkbox" bind:checked={blastSms} /> Send via SMS (Phase 2 — requires Twilio)</label>
+            <label class="checkbox"><input type="checkbox" bind:checked={blastPush} /> Send push notification (to subscribed guests)</label>
           </div>
           <div class="form-actions">
             <button onclick={sendBlast} disabled={blastLoading} class="btn-primary">

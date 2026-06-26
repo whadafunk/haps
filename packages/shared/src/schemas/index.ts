@@ -129,7 +129,7 @@ export const CreateEventMessageSchema = z.object({
 export const BlastSchema = z.object({
   subject: z.string().min(1).max(200),
   body: z.string().min(1).max(10000),
-  channels: z.array(z.enum(['email', 'sms'])).default([]),
+  channels: z.array(z.enum(['email', 'sms', 'push'])).default([]),
 }).strict()
 
 // Member registration (Phase 2)

@@ -86,3 +86,40 @@ export async function sendPushToSession(
     })
   )
 }
+
+export async function sendBulkPush(sessionIds: string[], payload: PushPayload): Promise<number> {
+  if (sessionIds.length === 0) return 0
+
+  const keys = await getOrCreateVapidKeys()
+  if (!keys) return 0
+
+  webpush.setVapidDetails('mailto:admin@haps.app', keys.publicKey, keys.privateKey)
+
+  const subs = await db
+    .select()
+    .from(pushSubscriptions)
+    .where(inArray(pushSubscriptions.sessionId, sessionIds))
+
+  if (subs.length === 0) return 0
+
+  const data = JSON.stringify(payload)
+  let sent = 0
+
+  await Promise.all(
+    subs.map(async sub => {
+      try {
+        await webpush.sendNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.authKey } },
+          data,
+        )
+        sent++
+      } catch (err: any) {
+        if (err?.statusCode === 410 || err?.statusCode === 404) {
+          await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, sub.id))
+        }
+      }
+    })
+  )
+
+  return sent
+}
