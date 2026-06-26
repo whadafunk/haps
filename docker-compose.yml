@@ -51,6 +51,7 @@ services:
       - uploads:/uploads
     networks:
       - internal
+      - egress
 
   web:
     container_name: haps-web
@@ -84,6 +85,8 @@ networks:
   internal:
     driver: bridge
     internal: true
+  egress:
+    driver: bridge
   dmz:
     external: true
     name: macnet-40
