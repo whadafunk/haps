@@ -3,12 +3,14 @@ import { serverGet, serverPost } from '$lib/serverFetch'
 
 export const load: LayoutServerLoad = async ({ cookies }) => {
   let requireRsvpBeforeRegister = true
+  let smtpConfigured = false
   try {
-    const status = await serverGet<{ setupRequired: boolean; requireRsvpBeforeRegister: boolean }>('/setup/status', cookies)
-    if (status.setupRequired) return { meta: null, session: null, user: null, setupRequired: true, requireRsvpBeforeRegister: true }
+    const status = await serverGet<{ setupRequired: boolean; requireRsvpBeforeRegister: boolean; smtpConfigured: boolean }>('/setup/status', cookies)
+    if (status.setupRequired) return { meta: null, session: null, user: null, setupRequired: true, requireRsvpBeforeRegister: true, smtpConfigured: false }
     requireRsvpBeforeRegister = status.requireRsvpBeforeRegister
+    smtpConfigured = status.smtpConfigured ?? false
   } catch {
-    return { meta: null, session: null, user: null, setupRequired: false, requireRsvpBeforeRegister: true }
+    return { meta: null, session: null, user: null, setupRequired: false, requireRsvpBeforeRegister: true, smtpConfigured: false }
   }
 
   type AuthUser = { id: string; email: string; displayName: string; role: string | null; type: 'guest' | 'operator' }
@@ -55,5 +57,5 @@ export const load: LayoutServerLoad = async ({ cookies }) => {
     }
   }
 
-  return { meta: null, session, user, setupRequired: false, requireRsvpBeforeRegister, unreadCount }
+  return { meta: null, session, user, setupRequired: false, requireRsvpBeforeRegister, smtpConfigured, unreadCount }
 }

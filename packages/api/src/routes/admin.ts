@@ -6,6 +6,7 @@ import { createError } from '../lib/errors.js'
 import { CreateUserSchema, BlockGuestSchema, RemoveGuestSchema, CreateGuestSchema, UpdateGuestSchema } from '@haps/shared'
 import { hashPassword } from '../lib/crypto.js'
 import { config } from '../lib/config.js'
+import { sendEmail } from '../services/email.js'
 import { z } from 'zod'
 
 const adminRoutes: FastifyPluginAsync = async (fastify) => {
@@ -111,8 +112,38 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     }
   })
 
+  fastify.post('/api/admin/config/test-email', { preHandler: adminPreHandler }, async (request, reply) => {
+    const [adminRow] = await db.select({ email: users.email }).from(users).where(eq(users.role, 'admin')).limit(1)
+    if (!adminRow) throw createError(500, 'NO_ADMIN', 'No admin user found.')
+    try {
+      await sendEmail({
+        to: adminRow.email,
+        subject: 'Test email from Haps',
+        text: 'SMTP is working correctly. You can safely use email delivery.',
+      })
+      return reply.code(200).send({ ok: true })
+    } catch (err: any) {
+      throw createError(502, 'SMTP_ERROR', err?.message ?? 'Failed to send test email.')
+    }
+  })
+
   fastify.patch('/api/admin/config', { preHandler: adminPreHandler }, async (request) => {
     const body = UpdateConfigSchema.parse(request.body)
+
+    // Validate: host requires port, partial auth is rejected
+    if (body.smtpHost && !body.smtpPort) {
+      throw createError(400, 'SMTP_INCOMPLETE', 'SMTP port is required when host is set.')
+    }
+
+    // Determine effective auth state after this update
+    if (body.smtpUser !== undefined || body.smtpPass !== undefined) {
+      const [current] = await db.select({ smtpUser: instanceConfig.smtpUser, smtpPass: instanceConfig.smtpPass }).from(instanceConfig).limit(1)
+      const effectiveUser = body.smtpUser !== undefined ? body.smtpUser : (current?.smtpUser ?? null)
+      const effectivePass = body.smtpPass !== undefined ? body.smtpPass : (current?.smtpPass ?? null)
+      if ((effectiveUser && !effectivePass) || (!effectiveUser && effectivePass)) {
+        throw createError(400, 'SMTP_AUTH_INCOMPLETE', 'Both SMTP username and password are required when using authentication.')
+      }
+    }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() }
     if (body.instanceName !== undefined) updates['instanceName'] = body.instanceName

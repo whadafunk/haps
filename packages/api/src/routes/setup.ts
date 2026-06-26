@@ -19,10 +19,15 @@ async function adminCount(): Promise<number> {
 
 const setupRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/api/setup/status', async () => {
-    const [cfg] = await db.select({ requireRsvpBeforeRegister: instanceConfig.requireRsvpBeforeRegister }).from(instanceConfig).limit(1)
+    const [cfg] = await db.select({
+      requireRsvpBeforeRegister: instanceConfig.requireRsvpBeforeRegister,
+      smtpHost: instanceConfig.smtpHost,
+      smtpPort: instanceConfig.smtpPort,
+    }).from(instanceConfig).limit(1)
     return {
       setupRequired: (await adminCount()) === 0,
       requireRsvpBeforeRegister: cfg?.requireRsvpBeforeRegister ?? true,
+      smtpConfigured: !!(cfg?.smtpHost && cfg?.smtpPort),
     }
   })
 

@@ -75,9 +75,9 @@
 
   let blastSubject = $state('')
   let blastBody = $state('')
-  let blastEmail = $state(true)
+  let blastEmail = $state(false)
   let blastSms = $state(false)
-  let blastPush = $state(false)
+  let blastPush = $state(true)
   let blastLoading = $state(false)
   let blastError = $state('')
 
@@ -953,7 +953,7 @@
         <button class="modal-close" onclick={() => showBlastModal = false} aria-label="Close">×</button>
       </div>
       <div class="modal-body">
-        <p class="muted" style="margin-bottom:1rem">Post a message to the event channel. Optionally deliver it to guests via email or SMS.</p>
+        <p class="muted" style="margin-bottom:1rem">Post a message to the event channel. Optionally deliver it to guests via external channels.</p>
         {#if blastError}
           <div class="error-banner">{blastError}</div>
         {/if}
@@ -961,8 +961,16 @@
           <label>Subject <input type="text" bind:value={blastSubject} placeholder="Event update" /></label>
           <label>Message <textarea bind:value={blastBody} rows="5" placeholder="Write your update…"></textarea></label>
           <div class="checkboxes">
-            <label class="checkbox"><input type="checkbox" bind:checked={blastEmail} /> Send via email (to yes RSVPs with email)</label>
-            <label class="checkbox"><input type="checkbox" bind:checked={blastSms} /> Send via SMS (Phase 2 — requires Twilio)</label>
+            <label class="checkbox" class:checkbox-disabled={!data.smtpConfigured}>
+              <input type="checkbox" bind:checked={blastEmail} disabled={!data.smtpConfigured} />
+              Send via email (to yes RSVPs with email)
+              {#if !data.smtpConfigured}<span class="badge-dim">SMTP not configured</span>{/if}
+            </label>
+            <label class="checkbox checkbox-disabled">
+              <input type="checkbox" bind:checked={blastSms} disabled />
+              Send via SMS
+              <span class="badge-dim">requires Twilio</span>
+            </label>
             <label class="checkbox"><input type="checkbox" bind:checked={blastPush} /> Send push notification (to subscribed guests)</label>
           </div>
           <div class="form-actions">
@@ -1238,6 +1246,7 @@
   label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; font-weight: 500; color: #3d352e; }
   label.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; font-weight: 400; }
   .checkboxes { display: flex; flex-direction: column; gap: 0.5rem; }
+  .badge-dim { font-size: 0.75rem; font-weight: 500; color: #8a7e76; background: #e4ddd5; border-radius: 4px; padding: 0.1rem 0.4rem; }
   .visibility-group { margin-top: 0.75rem; }
   input, textarea, select { padding: 0.5rem 0.75rem; border: 1px solid #c8bdb0; border-radius: 8px; font-size: 1rem; font-family: inherit; background: #fff; color: #1a1510; }
   textarea { resize: vertical; }
