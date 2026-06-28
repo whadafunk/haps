@@ -86,12 +86,20 @@
   .push-banner {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.75rem;
     background: #f0e8da;
     border: 1px solid #cfc3b0;
     border-radius: 8px;
     padding: 0.75rem 1rem;
     font-size: 0.875rem;
+  }
+  @media (max-width: 480px) {
+    .push-btn {
+      width: 100%;
+      padding: 0.5rem;
+      font-size: 0.875rem;
+    }
   }
   .push-banner-success { background: #eaf5ea; border-color: #9dbf9d; }
   .push-banner-muted   { background: #f5f0eb; border-color: #d0c8be; color: #7a6e64; }
